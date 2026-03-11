@@ -37,6 +37,30 @@ export interface DriverVehicleAssignment {
   rent_type: "daily" | "weekly" | "monthly";
 }
 
+export interface RentCharge {
+  id: string;
+  driver_id: string;
+  vehicle_id: string;
+  daily_rate: number;
+  days: number;
+  off_days: number;
+  total_amount: number;
+  date_from: string;
+  date_to: string;
+  created_at: string;
+  notes: string;
+}
+
+export interface RentPayment {
+  id: string;
+  charge_id: string;
+  driver_id: string;
+  amount: number;
+  payment_date: string;
+  payment_method: "cash" | "bank" | "card";
+  notes: string;
+}
+
 export interface DriverOffDay {
   id: string;
   driver_id: string;
@@ -128,6 +152,20 @@ export const expenses: Expense[] = [
   { id: "e8", vehicle_id: "v2", expense_type: "insurance", amount: 1100, description: "Insurance renewal", date: "2025-01-10" },
 ];
 
+export const rentCharges: RentCharge[] = [
+  { id: "rc1", driver_id: "d1", vehicle_id: "v1", daily_rate: 3500, days: 5, off_days: 0, total_amount: 17500, date_from: "2025-03-01", date_to: "2025-03-05", created_at: "2025-03-01", notes: "" },
+  { id: "rc2", driver_id: "d2", vehicle_id: "v2", daily_rate: 3000, days: 7, off_days: 1, total_amount: 19500, date_from: "2025-03-01", date_to: "2025-03-07", created_at: "2025-03-01", notes: "" },
+  { id: "rc3", driver_id: "d1", vehicle_id: "v1", daily_rate: 3500, days: 3, off_days: 0, total_amount: 10500, date_from: "2025-03-06", date_to: "2025-03-08", created_at: "2025-03-06", notes: "Vikend" },
+  { id: "rc4", driver_id: "d3", vehicle_id: "v3", daily_rate: 4000, days: 5, off_days: 2, total_amount: 16000, date_from: "2025-03-01", date_to: "2025-03-05", created_at: "2025-03-01", notes: "" },
+];
+
+export const rentPayments: RentPayment[] = [
+  { id: "rp1", charge_id: "rc1", driver_id: "d1", amount: 10000, payment_date: "2025-03-03", payment_method: "cash", notes: "Prva rata" },
+  { id: "rp2", charge_id: "rc1", driver_id: "d1", amount: 7500, payment_date: "2025-03-06", payment_method: "cash", notes: "Ostatak" },
+  { id: "rp3", charge_id: "rc2", driver_id: "d2", amount: 6000, payment_date: "2025-03-05", payment_method: "cash", notes: "" },
+  { id: "rp4", charge_id: "rc4", driver_id: "d3", amount: 16000, payment_date: "2025-03-04", payment_method: "bank", notes: "" },
+];
+
 export const offDays: DriverOffDay[] = [
   { id: "od1", driver_id: "d1", vehicle_id: "v1", date: "2025-03-03", notes: "Bolovanje" },
   { id: "od2", driver_id: "d2", vehicle_id: "v2", date: "2025-03-05", notes: "" },
@@ -178,6 +216,10 @@ export const expensesByType = [
 
 export function getOffDaysByDriver(driverId: string) { return offDays.filter(o => o.driver_id === driverId); }
 export function getPosReportsByVehicle(vehicleId: string) { return posReports.filter(p => p.vehicle_id === vehicleId); }
+export function getRentChargesByDriver(driverId: string) { return rentCharges.filter(c => c.driver_id === driverId); }
+export function getRentPaymentsByCharge(chargeId: string) { return rentPayments.filter(p => p.charge_id === chargeId); }
+export function getPaidAmount(chargeId: string) { return rentPayments.filter(p => p.charge_id === chargeId).reduce((sum, p) => sum + p.amount, 0); }
+export function getRemainingAmount(chargeId: string, totalAmount: number) { return totalAmount - getPaidAmount(chargeId); }
 
 export function calculateRent(
   dailyRate: number,
