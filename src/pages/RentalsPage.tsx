@@ -1,8 +1,13 @@
 import { useState } from "react";
-import { getActiveAssignments, assignments, getDriverById, getVehicleById, drivers, vehicles, offDays, calculateRent } from "@/data/mockData";
+import {
+  drivers, vehicles, offDays,
+  rentCharges, rentPayments,
+  getDriverById, getVehicleById,
+  getRentPaymentsByCharge, getPaidAmount, getRemainingAmount,
+  calculateRent
+} from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -10,86 +15,55 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Calculator, CalendarOff } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { StatCard } from "@/components/StatCard";
+import { Plus, CalendarOff, DollarSign, AlertCircle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 const RentalsPage = () => {
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [chargeDialogOpen, setChargeDialogOpen] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [offDayDialogOpen, setOffDayDialogOpen] = useState(false);
-  const [calcDialogOpen, setCalcDialogOpen] = useState(false);
+  const [selectedChargeId, setSelectedChargeId] = useState<string | null>(null);
+  const [expandedCharge, setExpandedCharge] = useState<string | null>(null);
 
-  const [calcDailyRate, setCalcDailyRate] = useState("");
-  const [calcTotalDays, setCalcTotalDays] = useState("");
-  const [calcOffDays, setCalcOffDays] = useState("0");
+  // Forma za novo zaduzenje
+  const [driverId, setDriverId] = useState("");
+  const [vehicleId, setVehicleId] = useState("");
+  const [dailyRate, setDailyRate] = useState("");
+  const [days, setDays] = useState("");
+  const [offDaysCount, setOffDaysCount] = useState("0");
+  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split("T")[0]);
 
-  const active = getActiveAssignments();
+  // Forma za uplatu
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("cash");
+  const [payNote, setPayNote] = useState("");
 
-  const calcResult = calcDailyRate && calcTotalDays
-    ? calculateRent(Number(calcDailyRate), Number(calcTotalDays), Number(calcOffDays))
+  const calcResult = dailyRate && days
+    ? calculateRent(Number(dailyRate), Number(days), Number(offDaysCount))
     : null;
+
+  const totalDebt = rentCharges.reduce((sum, c) => sum + getRemainingAmount(c.id, c.total_amount), 0);
+  const unpaidCharges = rentCharges.filter(c => getRemainingAmount(c.id, c.total_amount) > 0);
+  const paidCharges = rentCharges.filter(c => getRemainingAmount(c.id, c.total_amount) <= 0);
+
+  const openPayment = (chargeId: string) => {
+    setSelectedChargeId(chargeId);
+    setPayAmount("");
+    setPayNote("");
+    setPaymentDialogOpen(true);
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold">Zaduženja</h1>
-          <p className="text-muted-foreground">Aktivna zaduženja vozila i vozača</p>
+          <h1 className="text-2xl font-display font-bold">Zaduzenja i Uplate</h1>
+          <p className="text-muted-foreground">Pracenje duga i uplata po vozacu</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Dialog open={calcDialogOpen} onOpenChange={setCalcDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline"><Calculator className="mr-2 h-4 w-4" />Kalkulator rente</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Kalkulator rente</DialogTitle>
-                <DialogDescription>Unesite dnevnu cijenu i broj dana za obračun.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Dnevna cijena (EUR)</Label>
-                    <Input type="number" placeholder="50" value={calcDailyRate} onChange={(e) => setCalcDailyRate(e.target.value)} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Ukupno dana</Label>
-                    <Input type="number" placeholder="30" value={calcTotalDays} onChange={(e) => setCalcTotalDays(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Slobodni dani (pola cijene)</Label>
-                  <Input type="number" placeholder="0" value={calcOffDays} onChange={(e) => setCalcOffDays(e.target.value)} />
-                  <p className="text-xs text-muted-foreground">Ako vozac ne radi, placa 50% dnevne cijene za taj dan.</p>
-                </div>
-                {calcResult && (
-                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border bg-muted/40 p-4 space-y-3">
-                    <p className="text-sm font-medium text-muted-foreground">Obracun</p>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-md bg-background border p-3">
-                        <p className="text-xs text-muted-foreground">Radni dani</p>
-                        <p className="text-xl font-bold">{calcResult.workDays}</p>
-                        <p className="text-xs text-muted-foreground">x EUR{calcDailyRate}</p>
-                      </div>
-                      <div className="rounded-md bg-background border p-3">
-                        <p className="text-xs text-muted-foreground">Slobodni dani</p>
-                        <p className="text-xl font-bold">{calcResult.offDays}</p>
-                        <p className="text-xs text-muted-foreground">x EUR{(Number(calcDailyRate) * 0.5).toFixed(2)}</p>
-                      </div>
-                      <div className="rounded-md bg-primary/10 border border-primary/20 p-3">
-                        <p className="text-xs text-muted-foreground">Ukupno</p>
-                        <p className="text-xl font-bold text-primary">EUR{calcResult.total.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setCalcDialogOpen(false)}>Zatvori</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
           <Dialog open={offDayDialogOpen} onOpenChange={setOffDayDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline"><CalendarOff className="mr-2 h-4 w-4" />Slobodan dan</Button>
@@ -136,120 +110,219 @@ const RentalsPage = () => {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog open={chargeDialogOpen} onOpenChange={(open) => {
+            setChargeDialogOpen(open);
+            if (!open) { setDriverId(""); setVehicleId(""); setDailyRate(""); setDays(""); setOffDaysCount("0"); }
+          }}>
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4" />Novo zaduzenje</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Kreiraj zaduzenje</DialogTitle>
-                <DialogDescription>Dodijeli vozilo vozacu sa individualnom cijenom rente.</DialogDescription>
+                <DialogDescription>Unesite period i automatski ce se izracunati ukupan iznos.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label>Vozac</Label>
-                  <Select>
+                  <Select value={driverId} onValueChange={setDriverId}>
                     <SelectTrigger><SelectValue placeholder="Izaberi vozaca" /></SelectTrigger>
                     <SelectContent>
-                      {drivers.map((d) => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+                      {drivers.filter(d => d.status === "active").map((d) => (
+                        <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label>Vozilo</Label>
-                  <Select>
+                  <Select value={vehicleId} onValueChange={setVehicleId}>
                     <SelectTrigger><SelectValue placeholder="Izaberi vozilo" /></SelectTrigger>
                     <SelectContent>
                       {vehicles.filter(v => v.status === "active").map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number} ({v.license_plate})</SelectItem>
+                        <SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="grid gap-2">
-                    <Label>Dnevna cijena (EUR)</Label>
-                    <Input type="number" placeholder="50" />
+                    <Label>Dnevna cijena</Label>
+                    <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDailyRate(e.target.value)} />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Vrsta zaduzenja</Label>
-                    <Select>
-                      <SelectTrigger><SelectValue placeholder="Vrsta" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="daily">Dnevno</SelectItem>
-                        <SelectItem value="weekly">Sedmicno</SelectItem>
-                        <SelectItem value="monthly">Mjesecno</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>Broj dana</Label>
+                    <Input type="number" placeholder="5" value={days} onChange={e => setDays(e.target.value)} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Slobodni dani</Label>
+                    <Input type="number" placeholder="0" value={offDaysCount} onChange={e => setOffDaysCount(e.target.value)} />
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Datum pocetka</Label>
-                  <Input type="date" />
+                  <Label>Datum od</Label>
+                  <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
                 </div>
+
+                {calcResult && (
+                  <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                    className="rounded-lg border bg-muted/40 p-4">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-md bg-background border p-3">
+                        <p className="text-xs text-muted-foreground">Radni dani</p>
+                        <p className="text-lg font-bold">{calcResult.workDays}</p>
+                        <p className="text-xs text-muted-foreground">× {Number(dailyRate).toLocaleString()}</p>
+                      </div>
+                      <div className="rounded-md bg-background border p-3">
+                        <p className="text-xs text-muted-foreground">Slobodni dani</p>
+                        <p className="text-lg font-bold">{calcResult.offDays}</p>
+                        <p className="text-xs text-muted-foreground">× {(Number(dailyRate) * 0.5).toLocaleString()}</p>
+                      </div>
+                      <div className="rounded-md bg-primary/10 border border-primary/30 p-3">
+                        <p className="text-xs text-muted-foreground">UKUPNO</p>
+                        <p className="text-lg font-bold text-primary">{calcResult.total.toLocaleString()} RSD</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Otkazi</Button>
-                <Button onClick={() => { setDialogOpen(false); toast.success("Zaduzenje kreirano"); }}>Kreiraj</Button>
+                <Button variant="outline" onClick={() => setChargeDialogOpen(false)}>Otkazi</Button>
+                <Button
+                  disabled={!calcResult || !driverId || !vehicleId}
+                  onClick={() => {
+                    setChargeDialogOpen(false);
+                    toast.success(`Zaduzenje kreirano: ${calcResult?.total.toLocaleString()} RSD`);
+                  }}
+                >
+                  Kreiraj zaduzenje
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      <Tabs defaultValue="active">
+      {/* Stat kartice */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard title="Ukupan dug" value={`${totalDebt.toLocaleString()} RSD`} icon={DollarSign} />
+        <StatCard title="Nezplacena zaduzenja" value={unpaidCharges.length} icon={AlertCircle} />
+        <StatCard title="Izmirena zaduzenja" value={paidCharges.length} icon={CheckCircle2} />
+      </div>
+
+      <Tabs defaultValue="unpaid">
         <TabsList>
-          <TabsTrigger value="active">Aktivna zaduzenja</TabsTrigger>
-          <TabsTrigger value="history">Istorija</TabsTrigger>
+          <TabsTrigger value="unpaid">
+            Neizmireno
+            {unpaidCharges.length > 0 && (
+              <Badge variant="destructive" className="ml-2 text-xs">{unpaidCharges.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="paid">Izmireno</TabsTrigger>
           <TabsTrigger value="offdays">Slobodni dani</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="active" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-display">Aktivna zaduzenja ({active.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Vozac</TableHead>
-                    <TableHead>Vozilo</TableHead>
-                    <TableHead>Taxi licenca</TableHead>
-                    <TableHead>Dnevna cijena</TableHead>
-                    <TableHead>Vrsta</TableHead>
-                    <TableHead>Datum pocetka</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {active.map((a) => {
-                    const driver = getDriverById(a.driver_id);
-                    const vehicle = getVehicleById(a.vehicle_id);
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell className="font-medium">{driver?.full_name ?? "—"}</TableCell>
-                        <TableCell>{vehicle ? `${vehicle.brand} ${vehicle.model}` : "—"}</TableCell>
-                        <TableCell>
-                          {vehicle ? (
+        {/* NEIZMIRENA ZADUZENJA */}
+        <TabsContent value="unpaid" className="mt-4 space-y-3">
+          {unpaidCharges.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-green-500" />
+                <p>Sva zaduzenja su izmirena!</p>
+              </CardContent>
+            </Card>
+          )}
+          {unpaidCharges.map((charge) => {
+            const driver = getDriverById(charge.driver_id);
+            const vehicle = getVehicleById(charge.vehicle_id);
+            const paid = getPaidAmount(charge.id);
+            const remaining = getRemainingAmount(charge.id, charge.total_amount);
+            const percent = Math.round((paid / charge.total_amount) * 100);
+            const chargePayments = getRentPaymentsByCharge(charge.id);
+            const isExpanded = expandedCharge === charge.id;
+
+            return (
+              <motion.div key={charge.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="overflow-hidden">
+                  <CardContent className="p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-base">{driver?.full_name ?? "—"}</span>
+                          {vehicle && (
                             <Badge variant="outline" className="font-mono text-xs">{vehicle.taxi_license_number}</Badge>
-                          ) : "—"}
-                        </TableCell>
-                        <TableCell className="font-medium">EUR{a.rent_amount}</TableCell>
-                        <TableCell><StatusBadge status={a.rent_type} /></TableCell>
-                        <TableCell>{a.start_date}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                          )}
+                          <Badge variant="secondary" className="text-xs">{charge.date_from} → {charge.date_to}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {charge.days} dana × {charge.daily_rate.toLocaleString()} RSD
+                          {charge.off_days > 0 && ` + ${charge.off_days} slobodnih dana`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" onClick={() => openPayment(charge.id)}>
+                          <Plus className="mr-1 h-3 w-3" />Uplata
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setExpandedCharge(isExpanded ? null : charge.id)}>
+                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Placeno: <span className="font-medium text-foreground">{paid.toLocaleString()} RSD</span></span>
+                        <span className="text-destructive font-semibold">Ostatak: {remaining.toLocaleString()} RSD</span>
+                      </div>
+                      <Progress value={percent} className="h-2" />
+                      <p className="text-xs text-right text-muted-foreground">{percent}% izmireno od {charge.total_amount.toLocaleString()} RSD</p>
+                    </div>
+
+                    <AnimatePresence>
+                      {isExpanded && chargePayments.length > 0 && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="mt-3 overflow-hidden"
+                        >
+                          <div className="rounded-md border bg-muted/30">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-xs">Datum</TableHead>
+                                  <TableHead className="text-xs">Iznos</TableHead>
+                                  <TableHead className="text-xs">Nacin</TableHead>
+                                  <TableHead className="text-xs">Napomena</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {chargePayments.map(p => (
+                                  <TableRow key={p.id}>
+                                    <TableCell className="text-xs">{p.payment_date}</TableCell>
+                                    <TableCell className="text-xs font-medium">{p.amount.toLocaleString()} RSD</TableCell>
+                                    <TableCell className="text-xs capitalize">{p.payment_method}</TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">{p.notes || "—"}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
         </TabsContent>
 
-        <TabsContent value="history" className="mt-4">
+        {/* IZMIRENA ZADUZENJA */}
+        <TabsContent value="paid" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="font-display">Istorija svih zaduzenja</CardTitle>
+              <CardTitle className="font-display text-base">Izmirena zaduzenja ({paidCharges.length})</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -257,37 +330,43 @@ const RentalsPage = () => {
                   <TableRow>
                     <TableHead>Vozac</TableHead>
                     <TableHead>Vozilo</TableHead>
-                    <TableHead>Cijena</TableHead>
-                    <TableHead>Pocetak</TableHead>
-                    <TableHead>Kraj</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead>Iznos</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {assignments.map((a) => {
-                    const driver = getDriverById(a.driver_id);
-                    const vehicle = getVehicleById(a.vehicle_id);
+                  {paidCharges.map((charge) => {
+                    const driver = getDriverById(charge.driver_id);
+                    const vehicle = getVehicleById(charge.vehicle_id);
                     return (
-                      <TableRow key={a.id}>
+                      <TableRow key={charge.id}>
                         <TableCell className="font-medium">{driver?.full_name ?? "—"}</TableCell>
                         <TableCell>{vehicle ? `${vehicle.brand} ${vehicle.model}` : "—"}</TableCell>
-                        <TableCell>EUR{a.rent_amount}/{a.rent_type === "monthly" ? "mj" : a.rent_type === "weekly" ? "sed" : "dan"}</TableCell>
-                        <TableCell>{a.start_date}</TableCell>
-                        <TableCell>{a.end_date || "—"}</TableCell>
-                        <TableCell><StatusBadge status={a.end_date ? "inactive" : "active"} /></TableCell>
+                        <TableCell className="text-xs">{charge.date_from} — {charge.date_to}</TableCell>
+                        <TableCell>{charge.total_amount.toLocaleString()} RSD</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-green-600 border-green-300 bg-green-50">
+                            <CheckCircle2 className="mr-1 h-3 w-3" />Izmireno
+                          </Badge>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
+                  {paidCharges.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Nema izmirenih zaduzenja</TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* SLOBODNI DANI */}
         <TabsContent value="offdays" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="font-display">Slobodni dani — pola rente</CardTitle>
+              <CardTitle className="font-display text-base">Slobodni dani — pola rente</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -313,7 +392,7 @@ const RentalsPage = () => {
                     );
                   })}
                   {offDays.length === 0 && (
-                    <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nema zabiljezenh slobodnih dana</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">Nema slobodnih dana</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -321,6 +400,73 @@ const RentalsPage = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* DIALOG ZA UPLATU */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unesi uplatu</DialogTitle>
+            {selectedChargeId && (() => {
+              const charge = rentCharges.find(c => c.id === selectedChargeId);
+              const driver = charge ? getDriverById(charge.driver_id) : null;
+              const remaining = charge ? getRemainingAmount(charge.id, charge.total_amount) : 0;
+              return (
+                <DialogDescription>
+                  {driver?.full_name} — ostatak duga: <span className="font-semibold text-destructive">{remaining.toLocaleString()} RSD</span>
+                </DialogDescription>
+              );
+            })()}
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Iznos uplate (RSD)</Label>
+              <Input
+                type="number"
+                placeholder="6000"
+                value={payAmount}
+                onChange={e => setPayAmount(e.target.value)}
+              />
+              {selectedChargeId && payAmount && (() => {
+                const charge = rentCharges.find(c => c.id === selectedChargeId);
+                const remaining = charge ? getRemainingAmount(charge.id, charge.total_amount) : 0;
+                const newRemaining = remaining - Number(payAmount);
+                return (
+                  <p className={`text-xs ${newRemaining <= 0 ? "text-green-600" : "text-muted-foreground"}`}>
+                    {newRemaining <= 0 ? "Zaduzenje ce biti potpuno izmireno!" : `Ostace: ${newRemaining.toLocaleString()} RSD`}
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="grid gap-2">
+              <Label>Nacin placanja</Label>
+              <Select value={payMethod} onValueChange={setPayMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Gotovina</SelectItem>
+                  <SelectItem value="bank">Banka</SelectItem>
+                  <SelectItem value="card">Kartica</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Napomena (opciono)</Label>
+              <Input placeholder="Prva rata, ostatak..." value={payNote} onChange={e => setPayNote(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>Otkazi</Button>
+            <Button
+              disabled={!payAmount || Number(payAmount) <= 0}
+              onClick={() => {
+                setPaymentDialogOpen(false);
+                toast.success(`Uplata od ${Number(payAmount).toLocaleString()} RSD zabiljezejena`);
+              }}
+            >
+              Potvrdi uplatu
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
