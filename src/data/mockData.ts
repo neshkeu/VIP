@@ -9,6 +9,29 @@ export interface Driver {
   notes: string;
   status: "active" | "inactive";
   created_at: string;
+  daily_rate: number;
+  vehicle_id: string;
+}
+
+export interface YandexReport {
+  id: string;
+  vehicle_id: string;
+  driver_id: string;
+  amount: number;
+  period_from: string;
+  period_to: string;
+  report_date: string;
+  notes: string;
+}
+
+export interface VoucherEntry {
+  id: string;
+  driver_id: string;
+  count: number;
+  amount: number;
+  date: string;
+  paid_out: boolean;
+  notes: string;
 }
 
 export interface Vehicle {
@@ -99,12 +122,12 @@ export interface Expense {
 }
 
 export const drivers: Driver[] = [
-  { id: "d1", full_name: "Ahmed Hassan", phone: "+1 555-0101", address: "123 Main St", license_number: "DL-2024-001", bank_account: "US12345678901234", bank_card_number: "4111-XXXX-XXXX-1234", notes: "Reliable driver", status: "active", created_at: "2024-01-15" },
-  { id: "d2", full_name: "Maria Rodriguez", phone: "+1 555-0102", address: "456 Oak Ave", license_number: "DL-2024-002", bank_account: "US98765432101234", bank_card_number: "5200-XXXX-XXXX-5678", notes: "", status: "active", created_at: "2024-02-10" },
-  { id: "d3", full_name: "James Wilson", phone: "+1 555-0103", address: "789 Pine Rd", license_number: "DL-2024-003", bank_account: "US11223344556677", bank_card_number: "3700-XXXX-XXXX-9012", notes: "Night shift preferred", status: "active", created_at: "2024-03-05" },
-  { id: "d4", full_name: "Fatima Al-Rashid", phone: "+1 555-0104", address: "321 Elm Blvd", license_number: "DL-2024-004", bank_account: "US99887766554433", bank_card_number: "6011-XXXX-XXXX-3456", notes: "", status: "active", created_at: "2024-03-20" },
-  { id: "d5", full_name: "Chen Wei", phone: "+1 555-0105", address: "654 Maple Dr", license_number: "DL-2024-005", bank_account: "US55667788990011", bank_card_number: "4222-XXXX-XXXX-7890", notes: "On medical leave", status: "inactive", created_at: "2024-04-01" },
-  { id: "d6", full_name: "Kofi Mensah", phone: "+1 555-0106", address: "987 Cedar Ln", license_number: "DL-2024-006", bank_account: "US33445566778899", bank_card_number: "5100-XXXX-XXXX-2345", notes: "", status: "active", created_at: "2024-05-12" },
+  { id: "d1", full_name: "Ahmed Hassan", phone: "+1 555-0101", address: "123 Main St", license_number: "DL-2024-001", bank_account: "US12345678901234", bank_card_number: "4111-XXXX-XXXX-1234", notes: "Reliable driver", status: "active", created_at: "2024-01-15", daily_rate: 3500, vehicle_id: "v1" },
+  { id: "d2", full_name: "Maria Rodriguez", phone: "+1 555-0102", address: "456 Oak Ave", license_number: "DL-2024-002", bank_account: "US98765432101234", bank_card_number: "5200-XXXX-XXXX-5678", notes: "", status: "active", created_at: "2024-02-10", daily_rate: 3000, vehicle_id: "v2" },
+  { id: "d3", full_name: "James Wilson", phone: "+1 555-0103", address: "789 Pine Rd", license_number: "DL-2024-003", bank_account: "US11223344556677", bank_card_number: "3700-XXXX-XXXX-9012", notes: "Night shift preferred", status: "active", created_at: "2024-03-05", daily_rate: 4000, vehicle_id: "v3" },
+  { id: "d4", full_name: "Fatima Al-Rashid", phone: "+1 555-0104", address: "321 Elm Blvd", license_number: "DL-2024-004", bank_account: "US99887766554433", bank_card_number: "6011-XXXX-XXXX-3456", notes: "", status: "active", created_at: "2024-03-20", daily_rate: 3800, vehicle_id: "v4" },
+  { id: "d5", full_name: "Chen Wei", phone: "+1 555-0105", address: "654 Maple Dr", license_number: "DL-2024-005", bank_account: "US55667788990011", bank_card_number: "4222-XXXX-XXXX-7890", notes: "On medical leave", status: "inactive", created_at: "2024-04-01", daily_rate: 3200, vehicle_id: "" },
+  { id: "d6", full_name: "Kofi Mensah", phone: "+1 555-0106", address: "987 Cedar Ln", license_number: "DL-2024-006", bank_account: "US33445566778899", bank_card_number: "5100-XXXX-XXXX-2345", notes: "", status: "active", created_at: "2024-05-12", daily_rate: 2800, vehicle_id: "v7" },
 ];
 
 export const vehicles: Vehicle[] = [
@@ -214,7 +237,22 @@ export const expensesByType = [
   { type: "Other", amount: 200 },
 ];
 
-export function getOffDaysByDriver(driverId: string) { return offDays.filter(o => o.driver_id === driverId); }
+export const yandexReports: YandexReport[] = [
+  { id: "yr1", vehicle_id: "v1", driver_id: "d1", amount: 4200, period_from: "2025-03-01", period_to: "2025-03-05", report_date: "2025-03-06", notes: "" },
+  { id: "yr2", vehicle_id: "v2", driver_id: "d2", amount: 3800, period_from: "2025-03-01", period_to: "2025-03-05", report_date: "2025-03-06", notes: "" },
+  { id: "yr3", vehicle_id: "v3", driver_id: "d3", amount: 5100, period_from: "2025-03-01", period_to: "2025-03-07", report_date: "2025-03-08", notes: "Izvod #Y-441" },
+];
+
+export const voucherEntries: VoucherEntry[] = [
+  { id: "ve1", driver_id: "d1", count: 3, amount: 1200, date: "2025-03-04", paid_out: true, notes: "" },
+  { id: "ve2", driver_id: "d2", count: 2, amount: 800, date: "2025-03-05", paid_out: false, notes: "" },
+  { id: "ve3", driver_id: "d3", count: 5, amount: 2000, date: "2025-03-06", paid_out: true, notes: "" },
+];
+
+export function getYandexByDriver(driverId: string) { return yandexReports.filter(y => y.driver_id === driverId); }
+export function getVouchersByDriver(driverId: string) { return voucherEntries.filter(v => v.driver_id === driverId); }
+export function getYandexTotalByDriver(driverId: string) { return yandexReports.filter(y => y.driver_id === driverId).reduce((s, y) => s + y.amount, 0); }
+export function getVoucherTotalByDriver(driverId: string) { return voucherEntries.filter(v => v.driver_id === driverId).reduce((s, v) => s + v.amount, 0); }
 export function getPosReportsByVehicle(vehicleId: string) { return posReports.filter(p => p.vehicle_id === vehicleId); }
 export function getRentChargesByDriver(driverId: string) { return rentCharges.filter(c => c.driver_id === driverId); }
 export function getRentPaymentsByCharge(chargeId: string) { return rentPayments.filter(p => p.charge_id === chargeId); }
