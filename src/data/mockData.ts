@@ -13,6 +13,18 @@ export interface Driver {
   vehicle_id: string;
 }
 
+export interface PosPayoutRequest {
+  id: string;
+  driver_id: string;
+  vehicle_id: string;
+  amount: number;
+  action: "deduct_debt" | "pay_cash";
+  status: "pending" | "done";
+  request_date: string;
+  resolved_date: string | null;
+  notes: string;
+}
+
 export interface YandexReport {
   id: string;
   vehicle_id: string;
@@ -211,6 +223,20 @@ export function getPaymentsByDriver(driverId: string) { return payments.filter(p
 export function getExpensesByVehicle(vehicleId: string) { return expenses.filter(e => e.vehicle_id === vehicleId); }
 export function getActiveAssignmentForDriver(driverId: string) { return assignments.find(a => a.driver_id === driverId && !a.end_date); }
 export function getActiveAssignmentForVehicle(vehicleId: string) { return assignments.find(a => a.vehicle_id === vehicleId && !a.end_date); }
+
+export const posPayoutRequests: PosPayoutRequest[] = [
+  { id: "pp1", driver_id: "d1", vehicle_id: "v1", amount: 1760, action: "pay_cash", status: "done", request_date: "2025-03-04", resolved_date: "2025-03-04", notes: "Isplaceno gotovinom" },
+  { id: "pp2", driver_id: "d2", vehicle_id: "v2", amount: 620, action: "deduct_debt", status: "done", request_date: "2025-03-04", resolved_date: "2025-03-04", notes: "Oduzeto od duga" },
+  { id: "pp3", driver_id: "d1", vehicle_id: "v1", amount: 910, action: "pay_cash", status: "pending", request_date: "2025-03-08", resolved_date: null, notes: "" },
+];
+
+export function getPosPayoutsByDriver(driverId: string) { return posPayoutRequests.filter(p => p.driver_id === driverId); }
+export function getPosDeductedFromDebt(driverId: string) { return posPayoutRequests.filter(p => p.driver_id === driverId && p.action === "deduct_debt" && p.status === "done").reduce((s, p) => s + p.amount, 0); }
+export function getPosAccumulatedByVehicle(vehicleId: string) {
+  const total = posReports.filter(p => p.vehicle_id === vehicleId).reduce((s, p) => s + p.amount, 0);
+  const paid = posPayoutRequests.filter(p => p.vehicle_id === vehicleId && p.status === "done").reduce((s, p) => s + p.amount, 0);
+  return total - paid;
+}
 
 export function getMonthlyRentIncome() {
   return getActiveAssignments().reduce((sum, a) => {
