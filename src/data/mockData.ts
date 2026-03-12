@@ -107,6 +107,7 @@ export interface DriverOffDay {
 export interface PosReport {
   id: string;
   vehicle_id: string;
+  driver_id: string;
   amount: number;
   report_date: string;
   period_from: string;
@@ -208,11 +209,11 @@ export const offDays: DriverOffDay[] = [
 ];
 
 export const posReports: PosReport[] = [
-  { id: "pr1", vehicle_id: "v1", amount: 850, report_date: "2025-03-03", period_from: "2025-02-24", period_to: "2025-03-02", notes: "Izvod br. 012" },
-  { id: "pr2", vehicle_id: "v2", amount: 620, report_date: "2025-03-03", period_from: "2025-02-24", period_to: "2025-03-02", notes: "" },
-  { id: "pr3", vehicle_id: "v1", amount: 910, report_date: "2025-03-07", period_from: "2025-03-03", period_to: "2025-03-06", notes: "Izvod br. 013" },
-  { id: "pr4", vehicle_id: "v3", amount: 740, report_date: "2025-03-07", period_from: "2025-03-03", period_to: "2025-03-06", notes: "" },
-  { id: "pr5", vehicle_id: "v4", amount: 1100, report_date: "2025-03-07", period_from: "2025-03-03", period_to: "2025-03-06", notes: "" },
+  { id: "pr1", vehicle_id: "v1", driver_id: "d1", amount: 850, report_date: "2025-03-03", period_from: "2025-02-24", period_to: "2025-03-02", notes: "Izvod br. 012" },
+  { id: "pr2", vehicle_id: "v2", driver_id: "d2", amount: 620, report_date: "2025-03-03", period_from: "2025-02-24", period_to: "2025-03-02", notes: "" },
+  { id: "pr3", vehicle_id: "v1", driver_id: "d1", amount: 910, report_date: "2025-03-07", period_from: "2025-03-03", period_to: "2025-03-06", notes: "Izvod br. 013" },
+  { id: "pr4", vehicle_id: "v3", driver_id: "d3", amount: 740, report_date: "2025-03-07", period_from: "2025-03-03", period_to: "2025-03-06", notes: "" },
+  { id: "pr5", vehicle_id: "v4", driver_id: "d4", amount: 1100, report_date: "2025-03-07", period_from: "2025-03-03", period_to: "2025-03-06", notes: "" },
 ];
 export function getDriverById(id: string) { return drivers.find(d => d.id === id); }
 export function getVehicleById(id: string) { return vehicles.find(v => v.id === id); }
