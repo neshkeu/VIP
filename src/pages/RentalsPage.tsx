@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
-  drivers, vehicles, offDays, rentCharges, rentPayments,
-  yandexReports, voucherEntries, posReports,
+  drivers, vehicles, offDays, rentCharges,
   getDriverById, getVehicleById, calculateRent
 } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +18,38 @@ import { StatCard } from "@/components/StatCard";
 import { Plus, CalendarOff, DollarSign, AlertCircle, CheckCircle2, Banknote, Smartphone, Ticket, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
+
+// ─── LOGIKA ZA NEDJELJE ──────────────────────────────────────
+// Broji dane od date_from do date_to, iskljucujuci nedjelje
+function countBillableDays(dateFrom: string, dateTo: string): { billable: number; sundays: number; total: number } {
+  const start = new Date(dateFrom);
+  const end = new Date(dateTo);
+  let billable = 0;
+  let sundays = 0;
+  const current = new Date(start);
+  while (current <= end) {
+    if (current.getDay() === 0) {
+      sundays++;
+    } else {
+      billable++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return { billable, sundays, total: billable + sundays };
+}
+
+// Izracun sa automatskim iskljucivanjem nedjelja i slobodnih dana
+function calculateRentWithSundays(
+  dailyRate: number,
+  dateFrom: string,
+  dateTo: string,
+  manualOffDays: number
+): { billableDays: number; sundays: number; offDays: number; total: number } {
+  const { billable, sundays } = countBillableDays(dateFrom, dateTo);
+  const workDays = billable - manualOffDays;
+  const total = workDays * dailyRate + manualOffDays * (dailyRate * 0.5);
+  return { billableDays: workDays, sundays, offDays: manualOffDays, total: Math.max(0, total) };
+}
 
 // ─── TIPOVI STAVKI ZADUZENJA ────────────────────────────────
 type EntryType = "cash" | "yandex" | "pos" | "voucher" | "off_day";
@@ -208,9 +239,9 @@ const RentalsPage = () => {
   const [driverId, setDriverId] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [dailyRate, setDailyRate] = useState("");
-  const [days, setDays] = useState("");
   const [offDaysCount, setOffDaysCount] = useState("0");
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split("T")[0]);
+  const [dateTo, setDateTo] = useState(new Date().toISOString().split("T")[0]);
 
   // Forma stavka
   const [entryType, setEntryType] = useState<EntryType>("cash");
@@ -218,9 +249,10 @@ const RentalsPage = () => {
   const [entryVoucherCount, setEntryVoucherCount] = useState("1");
   const [entryAction, setEntryAction] = useState<"deduct_debt" | "pay_cash">("deduct_debt");
   const [entryNote, setEntryNote] = useState("");
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split("T")[0]);
 
-  const calcResult = dailyRate && days
-    ? calculateRent(Number(dailyRate), Number(days), Number(offDaysCount))
+  const calcResult = dailyRate && dateFrom && dateTo && dateFrom <= dateTo
+    ? calculateRentWithSundays(Number(dailyRate), dateFrom, dateTo, Number(offDaysCount))
     : null;
 
   const openEntryDialog = (chargeId: string) => {
@@ -331,35 +363,41 @@ const RentalsPage = () => {
                     ))}</SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-2">
+                  <Label>Dnevna cijena (RSD)</Label>
+                  <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDailyRate(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>Dnevna cijena</Label>
-                    <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDailyRate(e.target.value)} />
+                    <Label>Period od</Label>
+                    <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Broj dana</Label>
-                    <Input type="number" placeholder="5" value={days} onChange={e => setDays(e.target.value)} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Slobodni dani</Label>
-                    <Input type="number" placeholder="0" value={offDaysCount} onChange={e => setOffDaysCount(e.target.value)} />
+                    <Label>Period do</Label>
+                    <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Datum od</Label>
-                  <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                  <Label>Slobodni dani (pola rente)</Label>
+                  <Input type="number" placeholder="0" value={offDaysCount} onChange={e => setOffDaysCount(e.target.value)} />
                 </div>
                 {calcResult && (
                   <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                    className="rounded-lg border bg-muted/40 p-4">
+                    className="rounded-lg border bg-muted/40 p-4 space-y-3">
+                    {calcResult.sundays > 0 && (
+                      <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                        <CalendarOff className="h-3.5 w-3.5" />
+                        <span>{calcResult.sundays} nedjelja automatski iskljuceno iz obracuna</span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="rounded-md bg-background border p-3">
-                        <p className="text-xs text-muted-foreground">Radni dani</p>
-                        <p className="text-lg font-bold">{calcResult.workDays}</p>
+                        <p className="text-xs text-muted-foreground">Naplativo dana</p>
+                        <p className="text-lg font-bold">{calcResult.billableDays}</p>
                         <p className="text-xs text-muted-foreground">× {Number(dailyRate).toLocaleString()}</p>
                       </div>
                       <div className="rounded-md bg-background border p-3">
-                        <p className="text-xs text-muted-foreground">Slobodni</p>
+                        <p className="text-xs text-muted-foreground">Slobodni dani</p>
                         <p className="text-lg font-bold">{calcResult.offDays}</p>
                         <p className="text-xs text-muted-foreground">× {(Number(dailyRate) * 0.5).toLocaleString()}</p>
                       </div>
@@ -472,12 +510,19 @@ const RentalsPage = () => {
             <div className="grid gap-2">
               <Label>Vrsta stavke</Label>
               <div className="grid grid-cols-2 gap-2">
-                {(["cash", "yandex", "pos", "voucher"] as EntryType[]).map(t => {
+                {(["cash", "yandex", "pos", "voucher", "off_day"] as EntryType[]).map(t => {
                   const cfg = ENTRY_CONFIG[t];
                   const Icon = cfg.icon;
                   return (
                     <button key={t} type="button"
-                      onClick={() => setEntryType(t)}
+                      onClick={() => {
+                        setEntryType(t);
+                        setEntryAmount("");
+                        // Za slobodan dan auto-izracunaj pola dnevne cijene vozaca
+                        if (t === "off_day" && selectedCharge) {
+                          setEntryAmount(String(selectedCharge.daily_rate * 0.5));
+                        }
+                      }}
                       className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-all ${entryType === t ? `${cfg.bg} ${cfg.color} border-current` : "hover:bg-muted"}`}>
                       <Icon className="h-4 w-4" />{cfg.label}
                     </button>
@@ -485,6 +530,22 @@ const RentalsPage = () => {
                 })}
               </div>
             </div>
+
+            {entryType === "off_day" && (
+              <div className="space-y-3">
+                <div className="grid gap-2">
+                  <Label>Datum slobodnog dana</Label>
+                  <Input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
+                </div>
+                <div className="rounded-md bg-gray-50 border px-3 py-2 text-sm text-gray-600 flex items-center gap-2">
+                  <CalendarOff className="h-4 w-4" />
+                  <span>
+                    Oduzima se 50% dnevne cijene:&nbsp;
+                    <span className="font-semibold">{selectedCharge ? (selectedCharge.daily_rate * 0.5).toLocaleString() : "—"} RSD</span>
+                  </span>
+                </div>
+              </div>
+            )}
 
             {entryType === "voucher" ? (
               <div className="grid grid-cols-2 gap-3">
@@ -498,7 +559,7 @@ const RentalsPage = () => {
                   <Input readOnly value={entryAmount} className="bg-muted" />
                 </div>
               </div>
-            ) : (
+            ) : entryType !== "off_day" ? (
               <div className="grid gap-2">
                 <Label>Iznos (RSD)</Label>
                 <Input type="number" placeholder="5000" value={entryAmount} onChange={e => setEntryAmount(e.target.value)} />
@@ -509,7 +570,7 @@ const RentalsPage = () => {
                   <p className="text-xs text-green-600">Zaduzenje ce biti potpuno izmireno!</p>
                 )}
               </div>
-            )}
+            ) : null}
 
             {(entryType === "yandex" || entryType === "pos") && (
               <div className="grid gap-2">
@@ -534,11 +595,16 @@ const RentalsPage = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEntryDialogOpen(false)}>Otkazi</Button>
-            <Button disabled={!entryAmount || Number(entryAmount) <= 0}
+            <Button
+              disabled={entryType !== "off_day" && (!entryAmount || Number(entryAmount) <= 0)}
               onClick={() => {
                 setEntryDialogOpen(false);
                 const cfg = ENTRY_CONFIG[entryType];
-                toast.success(`${cfg.label}: ${Number(entryAmount).toLocaleString()} RSD zabiljezeeno`);
+                if (entryType === "off_day") {
+                  toast.success(`Slobodan dan zabiljezan — oduzeto ${selectedCharge ? (selectedCharge.daily_rate * 0.5).toLocaleString() : ""} RSD`);
+                } else {
+                  toast.success(`${cfg.label}: ${Number(entryAmount).toLocaleString()} RSD zabiljezeeno`);
+                }
               }}>
               Dodaj stavku
             </Button>
