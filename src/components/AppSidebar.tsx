@@ -30,9 +30,9 @@ const navItems = [
   { title: "Vozači", url: "/drivers", icon: Users },
   { title: "Vozila", url: "/vehicles", icon: Car },
   { title: "Zaduženja", url: "/rentals", icon: FileText },
-  { title: "Uplate", url: "/payments", icon: CreditCard },
-  { title: "Troškovi", url: "/expenses", icon: Wrench },
   { title: "POS Izvodi", url: "/pos-reports", icon: CarTaxiFront },
+  { title: "Troškovi", url: "/expenses", icon: Wrench },
+  { title: "Izvještaji", url: "/reports", icon: CreditCard },
 ];
 
 export function AppSidebar() {
