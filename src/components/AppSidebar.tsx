@@ -6,9 +6,10 @@ import {
   CreditCard,
   Wrench,
   CarTaxiFront,
+  LogOut,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -38,11 +39,17 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPath = location.pathname;
 
   const isActive = (path: string) => {
     if (path === "/") return currentPath === "/";
     return currentPath.startsWith(path);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("viptaxi_auth");
+    navigate("/login");
   };
 
   return (
@@ -87,9 +94,15 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        <div className="flex items-center justify-between">
-          {!collapsed && <span className="text-xs text-muted-foreground">Tema</span>}
+        <div className="flex items-center justify-between gap-2">
           <ThemeToggle />
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            {!collapsed && <span>Odjava</span>}
+          </button>
         </div>
       </SidebarFooter>
     </Sidebar>
