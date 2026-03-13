@@ -8,6 +8,7 @@ import {
   CarTaxiFront,
   LogOut,
   Smartphone,
+  AlertTriangle,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -31,6 +32,7 @@ const navItems = [
   { title: "Vozači", url: "/drivers", icon: Users },
   { title: "Vozila", url: "/vehicles", icon: Car },
   { title: "Zaduženja", url: "/rentals", icon: FileText },
+  { title: "Dugovanja", url: "/debts", icon: AlertTriangle },
   { title: "POS Izvodi", url: "/pos-reports", icon: CarTaxiFront },
   { title: "POS Naknade", url: "/pos-fees", icon: Smartphone },
   { title: "Troškovi", url: "/expenses", icon: Wrench },
