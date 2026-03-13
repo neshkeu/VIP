@@ -360,3 +360,63 @@ export function getPosTerminalDebtByDriver(driverId: string) {
     .filter(c => c.driver_id === driverId)
     .reduce((sum, c) => sum + (c.amount - c.paid_amount), 0);
 }
+
+// ─── DUGOVANJA VOZACA ────────────────────────────────────────
+export type DebtType = "pos_fee" | "damage" | "penalty" | "loan" | "other";
+
+export interface DriverDebt {
+  id: string;
+  driver_id: string;
+  type: DebtType;
+  description: string;       // npr. "Šteta na vozilu v1 — bočni udar"
+  total_amount: number;      // Ukupan dug
+  date: string;              // Datum nastanka duga
+  created_by: string;        // Ko je kreirao
+  created_at: string;
+  notes: string;
+  status: "open" | "closed"; // open = ima ostatka, closed = izmireno
+}
+
+export interface DebtPayment {
+  id: string;
+  debt_id: string;
+  driver_id: string;
+  amount: number;
+  payment_date: string;
+  received_by: string;       // Ko je primio/evidentirao
+  notes: string;
+}
+
+export const driverDebts: DriverDebt[] = [
+  { id: "dd1", driver_id: "d1", type: "damage",  description: "Šteta na vozilu — ogrebotina na boku", total_amount: 35000, date: "2025-02-10", created_by: "Nemanja", created_at: "2025-02-10", notes: "Popravka u servisu Autolak", status: "open" },
+  { id: "dd2", driver_id: "d2", type: "pos_fee", description: "POS naknada Januar 2025", total_amount: 600, date: "2025-01-01", created_by: "Admin", created_at: "2025-01-01", notes: "", status: "closed" },
+  { id: "dd3", driver_id: "d2", type: "pos_fee", description: "POS naknada Februar 2025", total_amount: 600, date: "2025-02-01", created_by: "Admin", created_at: "2025-02-01", notes: "", status: "open" },
+  { id: "dd4", driver_id: "d3", type: "penalty", description: "Saobraćajna kazna — prebrza vožnja", total_amount: 12000, date: "2025-02-20", created_by: "Milica", created_at: "2025-02-20", notes: "Kazna plaćena od firme, vozač vraća", status: "open" },
+  { id: "dd5", driver_id: "d4", type: "loan",    description: "Pozajmica — lični razlog", total_amount: 20000, date: "2025-03-01", created_by: "Nemanja", created_at: "2025-03-01", notes: "Dogovor: vraća 5000 RSD sedmično", status: "open" },
+  { id: "dd6", driver_id: "d1", type: "pos_fee", description: "POS naknada Mart 2025", total_amount: 800, date: "2025-03-01", created_by: "Admin", created_at: "2025-03-01", notes: "", status: "open" },
+  { id: "dd7", driver_id: "d6", type: "other",   description: "Nadoknada za uniformu", total_amount: 3500, date: "2025-03-05", created_by: "Milica", created_at: "2025-03-05", notes: "", status: "open" },
+];
+
+export const debtPayments: DebtPayment[] = [
+  { id: "dp1", debt_id: "dd1", driver_id: "d1", amount: 10000, payment_date: "2025-02-15", received_by: "Nemanja", notes: "Prva rata" },
+  { id: "dp2", debt_id: "dd1", driver_id: "d1", amount: 15000, payment_date: "2025-03-01", received_by: "Milica",  notes: "Druga rata" },
+  { id: "dp3", debt_id: "dd2", driver_id: "d2", amount: 600,   payment_date: "2025-01-06", received_by: "Admin",   notes: "" },
+  { id: "dp4", debt_id: "dd3", driver_id: "d2", amount: 300,   payment_date: "2025-02-05", received_by: "Milica",  notes: "Djelimično" },
+  { id: "dp5", debt_id: "dd4", driver_id: "d3", amount: 5000,  payment_date: "2025-03-01", received_by: "Nemanja", notes: "" },
+  { id: "dp6", debt_id: "dd5", driver_id: "d4", amount: 5000,  payment_date: "2025-03-08", received_by: "Nemanja", notes: "Prva sedmica" },
+];
+
+export function getDebtsByDriver(driverId: string) {
+  return driverDebts.filter(d => d.driver_id === driverId);
+}
+export function getPaymentsByDebt(debtId: string) {
+  return debtPayments.filter(p => p.debt_id === debtId);
+}
+export function getPaidForDebt(debtId: string) {
+  return debtPayments.filter(p => p.debt_id === debtId).reduce((s, p) => s + p.amount, 0);
+}
+export function getTotalDebtByDriver(driverId: string) {
+  return driverDebts
+    .filter(d => d.driver_id === driverId && d.status === "open")
+    .reduce((s, d) => s + (d.total_amount - getPaidForDebt(d.id)), 0);
+}
