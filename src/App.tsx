@@ -12,6 +12,7 @@ import DriverDetailPage from "./pages/DriverDetailPage";
 import VehiclesPage from "./pages/VehiclesPage";
 import VehicleDetailPage from "./pages/VehicleDetailPage";
 import RentalsPage from "./pages/RentalsPage";
+import DebtsPage from "./pages/DebtsPage";
 import PosFeesPage from "./pages/PosFeesPage";
 import ReportsPage from "./pages/ReportsPage";
 import PaymentsPage from "./pages/PaymentsPage";
@@ -40,6 +41,7 @@ const App = () => (
                   <Route path="/vehicles/:id" element={<VehicleDetailPage />} />
                   <Route path="/rentals" element={<RentalsPage />} />
                   <Route path="/payments" element={<PaymentsPage />} />
+                  <Route path="/debts" element={<DebtsPage />} />
                   <Route path="/pos-fees" element={<PosFeesPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/expenses" element={<ExpensesPage />} />
