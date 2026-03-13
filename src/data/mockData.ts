@@ -11,6 +11,29 @@ export interface Driver {
   created_at: string;
   daily_rate: number;
   vehicle_id: string;
+  pos_monthly_fee: number; // Mjesecna naknada za POS terminal
+}
+
+export interface PosTerminalCharge {
+  id: string;
+  driver_id: string;
+  vehicle_id: string;
+  amount: number;          // Iznos naknade
+  month: string;           // Format: "2025-03"
+  status: "pending" | "paid" | "partial";
+  paid_amount: number;
+  created_at: string;
+  notes: string;
+}
+
+export interface PosTerminalPayment {
+  id: string;
+  charge_id: string;
+  driver_id: string;
+  amount: number;
+  payment_date: string;
+  received_by: string;     // Ko je primio uplatu
+  notes: string;
 }
 
 export interface PosPayoutRequest {
@@ -135,12 +158,12 @@ export interface Expense {
 }
 
 export const drivers: Driver[] = [
-  { id: "d1", full_name: "Ahmed Hassan", phone: "+1 555-0101", address: "123 Main St", license_number: "DL-2024-001", bank_account: "US12345678901234", bank_card_number: "4111-XXXX-XXXX-1234", notes: "Reliable driver", status: "active", created_at: "2024-01-15", daily_rate: 3500, vehicle_id: "v1" },
-  { id: "d2", full_name: "Maria Rodriguez", phone: "+1 555-0102", address: "456 Oak Ave", license_number: "DL-2024-002", bank_account: "US98765432101234", bank_card_number: "5200-XXXX-XXXX-5678", notes: "", status: "active", created_at: "2024-02-10", daily_rate: 3000, vehicle_id: "v2" },
-  { id: "d3", full_name: "James Wilson", phone: "+1 555-0103", address: "789 Pine Rd", license_number: "DL-2024-003", bank_account: "US11223344556677", bank_card_number: "3700-XXXX-XXXX-9012", notes: "Night shift preferred", status: "active", created_at: "2024-03-05", daily_rate: 4000, vehicle_id: "v3" },
-  { id: "d4", full_name: "Fatima Al-Rashid", phone: "+1 555-0104", address: "321 Elm Blvd", license_number: "DL-2024-004", bank_account: "US99887766554433", bank_card_number: "6011-XXXX-XXXX-3456", notes: "", status: "active", created_at: "2024-03-20", daily_rate: 3800, vehicle_id: "v4" },
-  { id: "d5", full_name: "Chen Wei", phone: "+1 555-0105", address: "654 Maple Dr", license_number: "DL-2024-005", bank_account: "US55667788990011", bank_card_number: "4222-XXXX-XXXX-7890", notes: "On medical leave", status: "inactive", created_at: "2024-04-01", daily_rate: 3200, vehicle_id: "" },
-  { id: "d6", full_name: "Kofi Mensah", phone: "+1 555-0106", address: "987 Cedar Ln", license_number: "DL-2024-006", bank_account: "US33445566778899", bank_card_number: "5100-XXXX-XXXX-2345", notes: "", status: "active", created_at: "2024-05-12", daily_rate: 2800, vehicle_id: "v7" },
+  { id: "d1", full_name: "Ahmed Hassan", phone: "+1 555-0101", address: "123 Main St", license_number: "DL-2024-001", bank_account: "US12345678901234", bank_card_number: "4111-XXXX-XXXX-1234", notes: "Reliable driver", status: "active", created_at: "2024-01-15", daily_rate: 3500, vehicle_id: "v1", pos_monthly_fee: 800 },
+  { id: "d2", full_name: "Maria Rodriguez", phone: "+1 555-0102", address: "456 Oak Ave", license_number: "DL-2024-002", bank_account: "US98765432101234", bank_card_number: "5200-XXXX-XXXX-5678", notes: "", status: "active", created_at: "2024-02-10", daily_rate: 3000, vehicle_id: "v2", pos_monthly_fee: 600 },
+  { id: "d3", full_name: "James Wilson", phone: "+1 555-0103", address: "789 Pine Rd", license_number: "DL-2024-003", bank_account: "US11223344556677", bank_card_number: "3700-XXXX-XXXX-9012", notes: "Night shift preferred", status: "active", created_at: "2024-03-05", daily_rate: 4000, vehicle_id: "v3", pos_monthly_fee: 1000 },
+  { id: "d4", full_name: "Fatima Al-Rashid", phone: "+1 555-0104", address: "321 Elm Blvd", license_number: "DL-2024-004", bank_account: "US99887766554433", bank_card_number: "6011-XXXX-XXXX-3456", notes: "", status: "active", created_at: "2024-03-20", daily_rate: 3800, vehicle_id: "v4", pos_monthly_fee: 750 },
+  { id: "d5", full_name: "Chen Wei", phone: "+1 555-0105", address: "654 Maple Dr", license_number: "DL-2024-005", bank_account: "US55667788990011", bank_card_number: "4222-XXXX-XXXX-7890", notes: "On medical leave", status: "inactive", created_at: "2024-04-01", daily_rate: 3200, vehicle_id: "", pos_monthly_fee: 0 },
+  { id: "d6", full_name: "Kofi Mensah", phone: "+1 555-0106", address: "987 Cedar Ln", license_number: "DL-2024-006", bank_account: "US33445566778899", bank_card_number: "5100-XXXX-XXXX-2345", notes: "", status: "active", created_at: "2024-05-12", daily_rate: 2800, vehicle_id: "v7", pos_monthly_fee: 500 },
 ];
 
 export const vehicles: Vehicle[] = [
@@ -294,4 +317,46 @@ export function calculateRent(
   const workDays = totalDays - offDaysCount;
   const total = workDays * dailyRate + offDaysCount * (dailyRate * 0.5);
   return { workDays, offDays: offDaysCount, total };
+}
+
+export const posTerminalCharges: PosTerminalCharge[] = [
+  { id: "ptc1", driver_id: "d1", vehicle_id: "v1", amount: 800, month: "2025-01", status: "paid", paid_amount: 800, created_at: "2025-01-01", notes: "" },
+  { id: "ptc2", driver_id: "d2", vehicle_id: "v2", amount: 600, month: "2025-01", status: "paid", paid_amount: 600, created_at: "2025-01-01", notes: "" },
+  { id: "ptc3", driver_id: "d3", vehicle_id: "v3", amount: 1000, month: "2025-01", status: "paid", paid_amount: 1000, created_at: "2025-01-01", notes: "" },
+  { id: "ptc4", driver_id: "d4", vehicle_id: "v4", amount: 750, month: "2025-01", status: "paid", paid_amount: 750, created_at: "2025-01-01", notes: "" },
+  { id: "ptc5", driver_id: "d6", vehicle_id: "v7", amount: 500, month: "2025-01", status: "paid", paid_amount: 500, created_at: "2025-01-01", notes: "" },
+  { id: "ptc6", driver_id: "d1", vehicle_id: "v1", amount: 800, month: "2025-02", status: "paid", paid_amount: 800, created_at: "2025-02-01", notes: "" },
+  { id: "ptc7", driver_id: "d2", vehicle_id: "v2", amount: 600, month: "2025-02", status: "partial", paid_amount: 300, created_at: "2025-02-01", notes: "Djelimicno placeno" },
+  { id: "ptc8", driver_id: "d3", vehicle_id: "v3", amount: 1000, month: "2025-02", status: "paid", paid_amount: 1000, created_at: "2025-02-01", notes: "" },
+  { id: "ptc9", driver_id: "d4", vehicle_id: "v4", amount: 750, month: "2025-02", status: "pending", paid_amount: 0, created_at: "2025-02-01", notes: "" },
+  { id: "ptc10", driver_id: "d6", vehicle_id: "v7", amount: 500, month: "2025-02", status: "pending", paid_amount: 0, created_at: "2025-02-01", notes: "" },
+  { id: "ptc11", driver_id: "d1", vehicle_id: "v1", amount: 800, month: "2025-03", status: "partial", paid_amount: 400, created_at: "2025-03-01", notes: "" },
+  { id: "ptc12", driver_id: "d2", vehicle_id: "v2", amount: 600, month: "2025-03", status: "pending", paid_amount: 0, created_at: "2025-03-01", notes: "" },
+  { id: "ptc13", driver_id: "d3", vehicle_id: "v3", amount: 1000, month: "2025-03", status: "pending", paid_amount: 0, created_at: "2025-03-01", notes: "" },
+  { id: "ptc14", driver_id: "d4", vehicle_id: "v4", amount: 750, month: "2025-03", status: "pending", paid_amount: 0, created_at: "2025-03-01", notes: "" },
+  { id: "ptc15", driver_id: "d6", vehicle_id: "v7", amount: 500, month: "2025-03", status: "pending", paid_amount: 0, created_at: "2025-03-01", notes: "" },
+];
+
+export const posTerminalPayments: PosTerminalPayment[] = [
+  { id: "ptp1", charge_id: "ptc1", driver_id: "d1", amount: 800, payment_date: "2025-01-05", received_by: "Admin", notes: "" },
+  { id: "ptp2", charge_id: "ptc2", driver_id: "d2", amount: 600, payment_date: "2025-01-06", received_by: "Admin", notes: "" },
+  { id: "ptp3", charge_id: "ptc3", driver_id: "d3", amount: 1000, payment_date: "2025-01-07", received_by: "Admin", notes: "" },
+  { id: "ptp4", charge_id: "ptc4", driver_id: "d4", amount: 750, payment_date: "2025-01-08", received_by: "Admin", notes: "" },
+  { id: "ptp5", charge_id: "ptc5", driver_id: "d6", amount: 500, payment_date: "2025-01-09", received_by: "Admin", notes: "" },
+  { id: "ptp6", charge_id: "ptc6", driver_id: "d1", amount: 800, payment_date: "2025-02-04", received_by: "Nemanja", notes: "" },
+  { id: "ptp7", charge_id: "ptc7", driver_id: "d2", amount: 300, payment_date: "2025-02-05", received_by: "Milica", notes: "Djelimicna uplata" },
+  { id: "ptp8", charge_id: "ptc8", driver_id: "d3", amount: 1000, payment_date: "2025-02-06", received_by: "Nemanja", notes: "" },
+  { id: "ptp9", charge_id: "ptc11", driver_id: "d1", amount: 400, payment_date: "2025-03-03", received_by: "Milica", notes: "Prva rata marta" },
+];
+
+export function getPosTerminalChargesByDriver(driverId: string) {
+  return posTerminalCharges.filter(c => c.driver_id === driverId);
+}
+export function getPosTerminalPaymentsByCharge(chargeId: string) {
+  return posTerminalPayments.filter(p => p.charge_id === chargeId);
+}
+export function getPosTerminalDebtByDriver(driverId: string) {
+  return posTerminalCharges
+    .filter(c => c.driver_id === driverId)
+    .reduce((sum, c) => sum + (c.amount - c.paid_amount), 0);
 }
