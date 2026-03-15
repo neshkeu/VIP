@@ -8,17 +8,9 @@ import { AuthGuard } from "@/components/AuthGuard";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import DriversPage from "./pages/DriversPage";
-import DriverDetailPage from "./pages/DriverDetailPage";
 import VehiclesPage from "./pages/VehiclesPage";
-import VehicleDetailPage from "./pages/VehicleDetailPage";
-import RentalsPage from "./pages/RentalsPage";
-import DebtsPage from "./pages/DebtsPage";
-import PosFeesPage from "./pages/PosFeesPage";
-import ReportsPage from "./pages/ReportsPage";
-import PaymentsPage from "./pages/PaymentsPage";
-import ExpensesPage from "./pages/ExpensesPage";
+import CalendarPage from "./pages/CalendarPage";
 import NotFound from "./pages/NotFound";
-import PosReportsPage from "./pages/PosReportsPage";
 
 const queryClient = new QueryClient();
 
@@ -34,19 +26,11 @@ const App = () => (
             <AuthGuard>
               <AppLayout>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/drivers" element={<DriversPage />} />
-                  <Route path="/drivers/:id" element={<DriverDetailPage />} />
-                  <Route path="/vehicles" element={<VehiclesPage />} />
-                  <Route path="/vehicles/:id" element={<VehicleDetailPage />} />
-                  <Route path="/rentals" element={<RentalsPage />} />
-                  <Route path="/payments" element={<PaymentsPage />} />
-                  <Route path="/debts" element={<DebtsPage />} />
-                  <Route path="/pos-fees" element={<PosFeesPage />} />
-                  <Route path="/reports" element={<ReportsPage />} />
-                  <Route path="/expenses" element={<ExpensesPage />} />
-                  <Route path="/pos-reports" element={<PosReportsPage />} />
-                  <Route path="*" element={<NotFound />} />
+                  <Route path="/"          element={<Dashboard />} />
+                  <Route path="/drivers"   element={<DriversPage />} />
+                  <Route path="/vehicles"  element={<VehiclesPage />} />
+                  <Route path="/calendar"  element={<CalendarPage />} />
+                  <Route path="*"          element={<NotFound />} />
                 </Routes>
               </AppLayout>
             </AuthGuard>
