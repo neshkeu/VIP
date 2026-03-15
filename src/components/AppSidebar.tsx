@@ -1,49 +1,26 @@
-import {
-  LayoutDashboard,
-  Users,
-  Car,
-  FileText,
-  CreditCard,
-  Wrench,
-  CarTaxiFront,
-  LogOut,
-  Smartphone,
-  AlertTriangle,
-} from "lucide-react";
+import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarHeader,
-  SidebarFooter,
-  useSidebar,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
+  SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
+  SidebarHeader, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./ThemeToggle";
 
 const navItems = [
-  { title: "Kontrolna tabla", url: "/", icon: LayoutDashboard },
-  { title: "Vozači", url: "/drivers", icon: Users },
-  { title: "Vozila", url: "/vehicles", icon: Car },
-  { title: "Zaduženja", url: "/rentals", icon: FileText },
-  { title: "Dugovanja", url: "/debts", icon: AlertTriangle },
-  { title: "POS Izvodi", url: "/pos-reports", icon: CarTaxiFront },
-  { title: "POS Naknade", url: "/pos-fees", icon: Smartphone },
-  { title: "Troškovi", url: "/expenses", icon: Wrench },
-  { title: "Izvještaji", url: "/reports", icon: CreditCard },
+  { title: "Kontrolna tabla", url: "/",         icon: LayoutDashboard },
+  { title: "Kalendar",        url: "/calendar",  icon: CalendarDays    },
+  { title: "Vozači",          url: "/drivers",   icon: Users           },
+  { title: "Vozila",          url: "/vehicles",  icon: Car             },
+  { title: "Kasa",            url: "/cash",      icon: Banknote        },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
-  const navigate = useNavigate();
+  const location  = useLocation();
+  const navigate  = useNavigate();
   const currentPath = location.pathname;
 
   const isActive = (path: string) => {
