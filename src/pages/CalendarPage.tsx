@@ -221,13 +221,7 @@ const CalendarPage = () => {
       </div>
 
       {/* LEGENDA */}
-      <div className="flex flex-wrap gap-4 text-xs">
-        {(Object.entries(EVENT_TYPE_CONFIG) as [CalendarEventType, typeof EVENT_TYPE_CONFIG[CalendarEventType]][]).map(([, cfg]) => (
-          <div key={cfg.label} className="flex items-center gap-1.5">
-            <div className={`h-2.5 w-2.5 rounded-full ${cfg.dot}`}/>
-            <span className="text-muted-foreground">{cfg.label}</span>
-          </div>
-        ))}
+      <div className="flex gap-4 text-xs">
         <div className="flex items-center gap-1.5"><Check className="h-3 w-3 text-green-500"/><span className="text-muted-foreground">Izmireno</span></div>
         <div className="flex items-center gap-1.5"><X className="h-3 w-3 text-red-400"/><span className="text-muted-foreground">Neizmireno</span></div>
       </div>
