@@ -1,144 +1,139 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/StatCard";
-import { Users, Car, CalendarDays, TrendingUp, CheckCircle2, AlertCircle } from "lucide-react";
-import {
-  drivers, vehicles, calendarEvents, cashEntries,
-  getDriverMonthSummary, getCashSummary
-} from "@/data/mockData";
+import { Users, Car, Wallet, AlertCircle, TrendingUp } from "lucide-react";
+import { drivers, vehicles, cashEntries, driverDebts, getCashForPeriod, getCashBalance } from "@/data/mockData";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { motion } from "framer-motion";
 
 const today = new Date();
 const YEAR  = today.getFullYear();
 const MONTH = today.getMonth() + 1;
+const PREFIX = `${YEAR}-${String(MONTH).padStart(2,"0")}`;
+
+function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const Dashboard = () => {
   const activeDrivers  = drivers.filter(d => d.status === "active");
   const activeVehicles = vehicles.filter(v => v.status === "active");
-  const cashSummary    = getCashSummary(YEAR, MONTH);
 
-  // Ukupno neizmirenih obaveza ovog mjeseca
-  const pendingEvents = calendarEvents.filter(e => {
-    const m = `${YEAR}-${String(MONTH).padStart(2,"0")}`;
-    return e.date.startsWith(m) && !e.is_done;
+  const { total_in, total_out, balance, entries } = getCashForPeriod(PREFIX + "-01", PREFIX + "-31");
+  const currentBalance = getCashBalance(`${YEAR}-${String(MONTH).padStart(2,"0")}-17`);
+  const openDebts = driverDebts.filter(d => d.status !== "closed");
+  const totalDebt = openDebts.reduce((s, d) => s + (d.amount - d.paid_amount), 0);
+
+  // Chart — ulaz/izlaz po danima u ovom mjesecu
+  const byDate: Record<string, { day: string; Ulaz: number; Izlaz: number }> = {};
+  entries.forEach(e => {
+    if (!byDate[e.date]) byDate[e.date] = { day: e.date.slice(8), Ulaz: 0, Izlaz: 0 };
+    if (e.direction === "in")  byDate[e.date].Ulaz  += e.amount;
+    if (e.direction === "out") byDate[e.date].Izlaz += e.amount;
   });
+  const chartData = Object.values(byDate).sort((a,b) => a.day.localeCompare(b.day));
 
-  // Sumarni podaci po vozacu za chart
-  const driverSummaries = activeDrivers.map(d => {
-    const s = getDriverMonthSummary(d.id, YEAR, MONTH);
-    return {
-      name: d.full_name.split(" ")[0],
-      Naplaceno: s.paid,
-      Duguje: s.pending,
-    };
-  });
-
-  // Kasa po danima (zadnjih 7 dana)
-  const last7: { day: string; Prihod: number; Rashod: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d   = new Date(today);
-    d.setDate(d.getDate() - i);
-    const str = d.toISOString().split("T")[0];
-    const ins = cashEntries.filter(e => e.date === str && e.direction === "in").reduce((s, e) => s + e.amount, 0);
-    const out = cashEntries.filter(e => e.date === str && e.direction === "out").reduce((s, e) => s + e.amount, 0);
-    last7.push({ day: `${d.getDate()}.${d.getMonth()+1}.`, Prihod: ins, Rashod: out });
-  }
-
-  const fmt = (n: number) => n.toLocaleString("sr-RS") + " RSD";
+  // Zadnji unosi
+  const recentEntries = [...cashEntries].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 5);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-display font-bold">Kontrolna tabla</h1>
-        <p className="text-muted-foreground">Pregled za {today.toLocaleDateString("sr-RS", { month: "long", year: "numeric" })}</p>
+        <p className="text-muted-foreground text-sm">
+          {today.toLocaleDateString("sr-RS", { weekday:"long", day:"numeric", month:"long", year:"numeric" })}
+        </p>
       </div>
 
       {/* STAT KARTICE */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Aktivnih vozača"     value={activeDrivers.length}   icon={Users}        trend={`${drivers.filter(d=>d.status==="inactive").length} neaktivnih`} />
-        <StatCard title="Aktivnih vozila"     value={activeVehicles.length}  icon={Car}          />
-        <StatCard title="Prihod ovog mjeseca" value={fmt(cashSummary.income)} icon={TrendingUp}   trend={`Rashod: ${fmt(cashSummary.expense)}`} />
-        <StatCard title="Neizmirenih obaveza" value={pendingEvents.length}    icon={AlertCircle}  />
+        <StatCard title="Stanje kase"      value={fmt(currentBalance)} icon={Wallet}       />
+        <StatCard title="Aktivnih vozača"  value={activeDrivers.length} icon={Users}       trend={`${drivers.filter(d=>d.driver_type==="renta").length} renta · ${drivers.filter(d=>d.driver_type==="vlastito_vozilo").length} vlastito`} />
+        <StatCard title="Aktivnih vozila"  value={activeVehicles.length} icon={Car}        />
+        <StatCard title="Otvorena dugovanja" value={fmt(totalDebt)}     icon={AlertCircle} trend={`${openDebts.length} vozača`} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* CHART — stanje po vozacu */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+        {/* CHART */}
+        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.1 }}>
           <Card>
-            <CardHeader>
-              <CardTitle className="font-display text-base">Stanje po vozaču ovaj mjesec</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="font-display text-base">Kasa ovaj mjesec</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={driverSummaries} barSize={24}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${v/1000}k` : v} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }}
-                    formatter={(v: number) => [fmt(v)]}
-                  />
-                  <Bar dataKey="Naplaceno" fill="hsl(var(--primary))"   radius={[4,4,0,0]} />
-                  <Bar dataKey="Duguje"    fill="hsl(var(--destructive))" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {chartData.length === 0 ? (
+                <div className="h-52 flex items-center justify-center text-muted-foreground text-sm">Nema podataka</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} barSize={20}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="day" tick={{ fontSize:11 }} />
+                    <YAxis tick={{ fontSize:11 }} tickFormatter={v => v >= 1000 ? `${v/1000}k` : String(v)} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor:"hsl(var(--card))", border:"1px solid hsl(var(--border))", borderRadius:"var(--radius)" }}
+                      formatter={(v: number) => [fmt(v)]}
+                    />
+                    <Bar dataKey="Ulaz"  fill="hsl(var(--primary))"    radius={[4,4,0,0]} />
+                    <Bar dataKey="Izlaz" fill="hsl(var(--destructive))" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+              <div className="flex justify-between text-xs text-muted-foreground mt-2 px-1">
+                <span className="text-green-600 font-medium">Ulaz: {fmt(total_in)}</span>
+                <span className="text-red-500 font-medium">Izlaz: {fmt(total_out)}</span>
+                <span className={`font-bold ${balance >= 0 ? "text-green-600" : "text-red-500"}`}>Bilans: {fmt(balance)}</span>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* CHART — kasa zadnjih 7 dana */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+        {/* ZADNJI UNOSI */}
+        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }}>
           <Card>
-            <CardHeader>
-              <CardTitle className="font-display text-base">Kasa — zadnjih 7 dana</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="font-display text-base flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />Zadnji unosi u kasu
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={last7} barSize={20}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${v/1000}k` : v} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }}
-                    formatter={(v: number) => [fmt(v)]}
-                  />
-                  <Bar dataKey="Prihod" fill="hsl(var(--primary))"   radius={[4,4,0,0]} />
-                  <Bar dataKey="Rashod" fill="hsl(var(--destructive))" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <CardContent className="space-y-2">
+              {recentEntries.map(e => (
+                <div key={e.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
+                  <div>
+                    <p className="text-sm font-medium">{e.description}</p>
+                    <p className="text-xs text-muted-foreground">{e.date} · {e.received_by}</p>
+                  </div>
+                  <span className={`font-bold text-sm ${e.direction === "in" ? "text-green-600" : "text-red-500"}`}>
+                    {e.direction === "in" ? "+" : "−"}{fmt(e.amount)}
+                  </span>
+                </div>
+              ))}
             </CardContent>
           </Card>
         </motion.div>
       </div>
 
-      {/* BRZI PREGLED — neizmirene obaveze */}
-      {pendingEvents.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+      {/* OTVORENA DUGOVANJA */}
+      {openDebts.length > 0 && (
+        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}>
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-2">
               <CardTitle className="font-display text-base flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-destructive" />
-                Neizmirene obaveze ovog mjeseca
+                <AlertCircle className="h-4 w-4 text-destructive" />Otvorena dugovanja
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {pendingEvents.slice(0, 6).map(e => {
-                  const driver = drivers.find(d => d.id === e.driver_id);
+                {openDebts.map(d => {
+                  const driver = drivers.find(dr => dr.id === d.driver_id);
+                  const remaining = d.amount - d.paid_amount;
                   return (
-                    <div key={e.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                    <div key={d.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
                       <div>
-                        <p className="font-medium">{driver?.full_name.split(" ")[0]}</p>
-                        <p className="text-xs text-muted-foreground">{e.date} · {e.description}</p>
+                        <p className="font-medium text-sm">{driver?.full_name}</p>
+                        <p className="text-xs text-muted-foreground">{d.description}</p>
                       </div>
-                      <span className="font-semibold text-destructive">{fmt(e.amount)}</span>
+                      <span className="font-bold text-destructive text-sm">{fmt(remaining)}</span>
                     </div>
                   );
                 })}
               </div>
-              {pendingEvents.length > 6 && (
-                <p className="text-xs text-muted-foreground mt-3 text-center">+ još {pendingEvents.length - 6} neizmirenih obaveza</p>
-              )}
             </CardContent>
           </Card>
         </motion.div>
