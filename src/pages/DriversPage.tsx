@@ -174,7 +174,8 @@ const DriversPage = () => {
                         </div>
                         <div className="grid gap-1.5">
                           <Label className="text-xs">Doprinosi</Label>
-                          <Input type="number" placeholder="1500" value={newDoprinosi} onChange={e => setNewDoprinosi(e.target.value)} />
+                          <Input type="number" placeholder="3000" value={newDoprinosi} onChange={e => setNewDoprinosi(e.target.value)} />
+                          <p className="text-xs text-muted-foreground">Mjesečno</p>
                           <p className="text-xs text-muted-foreground">Sedmično</p>
                         </div>
                       </div>
@@ -258,7 +259,7 @@ const DriversPage = () => {
                         <div className="text-xs space-y-0.5">
                           <p>{fmt(d.komunalni_monthly)}<span className="text-muted-foreground">/mj.</span></p>
                           <p>{fmt(d.weekly_membership_own)}<span className="text-muted-foreground">/sed.</span></p>
-                          <p>{fmt(d.weekly_doprinosi)}<span className="text-muted-foreground"> doprinosi/sed.</span></p>
+                          <p>{fmt(d.doprinosi_monthly)}<span className="text-muted-foreground"> doprinosi/mj.</span></p>
                         </div>
                       )}
                     </TableCell>
