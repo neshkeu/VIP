@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   cashEntries, CashEntry, CashFlowType,
-  drivers, getDriverById, getCashSummary, CASH_TYPE_CONFIG,
+  drivers, getDriverById, CASH_TYPE_CONFIG,
 } from "@/data/mockData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,7 +96,7 @@ function NewEntryDialog() {
             <Select value={driverId} onValueChange={setDriverId}>
               <SelectTrigger><SelectValue placeholder="Nije vezano za vozača" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— Nije vezano za vozača —</SelectItem>
+                <SelectItem value="none">— Nije vezano za vozača —</SelectItem>
                 {drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -222,16 +222,21 @@ function DailyView({ entries }: { entries: CashEntry[] }) {
 // ─── GLAVNA STRANICA ─────────────────────────────────────────
 const CashPage = () => {
   const today = new Date();
-  const [year, setYear]   = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear]   = useState(2026);
+  const [month, setMonth] = useState(3); // mart 2026 gdje su mock podaci
   const [filterDriver, setFilterDriver] = useState("");
   const [filterType, setFilterType]     = useState<"all"|"in"|"out">("all");
 
-  const summary = getCashSummary(year, month);
+  const prefix = `${year}-${String(month).padStart(2,"0")}`;
+  const monthEntries = cashEntries.filter(e => e.date.startsWith(prefix));
+
+  const income  = monthEntries.filter(e => e.direction === "in").reduce((s,e) => s+e.amount, 0);
+  const expense = monthEntries.filter(e => e.direction === "out").reduce((s,e) => s+e.amount, 0);
+  const balance = income - expense;
 
   // Filter
-  const filtered = summary.entries.filter(e => {
-    const matchDriver = !filterDriver || e.driver_id === filterDriver;
+  const filtered = monthEntries.filter(e => {
+    const matchDriver = filterDriver === "all" || filterDriver === "" || e.driver_id === filterDriver;
     const matchType   = filterType === "all" || e.direction === filterType;
     return matchDriver && matchType;
   });
@@ -259,15 +264,15 @@ const CashPage = () => {
 
       {/* STAT KARTICE */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard title="Ukupno prihod" value={fmt(summary.income)}  icon={ArrowDownLeft} trend={`${summary.entries.filter(e=>e.direction==="in").length} unosa`} />
-        <StatCard title="Ukupno rashod" value={fmt(summary.expense)} icon={ArrowUpRight}  trend={`${summary.entries.filter(e=>e.direction==="out").length} unosa`} />
-        <div className={`rounded-xl border p-4 ${summary.balance >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+        <StatCard title="Ukupno prihod" value={fmt(income)}  icon={ArrowDownLeft} trend={`${monthEntries.filter(e=>e.direction==="in").length} unosa`} />
+        <StatCard title="Ukupno rashod" value={fmt(expense)} icon={ArrowUpRight}  trend={`${monthEntries.filter(e=>e.direction==="out").length} unosa`} />
+        <div className={`rounded-xl border p-4 ${balance >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
           <div className="flex items-center gap-2 mb-1">
-            <Wallet className={`h-4 w-4 ${summary.balance >= 0 ? "text-green-600" : "text-red-500"}`} />
+            <Wallet className={`h-4 w-4 ${balance >= 0 ? "text-green-600" : "text-red-500"}`} />
             <p className="text-sm text-muted-foreground">Bilans</p>
           </div>
-          <p className={`text-2xl font-bold font-display ${summary.balance >= 0 ? "text-green-600" : "text-red-500"}`}>
-            {summary.balance >= 0 ? "+" : ""}{fmt(summary.balance)}
+          <p className={`text-2xl font-bold font-display ${balance >= 0 ? "text-green-600" : "text-red-500"}`}>
+            {balance >= 0 ? "+" : ""}{fmt(balance)}
           </p>
         </div>
       </div>
@@ -277,7 +282,7 @@ const CashPage = () => {
         <Select value={filterDriver} onValueChange={setFilterDriver}>
           <SelectTrigger className="w-48 h-8 text-sm"><SelectValue placeholder="Svi vozači" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Svi vozači</SelectItem>
+            <SelectItem value="all">Svi vozači</SelectItem>
             {drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
           </SelectContent>
         </Select>
