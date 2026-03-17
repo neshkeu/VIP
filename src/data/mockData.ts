@@ -16,14 +16,14 @@ export interface Driver {
   notes: string;
 
   // Renta vozač
-  daily_rate: number;          // Dnevna renta (svaki dan, obračun pon/sri/pet)
+  daily_rate: number;          // Dnevna renta
   weekly_membership: number;   // Sedmična članarina
   pos_monthly_fee: number;     // Mjesečna POS naknada
 
   // Vlastito vozilo
   komunalni_monthly: number;   // Komunalni broj — mjesečno
+  doprinosi_monthly: number;   // Doprinosi — mjesečno
   weekly_membership_own: number; // Sedmična članarina
-  weekly_doprinosi: number;    // Sedmični doprinosi
 }
 
 export interface Vehicle {
@@ -69,11 +69,11 @@ export interface CashEntry {
 }
 
 export const drivers: Driver[] = [
-  { id: "d1", full_name: "Marko Petrović",    phone: "064-111-2233", license_number: "NS-2024-001", status: "active", created_at: "2024-01-15", driver_type: "renta",           vehicle_id: "v1", daily_rate: 3500, weekly_membership: 1000, pos_monthly_fee: 800,  komunalni_monthly: 0,    weekly_membership_own: 0,    weekly_doprinosi: 0,    notes: "" },
-  { id: "d2", full_name: "Nemanja Đorđević",  phone: "065-222-3344", license_number: "NS-2024-002", status: "active", created_at: "2024-02-10", driver_type: "renta",           vehicle_id: "v2", daily_rate: 3000, weekly_membership: 1000, pos_monthly_fee: 600,  komunalni_monthly: 0,    weekly_membership_own: 0,    weekly_doprinosi: 0,    notes: "" },
-  { id: "d3", full_name: "Milica Stojanović", phone: "063-333-4455", license_number: "NS-2024-003", status: "active", created_at: "2024-03-05", driver_type: "vlastito_vozilo", vehicle_id: "v3", daily_rate: 0,    weekly_membership: 0,    pos_monthly_fee: 1000, komunalni_monthly: 5000, weekly_membership_own: 800,  weekly_doprinosi: 1500, notes: "" },
-  { id: "d4", full_name: "Stefan Nikolić",    phone: "066-444-5566", license_number: "NS-2024-004", status: "active", created_at: "2024-03-20", driver_type: "renta",           vehicle_id: "v4", daily_rate: 3800, weekly_membership: 1000, pos_monthly_fee: 750,  komunalni_monthly: 0,    weekly_membership_own: 0,    weekly_doprinosi: 0,    notes: "" },
-  { id: "d5", full_name: "Ana Jovanović",     phone: "064-555-6677", license_number: "NS-2024-005", status: "active", created_at: "2024-04-01", driver_type: "vlastito_vozilo", vehicle_id: "v5", daily_rate: 0,    weekly_membership: 0,    pos_monthly_fee: 500,  komunalni_monthly: 4500, weekly_membership_own: 800,  weekly_doprinosi: 1500, notes: "" },
+  { id: "d1", full_name: "Marko Petrović",    phone: "064-111-2233", license_number: "NS-2024-001", status: "active", created_at: "2024-01-15", driver_type: "renta",           vehicle_id: "v1", daily_rate: 3500, weekly_membership: 1000, pos_monthly_fee: 800,  komunalni_monthly: 0,    doprinosi_monthly: 0,    weekly_membership_own: 0,    notes: "" },
+  { id: "d2", full_name: "Nemanja Đorđević",  phone: "065-222-3344", license_number: "NS-2024-002", status: "active", created_at: "2024-02-10", driver_type: "renta",           vehicle_id: "v2", daily_rate: 3000, weekly_membership: 1000, pos_monthly_fee: 600,  komunalni_monthly: 0,    doprinosi_monthly: 0,    weekly_membership_own: 0,    notes: "" },
+  { id: "d3", full_name: "Milica Stojanović", phone: "063-333-4455", license_number: "NS-2024-003", status: "active", created_at: "2024-03-05", driver_type: "vlastito_vozilo", vehicle_id: "v3", daily_rate: 0,    weekly_membership: 0,    pos_monthly_fee: 1000, komunalni_monthly: 5000, doprinosi_monthly: 3000, weekly_membership_own: 800,  notes: "" },
+  { id: "d4", full_name: "Stefan Nikolić",    phone: "066-444-5566", license_number: "NS-2024-004", status: "active", created_at: "2024-03-20", driver_type: "renta",           vehicle_id: "v4", daily_rate: 3800, weekly_membership: 1000, pos_monthly_fee: 750,  komunalni_monthly: 0,    doprinosi_monthly: 0,    weekly_membership_own: 0,    notes: "" },
+  { id: "d5", full_name: "Ana Jovanović",     phone: "064-555-6677", license_number: "NS-2024-005", status: "active", created_at: "2024-04-01", driver_type: "vlastito_vozilo", vehicle_id: "v5", daily_rate: 0,    weekly_membership: 0,    pos_monthly_fee: 500,  komunalni_monthly: 4500, doprinosi_monthly: 3000, weekly_membership_own: 800,  notes: "" },
 ];
 
 export const vehicles: Vehicle[] = [
