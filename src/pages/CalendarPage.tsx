@@ -143,20 +143,6 @@ function DetailModal({ open, onClose, driverId, date, status, sundayStatus, sund
             </div>
           )}
 
-          {/* RADNI DAN — status izmireno/neizmireno */}
-          {!isSun && (
-            <div className={`rounded-lg border p-3 text-center ${
-              status === "izmireno"   ? "bg-green-50 border-green-300" :
-              status === "neizmireno" ? "bg-red-50 border-red-300" :
-                                        "bg-gray-50 border-gray-200"
-            }`}>
-              <p className="text-sm font-semibold">
-                {status === "izmireno"   ? "✓ Izmireno" :
-                 status === "neizmireno" ? "✗ Neizmireno" : "— Nije evidentirano"}
-              </p>
-            </div>
-          )}
-
           {/* Evidentirani iznosi */}
           {entries.length > 0 && (
             <div className="space-y-1.5">
@@ -181,63 +167,62 @@ function DetailModal({ open, onClose, driverId, date, status, sundayStatus, sund
             <Input placeholder="Nemanja, Milica..." value={by} onChange={e => setBy(e.target.value)} className="h-9" />
           </div>
 
-          {/* Označi izmireno/neizmireno — samo radni dani */}
+          {/* Dodaj iznos + obavezno izmireno/neizmireno zajedno */}
           {!isSun && (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => {
-                if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
-                onSave(driverId, date, "izmireno", by);
-                toast.success(`Izmireno — ${by}`); onClose();
-              }} className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all ${
-                status === "izmireno" ? "bg-green-100 border-green-500 text-green-700" : "hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200"
-              }`}>
-                <Check className="h-4 w-4" />Izmireno
-              </button>
-              <button onClick={() => {
-                if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
-                onSave(driverId, date, "neizmireno", by);
-                toast.success(`Neizmireno — ${by}`); onClose();
-              }} className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all ${
-                status === "neizmireno" ? "bg-red-100 border-red-500 text-red-700" : "hover:bg-red-50 hover:border-red-400 hover:text-red-700 border-gray-200"
-              }`}>
-                <X className="h-4 w-4" />Neizmireno
-              </button>
-            </div>
-          )}
-
-          {/* Dodaj iznos */}
-          {!addOpen ? (
-            <Button variant="outline" size="sm" className="w-full h-8 text-xs"
-              onClick={() => {
-                setAddOpen(true);
-                setEntryType("renta");
-                if (driver) setEntryAmount(String(getAutoAmount(driver, "renta")));
-              }}>
-              + Evidentiraj iznos
-            </Button>
-          ) : (
-            <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-              <p className="text-xs font-semibold text-muted-foreground uppercase">Novi unos</p>
-              <Select value={entryType} onValueChange={handleTypeChange}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ULAZ_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <div className="flex gap-2">
-                <Input type="number" placeholder="Iznos RSD" className="h-8 text-sm flex-1"
+            !addOpen ? (
+              <Button variant="outline" size="sm" className="w-full h-8 text-xs"
+                onClick={() => {
+                  setAddOpen(true);
+                  setEntryType("renta");
+                  if (driver) setEntryAmount(String(getAutoAmount(driver, "renta")));
+                }}>
+                + Evidentiraj uplatu
+              </Button>
+            ) : (
+              <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Nova uplata</p>
+                <Select value={entryType} onValueChange={handleTypeChange}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {ULAZ_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input type="number" placeholder="Iznos RSD" className="h-8 text-sm"
                   value={entryAmount} onChange={e => setEntryAmount(e.target.value)} />
-                <Button size="sm" className="h-8 text-xs"
-                  disabled={!entryAmount || !by}
-                  onClick={() => {
-                    if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
-                    onSaveEntry(driverId, date, { type: entryType, amount: Number(entryAmount), by });
-                    toast.success(`Evidentirano: ${fmt(Number(entryAmount))}`);
-                    setAddOpen(false); setEntryAmount("");
-                  }}>Sačuvaj</Button>
-                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddOpen(false)}>✕</Button>
+
+                {/* Obavezno birati izmireno/neizmireno */}
+                <p className="text-xs text-muted-foreground">Označi status <span className="text-destructive">*</span></p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    disabled={!entryAmount || !by}
+                    onClick={() => {
+                      if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
+                      if (!entryAmount) { toast.error("Unesi iznos!"); return; }
+                      onSaveEntry(driverId, date, { type: entryType, amount: Number(entryAmount), by });
+                      onSave(driverId, date, "izmireno", by);
+                      toast.success(`Evidentirano i izmireno — ${fmt(Number(entryAmount))}`);
+                      setAddOpen(false); setEntryAmount(""); onClose();
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200">
+                    <Check className="h-4 w-4 text-green-600" />Izmireno
+                  </button>
+                  <button
+                    disabled={!entryAmount || !by}
+                    onClick={() => {
+                      if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
+                      if (!entryAmount) { toast.error("Unesi iznos!"); return; }
+                      onSaveEntry(driverId, date, { type: entryType, amount: Number(entryAmount), by });
+                      onSave(driverId, date, "neizmireno", by);
+                      toast.success(`Evidentirano — ostaje neizmireno`);
+                      setAddOpen(false); setEntryAmount(""); onClose();
+                    }}
+                    className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-red-50 hover:border-red-400 hover:text-red-700 border-gray-200">
+                    <X className="h-4 w-4 text-red-500" />Neizmireno
+                  </button>
+                </div>
+                <Button size="sm" variant="ghost" className="w-full h-7 text-xs" onClick={() => setAddOpen(false)}>Otkazi</Button>
               </div>
-            </div>
+            )
           )}
         </div>
 
