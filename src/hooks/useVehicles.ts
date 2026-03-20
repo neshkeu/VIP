@@ -25,25 +25,25 @@ export function useVehicles() {
 
   async function fetchVehicles() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("vehicles")
-      .select("*")
-      .order("brand");
+    const { data, error } = await supabase.from("vehicles").select("*").order("brand");
     if (error) setError(error.message);
     else setVehicles(data ?? []);
     setLoading(false);
   }
 
   async function addVehicle(vehicle: Omit<Vehicle, "id" | "created_at">) {
-    const { data, error } = await supabase
-      .from("vehicles")
-      .insert(vehicle)
-      .select()
-      .single();
+    const { data, error } = await supabase.from("vehicles").insert(vehicle).select().single();
     if (error) throw error;
     setVehicles(prev => [...prev, data]);
     return data;
   }
 
-  return { vehicles, loading, error, addVehicle, refetch: fetchVehicles };
+  async function updateVehicle(id: string, updates: Partial<Vehicle>) {
+    const { data, error } = await supabase.from("vehicles").update(updates).eq("id", id).select().single();
+    if (error) throw error;
+    setVehicles(prev => prev.map(v => v.id === id ? data : v));
+    return data;
+  }
+
+  return { vehicles, loading, error, addVehicle, updateVehicle, refetch: fetchVehicles };
 }
