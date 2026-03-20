@@ -10,17 +10,17 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const navItems = [
   { title: "Kontrolna tabla", url: "/",         icon: LayoutDashboard },
-  { title: "Kalendar",        url: "/calendar",  icon: CalendarDays    },
-  { title: "Vozači",          url: "/drivers",   icon: Users           },
   { title: "Vozila",          url: "/vehicles",  icon: Car             },
+  { title: "Vozači",          url: "/drivers",   icon: Users           },
+  { title: "Kalendar",        url: "/calendar",  icon: CalendarDays    },
   { title: "Kasa",            url: "/cash",      icon: Banknote        },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
-  const collapsed = state === "collapsed";
-  const location  = useLocation();
-  const navigate  = useNavigate();
+  const collapsed  = state === "collapsed";
+  const location   = useLocation();
+  const navigate   = useNavigate();
   const currentPath = location.pathname;
 
   const isActive = (path: string) => {
