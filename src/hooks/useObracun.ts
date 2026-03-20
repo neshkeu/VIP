@@ -16,7 +16,9 @@ export function useObracun(month: string) {
   useEffect(() => { fetchObracun(); }, [month]);
 
   async function fetchObracun() {
-    const { data } = await supabase.from("obracun_days").select("*").like("date", `${month}%`);
+    const from = `${month}-01`;
+    const to   = `${month}-31`;
+    const { data } = await supabase.from("obracun_days").select("*").gte("date", from).lte("date", to);
     setObracunDays(data ?? []);
   }
 
