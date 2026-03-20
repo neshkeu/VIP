@@ -269,28 +269,33 @@ function ObracunCard({ date, entries }: { date: string; entries: CashEntry[] }) 
 const CashPage = () => {
   const [filterMonth, setFilterMonth] = useState("2026-03");
 
-  // Sve ulazno-izlazno za izabrani mjesec
   const { entries, total_in, total_out, balance } = getCashForPeriod(
     filterMonth + "-01",
     filterMonth + "-31"
   );
 
-  // Tekuće stanje kase (kumulativno)
   const currentBalance = getCashBalance("2026-03-17");
 
-  // Grupiši po obračunskim danima
+  // Grupiši unose po datumu
   const byDate = entries.reduce((acc, e) => {
     if (!acc[e.date]) acc[e.date] = [];
     acc[e.date].push(e);
     return acc;
   }, {} as Record<string, CashEntry[]>);
 
-  const sortedDates = Object.keys(byDate).sort().reverse();
-
-  // Neobrađeni yandex/kartice
-  const pendingOut = entries.filter(e =>
-    (e.type === "yandex" || e.type === "kartica") && e.direction === "out"
-  ).length;
+  // Generiši SVE pon/sri/pet u izabranom mjesecu — bez obzira ima li unosa
+  const [year, month] = filterMonth.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const obracunDates: string[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month - 1, d);
+    const dow  = date.getDay();
+    if (dow === 1 || dow === 3 || dow === 5) {
+      obracunDates.push(`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+    }
+  }
+  // Sortiraj od najnovijeg
+  const sortedObracunDates = obracunDates.sort().reverse();
 
   return (
     <div className="space-y-6">
@@ -327,13 +332,9 @@ const CashPage = () => {
 
         {/* PO OBRACUNIMA */}
         <TabsContent value="obracun" className="mt-4 space-y-3">
-          {sortedDates.length === 0 ? (
-            <Card><CardContent className="py-10 text-center text-muted-foreground">Nema unosa za ovaj period</CardContent></Card>
-          ) : (
-            sortedDates.map(date => (
-              <ObracunCard key={date} date={date} entries={byDate[date]} />
-            ))
-          )}
+          {sortedObracunDates.map(date => (
+            <ObracunCard key={date} date={date} entries={byDate[date] ?? []} />
+          ))}
         </TabsContent>
 
         {/* SVI UNOSI */}
