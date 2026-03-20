@@ -8,21 +8,15 @@ export interface ObracunDay {
   confirmed_by: string;
   total_in: number;
   total_out: number;
-  created_at: string;
 }
 
 export function useObracun(month: string) {
   const [obracunDays, setObracunDays] = useState<ObracunDay[]>([]);
 
-  useEffect(() => {
-    fetchObracun();
-  }, [month]);
+  useEffect(() => { fetchObracun(); }, [month]);
 
   async function fetchObracun() {
-    const { data } = await supabase
-      .from("obracun_days")
-      .select("*")
-      .like("date", `${month}%`);
+    const { data } = await supabase.from("obracun_days").select("*").like("date", `${month}%`);
     setObracunDays(data ?? []);
   }
 
@@ -30,15 +24,22 @@ export function useObracun(month: string) {
     const { data, error } = await supabase
       .from("obracun_days")
       .upsert({ date, confirmed: true, confirmed_by: confirmedBy, total_in: totalIn, total_out: totalOut }, { onConflict: "date" })
-      .select()
-      .single();
+      .select().single();
     if (error) throw error;
     setObracunDays(prev => {
       const exists = prev.find(o => o.date === date);
-      if (exists) return prev.map(o => o.date === date ? data : o);
-      return [...prev, data];
+      return exists ? prev.map(o => o.date === date ? data : o) : [...prev, data];
     });
-    return data;
+  }
+
+  async function stornoObracun(date: string) {
+    const { data, error } = await supabase
+      .from("obracun_days")
+      .update({ confirmed: false, confirmed_by: "" })
+      .eq("date", date)
+      .select().single();
+    if (error) throw error;
+    setObracunDays(prev => prev.map(o => o.date === date ? data : o));
   }
 
   function isConfirmed(date: string) {
@@ -49,5 +50,5 @@ export function useObracun(month: string) {
     return obracunDays.find(o => o.date === date)?.confirmed_by ?? "";
   }
 
-  return { obracunDays, closeObracun, isConfirmed, getConfirmedBy, refetch: fetchObracun };
+  return { obracunDays, closeObracun, stornoObracun, isConfirmed, getConfirmedBy, refetch: fetchObracun };
 }
