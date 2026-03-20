@@ -444,13 +444,7 @@ const CalendarPage = () => {
                           {stats.duguje > 0 ? fmt(stats.duguje) : "—"}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between gap-2 text-xs border-t pt-0.5 mt-0.5">
-                        <span className="text-muted-foreground">Dana:</span>
-                        <span className="text-xs">
-                          <span className="text-green-600 font-semibold">{stats.izm}✓</span>
-                          {" "}<span className="text-red-500 font-semibold">{stats.neizm}✗</span>
-                        </span>
-                      </div>
+
                     </div>
                   </td>
                 </tr>
