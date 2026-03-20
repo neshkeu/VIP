@@ -326,7 +326,24 @@ const CalendarPage = () => {
     const keys   = Object.keys(statuses).filter(k => k.startsWith(`${driverId}_${prefix}`));
     const izm    = keys.filter(k => statuses[k] === "izmireno").length;
     const neizm  = keys.filter(k => statuses[k] === "neizmireno").length;
-    return { izm, neizm };
+
+    // Ukupno evidentirano (uplaćeno)
+    const uplaceno = Object.entries(amounts)
+      .filter(([k]) => k.startsWith(`${driverId}_${prefix}`))
+      .reduce((s, [, entries]) => s + entries.reduce((ss, e) => ss + e.amount, 0), 0);
+
+    // Ukupno duguje — broj dana × dnevna renta (samo izmireni dani se računaju kao zaduženi)
+    const driver = getDriverById(driverId);
+    const duguje = keys
+      .filter(k => statuses[k] === "neizmireno")
+      .reduce((s, k) => {
+        const date = k.split("_")[1];
+        const dow  = new Date(date + "T00:00:00").getDay();
+        if (dow === 0) return s; // nedjelja se posebno računa
+        return s + (driver?.daily_rate ?? 0);
+      }, 0);
+
+    return { izm, neizm, uplaceno, duguje };
   };
 
   const modalDow     = modalDate ? new Date(modalDate + "T00:00:00").getDay() : 0;
@@ -382,8 +399,8 @@ const CalendarPage = () => {
                   </th>
                 );
               })}
-              <th className="sticky right-0 z-20 bg-muted border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase min-w-[100px]">
-                Stanje
+              <th className="sticky right-0 z-20 bg-muted border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase min-w-[130px]">
+                Sumarno
               </th>
             </tr>
           </thead>
@@ -415,10 +432,25 @@ const CalendarPage = () => {
                       />
                     );
                   })}
-                  <td className="sticky right-0 z-10 bg-card border border-gray-200 px-2 py-2 text-center min-w-[100px]">
-                    <div className="flex items-center justify-center gap-2 text-xs">
-                      <span className="text-green-600 font-bold">{stats.izm}✓</span>
-                      <span className="text-red-500 font-bold">{stats.neizm}✗</span>
+                  <td className="sticky right-0 z-10 bg-card border border-gray-200 px-3 py-2 text-right min-w-[130px]">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground">Uplaćeno:</span>
+                        <span className="text-green-600 font-bold">{fmt(stats.uplaceno)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground">Duguje:</span>
+                        <span className={`font-bold ${stats.duguje > 0 ? "text-red-500" : "text-green-600"}`}>
+                          {stats.duguje > 0 ? fmt(stats.duguje) : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs border-t pt-0.5 mt-0.5">
+                        <span className="text-muted-foreground">Dana:</span>
+                        <span className="text-xs">
+                          <span className="text-green-600 font-semibold">{stats.izm}✓</span>
+                          {" "}<span className="text-red-500 font-semibold">{stats.neizm}✗</span>
+                        </span>
+                      </div>
                     </div>
                   </td>
                 </tr>
