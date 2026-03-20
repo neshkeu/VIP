@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useVehicles } from "@/hooks/useVehicles";
+import { useVehicles, Vehicle } from "@/hooks/useVehicles";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,63 +8,103 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, Search, AlertTriangle, Loader2, Pencil } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 function isExpiringSoon(date: string) {
-  const d = new Date(date);
-  const diffDays = (d.getTime() - Date.now()) / (1000*60*60*24);
+  const diffDays = (new Date(date).getTime() - Date.now()) / (1000*60*60*24);
   return diffDays < 30 && diffDays > 0;
 }
 function isExpired(date: string) { return new Date(date) < new Date(); }
 
-const VehiclesPage = () => {
-  const { vehicles, loading, addVehicle } = useVehicles();
-  const [search, setSearch]       = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [dialogOpen, setDialogOpen] = useState(false);
+interface VehicleFormProps {
+  initial?: Partial<Vehicle>;
+  vehicles: Vehicle[];
+  onSave: (data: Omit<Vehicle, "id"|"created_at">) => Promise<void>;
+  onClose: () => void;
+  title: string;
+}
+
+function VehicleForm({ initial, vehicles, onSave, onClose, title }: VehicleFormProps) {
+  const [brand, setBrand]         = useState(initial?.brand ?? "");
+  const [model, setModel]         = useState(initial?.model ?? "");
+  const [year, setYear]           = useState(String(initial?.year ?? ""));
+  const [plate, setPlate]         = useState(initial?.license_plate ?? "");
+  const [taxiNum, setTaxiNum]     = useState(initial?.taxi_license_number ?? "");
+  const [posId, setPosId]         = useState(initial?.pos_terminal_id ?? "");
+  const [regExpiry, setRegExpiry] = useState(initial?.registration_expiry ?? "");
+  const [insExpiry, setInsExpiry] = useState(initial?.insurance_expiry ?? "");
+  const [status, setStatus]       = useState(initial?.status ?? "active");
   const [saving, setSaving]       = useState(false);
-
-  const [brand, setBrand]                 = useState("");
-  const [model, setModel]                 = useState("");
-  const [year, setYear]                   = useState("");
-  const [plate, setPlate]                 = useState("");
-  const [taxiNum, setTaxiNum]             = useState("");
-  const [posId, setPosId]                 = useState("");
-  const [regExpiry, setRegExpiry]         = useState("");
-  const [insExpiry, setInsExpiry]         = useState("");
-
-  const filtered = vehicles.filter(v => {
-    const matchSearch = v.brand.toLowerCase().includes(search.toLowerCase()) ||
-      v.model.toLowerCase().includes(search.toLowerCase()) ||
-      v.taxi_license_number?.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || v.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
-  const reset = () => {
-    setBrand(""); setModel(""); setYear(""); setPlate("");
-    setTaxiNum(""); setPosId(""); setRegExpiry(""); setInsExpiry("");
-  };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await addVehicle({
-        brand, model, year: Number(year), license_plate: plate,
+      await onSave({ brand, model, year: Number(year), license_plate: plate,
         taxi_license_number: taxiNum, pos_terminal_id: posId,
         registration_expiry: regExpiry, insurance_expiry: insExpiry,
-        status: "active", notes: "",
-      });
-      toast.success(`Vozilo ${brand} ${model} dodano`);
-      setDialogOpen(false); reset();
+        status: status as Vehicle["status"], notes: "" });
+      onClose();
     } catch (e: any) {
       toast.error("Greška: " + e.message);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>Unesite podatke o vozilu</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-3 py-3">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-1.5"><Label className="text-xs">Marka</Label><Input placeholder="Toyota" value={brand} onChange={e => setBrand(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label className="text-xs">Model</Label><Input placeholder="Camry" value={model} onChange={e => setModel(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label className="text-xs">Godina</Label><Input type="number" placeholder="2024" value={year} onChange={e => setYear(e.target.value)}/></div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-1.5"><Label className="text-xs">Tablice</Label><Input placeholder="NS-001-AB" value={plate} onChange={e => setPlate(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label className="text-xs">Komunalni broj</Label><Input placeholder="TAXI-0101" value={taxiNum} onChange={e => setTaxiNum(e.target.value)}/></div>
+        </div>
+        <div className="grid gap-1.5"><Label className="text-xs">POS terminal ID</Label><Input placeholder="POS-A01" value={posId} onChange={e => setPosId(e.target.value)}/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-1.5"><Label className="text-xs">Registracija istječe</Label><Input type="date" value={regExpiry} onChange={e => setRegExpiry(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label className="text-xs">Osiguranje istječe</Label><Input type="date" value={insExpiry} onChange={e => setInsExpiry(e.target.value)}/></div>
+        </div>
+        <div className="grid gap-1.5">
+          <Label className="text-xs">Status</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger><SelectValue/></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Aktivno</SelectItem>
+              <SelectItem value="maintenance">Servis</SelectItem>
+              <SelectItem value="inactive">Neaktivno</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>Otkazi</Button>
+        <Button disabled={!brand || !model || saving} onClick={handleSave}>
+          {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+const VehiclesPage = () => {
+  const { vehicles, loading, addVehicle, updateVehicle } = useVehicles();
+  const [search, setSearch]             = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [addOpen, setAddOpen]           = useState(false);
+  const [editVehicle, setEditVehicle]   = useState<Vehicle | null>(null);
+
+  const filtered = vehicles.filter(v => {
+    const matchSearch = [v.brand, v.model, v.taxi_license_number].join(" ").toLowerCase().includes(search.toLowerCase());
+    return matchSearch && (statusFilter === "all" || v.status === statusFilter);
+  });
 
   const statusColors = { active: "default", maintenance: "secondary", inactive: "outline" } as const;
   const statusLabels = { active: "Aktivno", maintenance: "Servis", inactive: "Neaktivno" };
@@ -90,41 +130,42 @@ const VehiclesPage = () => {
               <SelectItem value="inactive">Neaktivna</SelectItem>
             </SelectContent>
           </Select>
-          <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) reset(); }}>
+
+          {/* Dodaj vozilo */}
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
               <Button><Plus className="mr-2 h-4 w-4"/>Novo vozilo</Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Dodaj novo vozilo</DialogTitle>
-                <DialogDescription>Unesite podatke o vozilu</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-3 py-3">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="grid gap-1.5"><Label className="text-xs">Marka</Label><Input placeholder="Toyota" value={brand} onChange={e => setBrand(e.target.value)}/></div>
-                  <div className="grid gap-1.5"><Label className="text-xs">Model</Label><Input placeholder="Camry" value={model} onChange={e => setModel(e.target.value)}/></div>
-                  <div className="grid gap-1.5"><Label className="text-xs">Godina</Label><Input type="number" placeholder="2024" value={year} onChange={e => setYear(e.target.value)}/></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-1.5"><Label className="text-xs">Tablice</Label><Input placeholder="NS-001-AB" value={plate} onChange={e => setPlate(e.target.value)}/></div>
-                  <div className="grid gap-1.5"><Label className="text-xs">Komunalni broj</Label><Input placeholder="TAXI-0101" value={taxiNum} onChange={e => setTaxiNum(e.target.value)}/></div>
-                </div>
-                <div className="grid gap-1.5"><Label className="text-xs">POS terminal ID</Label><Input placeholder="POS-A01" value={posId} onChange={e => setPosId(e.target.value)}/></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-1.5"><Label className="text-xs">Registracija istječe</Label><Input type="date" value={regExpiry} onChange={e => setRegExpiry(e.target.value)}/></div>
-                  <div className="grid gap-1.5"><Label className="text-xs">Osiguranje istječe</Label><Input type="date" value={insExpiry} onChange={e => setInsExpiry(e.target.value)}/></div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>Otkazi</Button>
-                <Button disabled={!brand || !model || saving} onClick={handleSave}>
-                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj
-                </Button>
-              </DialogFooter>
+              <VehicleForm
+                vehicles={vehicles}
+                title="Dodaj novo vozilo"
+                onSave={async (data) => { await addVehicle(data); toast.success("Vozilo dodano"); }}
+                onClose={() => setAddOpen(false)}
+              />
             </DialogContent>
           </Dialog>
         </div>
       </div>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editVehicle} onOpenChange={v => { if (!v) setEditVehicle(null); }}>
+        <DialogContent className="max-w-lg">
+          {editVehicle && (
+            <VehicleForm
+              initial={editVehicle}
+              vehicles={vehicles}
+              title="Uredi vozilo"
+              onSave={async (data) => {
+                await updateVehicle(editVehicle.id, data);
+                toast.success("Vozilo ažurirano");
+                setEditVehicle(null);
+              }}
+              onClose={() => setEditVehicle(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>
@@ -140,11 +181,12 @@ const VehiclesPage = () => {
                   <TableHead>Registracija</TableHead>
                   <TableHead>Osiguranje</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
                   filtered.map((v, i) => (
                     <motion.tr key={v.id} initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }} transition={{ delay: i*0.04 }}
@@ -165,6 +207,11 @@ const VehiclesPage = () => {
                         </div>
                       </TableCell>
                       <TableCell><Badge variant={statusColors[v.status]}>{statusLabels[v.status]}</Badge></TableCell>
+                      <TableCell>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditVehicle(v)}>
+                          <Pencil className="h-4 w-4"/>
+                        </Button>
+                      </TableCell>
                     </motion.tr>
                   ))
                 )}
