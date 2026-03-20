@@ -283,9 +283,11 @@ const CashPage = () => {
     return acc;
   }, {} as Record<string, CashEntry[]>);
 
-  // Generiši SVE pon/sri/pet u izabranom mjesecu — bez obzira ima li unosa
+  // Generiši SVE pon/sri/pet u izabranom mjesecu
   const [year, month] = filterMonth.split("-").map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
+  const today = new Date().toISOString().split("T")[0];
+
   const obracunDates: string[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(year, month - 1, d);
@@ -294,8 +296,18 @@ const CashPage = () => {
       obracunDates.push(`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
     }
   }
-  // Sortiraj od najnovijeg
-  const sortedObracunDates = obracunDates.sort().reverse();
+
+  // Tekući = najbliži obračunski dan koji nije u prošlosti (ili zadnji ako svi prošli)
+  const futureOrToday = obracunDates.filter(d => d >= today);
+  const currentObracun = futureOrToday.length > 0
+    ? futureOrToday[0]
+    : obracunDates[obracunDates.length - 1];
+
+  // Historija = svi zatvoreni obračunski dani, sortirani od najnovijeg
+  const historyDates = obracunDates
+    .filter(d => d < currentObracun)
+    .sort()
+    .reverse();
 
   return (
     <div className="space-y-6">
@@ -324,17 +336,33 @@ const CashPage = () => {
         </div>
       </div>
 
-      <Tabs defaultValue="obracun">
+      <Tabs defaultValue="tekuci">
         <TabsList>
-          <TabsTrigger value="obracun">Po obračunima</TabsTrigger>
+          <TabsTrigger value="tekuci">Tekući obračun</TabsTrigger>
+          <TabsTrigger value="historija">Historija</TabsTrigger>
           <TabsTrigger value="sve">Svi unosi</TabsTrigger>
         </TabsList>
 
-        {/* PO OBRACUNIMA */}
-        <TabsContent value="obracun" className="mt-4 space-y-3">
-          {sortedObracunDates.map(date => (
-            <ObracunCard key={date} date={date} entries={byDate[date] ?? []} />
-          ))}
+        {/* TEKUCI OBRACUN */}
+        <TabsContent value="tekuci" className="mt-4 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Naredni obračunski dan: <strong>{fmtDate(currentObracun)}</strong> — svi unosi od prethodnog obračuna do tada
+          </p>
+          {/* Svi unosi koji nisu vezani za zatvorene obračune */}
+          <ObracunCard date={currentObracun} entries={
+            entries.filter(e => e.date > (historyDates[0] ?? "0000-00-00"))
+          } />
+        </TabsContent>
+
+        {/* HISTORIJA */}
+        <TabsContent value="historija" className="mt-4 space-y-3">
+          {historyDates.length === 0 ? (
+            <Card><CardContent className="py-10 text-center text-muted-foreground">Nema zatvorenih obračuna</CardContent></Card>
+          ) : (
+            historyDates.map(date => (
+              <ObracunCard key={date} date={date} entries={byDate[date] ?? []} />
+            ))
+          )}
         </TabsContent>
 
         {/* SVI UNOSI */}
