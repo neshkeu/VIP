@@ -21,8 +21,9 @@ type DayStatus = "izmireno" | "neizmireno" | null;
 
 // Nedjelja je besplatna ako su svi dani pon-sub TE SEDMICE izmireni
 function isSundayFree(statuses: Record<string, DayStatus>, driverId: string, sundayDate: string): boolean {
+  if (!sundayDate || !driverId) return false;
   const sun = new Date(sundayDate + "T00:00:00");
-  // pon do sub = narednih 6 dana nakon nedjelje
+  if (isNaN(sun.getTime())) return false;
   for (let i = 1; i <= 6; i++) {
     const d = new Date(sun);
     d.setDate(sun.getDate() + i);
