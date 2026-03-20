@@ -17,10 +17,21 @@ function getDateStr(y: number, m: number, d: number) {
 }
 function getDow(y: number, m: number, d: number) { return new Date(y, m-1, d).getDay(); }
 
-// Stanje dana po vozaču: "izmireno" | "neizmireno" | null (nema obaveza)
 type DayStatus = "izmireno" | "neizmireno" | null;
 
-// Mock — u pravoj verziji dolazi iz baze
+// Nedjelja je besplatna ako su svi dani pon-sub TE SEDMICE izmireni
+function isSundayFree(statuses: Record<string, DayStatus>, driverId: string, sundayDate: string): boolean {
+  const sun = new Date(sundayDate + "T00:00:00");
+  // pon do sub = narednih 6 dana nakon nedjelje
+  for (let i = 1; i <= 6; i++) {
+    const d = new Date(sun);
+    d.setDate(sun.getDate() + i);
+    const dateStr = d.toISOString().split("T")[0];
+    if (statuses[`${driverId}_${dateStr}`] !== "izmireno") return false;
+  }
+  return true;
+}
+
 const MOCK_STATUS: Record<string, DayStatus> = {
   "d1_2026-03-10": "izmireno",
   "d1_2026-03-11": "neizmireno",
@@ -39,17 +50,16 @@ const MOCK_STATUS: Record<string, DayStatus> = {
 };
 
 // ─── MODAL ───────────────────────────────────────────────────
-function DetailModal({ open, onClose, driverId, date, status, onSave }: {
-  open: boolean;
-  onClose: () => void;
-  driverId: string;
-  date: string;
-  status: DayStatus;
+function DetailModal({ open, onClose, driverId, date, status, onSave, sundayFree }: {
+  open: boolean; onClose: () => void;
+  driverId: string; date: string; status: DayStatus;
   onSave: (driverId: string, date: string, status: DayStatus, by: string) => void;
+  sundayFree?: boolean;
 }) {
   const [by, setBy] = useState("");
   const driver = getDriverById(driverId);
-  const dow = new Date(date + "T00:00:00").getDay();
+  const dow   = new Date(date + "T00:00:00").getDay();
+  const isSun = dow === 0;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -60,18 +70,34 @@ function DetailModal({ open, onClose, driverId, date, status, onSave }: {
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Trenutni status */}
-          <div className={`rounded-lg border p-3 text-center ${
-            status === "izmireno"   ? "bg-green-50 border-green-300" :
-            status === "neizmireno" ? "bg-red-50 border-red-300" :
-                                      "bg-gray-50 border-gray-200"
-          }`}>
-            <p className="text-sm font-semibold">
-              {status === "izmireno"   ? "✓ Izmireno" :
-               status === "neizmireno" ? "✗ Neizmireno" :
-                                         "— Nema obaveza"}
-            </p>
-          </div>
+
+          {/* Nedjelja info */}
+          {isSun && (
+            <div className={`rounded-lg border p-3 text-center text-sm font-medium ${
+              sundayFree
+                ? "bg-green-50 border-green-300 text-green-700"
+                : "bg-amber-50 border-amber-300 text-amber-700"
+            }`}>
+              {sundayFree
+                ? "🎉 Nedjelja je besplatna — radio sve dane pon–sub"
+                : "⚠️ Nedjelja se naplaćuje — nije izmiren neki dan pon–sub"}
+            </div>
+          )}
+
+          {/* Trenutni status — ne prikazuj ako je nedjelja besplatna */}
+          {!(isSun && sundayFree) && (
+            <div className={`rounded-lg border p-3 text-center ${
+              status === "izmireno"   ? "bg-green-50 border-green-300" :
+              status === "neizmireno" ? "bg-red-50 border-red-300" :
+                                        "bg-gray-50 border-gray-200"
+            }`}>
+              <p className="text-sm font-semibold">
+                {status === "izmireno"   ? "✓ Izmireno" :
+                 status === "neizmireno" ? "✗ Neizmireno" :
+                                           "— Nije evidentirano"}
+              </p>
+            </div>
+          )}
 
           <Separator />
 
@@ -85,37 +111,39 @@ function DetailModal({ open, onClose, driverId, date, status, onSave }: {
             />
           </div>
 
-          {/* Dugmad za promjenu statusa */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => {
-                if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
-                onSave(driverId, date, "izmireno", by);
-                toast.success(`Izmireno — ${by}`);
-                onClose();
-              }}
-              className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all ${
-                status === "izmireno"
-                  ? "bg-green-100 border-green-500 text-green-700"
-                  : "hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200"
-              }`}>
-              <Check className="h-4 w-4" />Izmireno
-            </button>
-            <button
-              onClick={() => {
-                if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
-                onSave(driverId, date, "neizmireno", by);
-                toast.success(`Označeno kao neizmireno — ${by}`);
-                onClose();
-              }}
-              className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all ${
-                status === "neizmireno"
-                  ? "bg-red-100 border-red-500 text-red-700"
-                  : "hover:bg-red-50 hover:border-red-400 hover:text-red-700 border-gray-200"
-              }`}>
-              <X className="h-4 w-4" />Neizmireno
-            </button>
-          </div>
+          {/* Dugmad — ne prikazuj ako je nedjelja besplatna */}
+          {!(isSun && sundayFree) && (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
+                  onSave(driverId, date, "izmireno", by);
+                  toast.success(`Izmireno — ${by}`);
+                  onClose();
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all ${
+                  status === "izmireno"
+                    ? "bg-green-100 border-green-500 text-green-700"
+                    : "hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200"
+                }`}>
+                <Check className="h-4 w-4" />Izmireno
+              </button>
+              <button
+                onClick={() => {
+                  if (!by.trim()) { toast.error("Unesi ko evidentira!"); return; }
+                  onSave(driverId, date, "neizmireno", by);
+                  toast.success(`Označeno kao neizmireno — ${by}`);
+                  onClose();
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all ${
+                  status === "neizmireno"
+                    ? "bg-red-100 border-red-500 text-red-700"
+                    : "hover:bg-red-50 hover:border-red-400 hover:text-red-700 border-gray-200"
+                }`}>
+                <X className="h-4 w-4" />Neizmireno
+              </button>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -127,19 +155,25 @@ function DetailModal({ open, onClose, driverId, date, status, onSave }: {
 }
 
 // ─── ĆELIJA ──────────────────────────────────────────────────
-function Cell({ status, onClick }: { status: DayStatus; onClick: () => void }) {
+function Cell({ status, isSun, sunFree, onClick }: {
+  status: DayStatus; isSun: boolean; sunFree: boolean; onClick: () => void;
+}) {
   return (
     <td
       onClick={onClick}
       className={`border p-0.5 transition-all cursor-pointer min-w-[36px] w-9 ${
+        isSun && sunFree    ? "bg-green-50 border-green-200 hover:bg-green-100" :
+        isSun && !sunFree   ? "bg-amber-50 border-amber-200 hover:bg-amber-100" :
         status === "izmireno"   ? "bg-green-100 border-green-300 hover:bg-green-200" :
         status === "neizmireno" ? "bg-red-100 border-red-300 hover:bg-red-200" :
                                   "bg-white border-gray-100 hover:bg-muted/40"
       }`}
     >
       <div className="flex items-center justify-center h-7">
-        {status === "izmireno"   && <Check className="h-3.5 w-3.5 text-green-600" />}
-        {status === "neizmireno" && <X     className="h-3.5 w-3.5 text-red-500"   />}
+        {isSun && sunFree                           && <span className="text-green-500 text-xs font-bold">✓</span>}
+        {isSun && !sunFree                          && <span className="text-amber-500 text-xs font-bold">!</span>}
+        {!isSun && status === "izmireno"            && <Check className="h-3.5 w-3.5 text-green-600" />}
+        {!isSun && status === "neizmireno"          && <X     className="h-3.5 w-3.5 text-red-500"   />}
       </div>
     </td>
   );
@@ -151,7 +185,6 @@ const CalendarPage = () => {
   const [year, setYear]   = useState(2026);
   const [month, setMonth] = useState(3);
   const [statuses, setStatuses] = useState<Record<string, DayStatus>>(MOCK_STATUS);
-
   const [modalOpen, setModalOpen]     = useState(false);
   const [modalDriver, setModalDriver] = useState("");
   const [modalDate, setModalDate]     = useState("");
@@ -164,16 +197,13 @@ const CalendarPage = () => {
   const nextMonth = () => { if (month===12){setMonth(1);setYear(y=>y+1);}else setMonth(m=>m+1); };
 
   const handleCellClick = (driverId: string, date: string) => {
-    setModalDriver(driverId);
-    setModalDate(date);
-    setModalOpen(true);
+    setModalDriver(driverId); setModalDate(date); setModalOpen(true);
   };
 
   const handleSave = (driverId: string, date: string, status: DayStatus) => {
     setStatuses(prev => ({ ...prev, [`${driverId}_${date}`]: status }));
   };
 
-  // Broj izmirenih i neizmirenih za vozača u mjesecu
   const getDriverStats = (driverId: string) => {
     const prefix = `${year}-${String(month).padStart(2,"0")}`;
     const keys   = Object.keys(statuses).filter(k => k.startsWith(`${driverId}_${prefix}`));
@@ -182,9 +212,11 @@ const CalendarPage = () => {
     return { izm, neizm };
   };
 
+  const modalDow     = modalDate ? new Date(modalDate + "T00:00:00").getDay() : 0;
+  const modalSunFree = modalDow === 0 ? isSundayFree(statuses, modalDriver, modalDate) : false;
+
   return (
     <div className="space-y-4">
-      {/* HEADER */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Kalendar</h1>
@@ -192,30 +224,29 @@ const CalendarPage = () => {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4"/></Button>
-          <span className="font-display font-bold text-lg min-w-[180px] text-center">
-            {MONTHS_SR[month-1]} {year}
-          </span>
+          <span className="font-display font-bold text-lg min-w-[180px] text-center">{MONTHS_SR[month-1]} {year}</span>
           <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4"/></Button>
-          <Button variant="outline" size="sm"
-            onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()+1); }}>
-            Danas
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()+1); }}>Danas</Button>
         </div>
       </div>
 
       {/* LEGENDA */}
-      <div className="flex gap-4 text-xs">
+      <div className="flex flex-wrap gap-4 text-xs">
         <div className="flex items-center gap-1.5">
-          <div className="h-4 w-4 rounded bg-green-100 border border-green-300 flex items-center justify-center">
-            <Check className="h-2.5 w-2.5 text-green-600"/>
-          </div>
+          <div className="h-4 w-4 rounded bg-green-100 border border-green-300 flex items-center justify-center"><Check className="h-2.5 w-2.5 text-green-600"/></div>
           <span className="text-muted-foreground">Izmireno</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-4 w-4 rounded bg-red-100 border border-red-300 flex items-center justify-center">
-            <X className="h-2.5 w-2.5 text-red-500"/>
-          </div>
+          <div className="h-4 w-4 rounded bg-red-100 border border-red-300 flex items-center justify-center"><X className="h-2.5 w-2.5 text-red-500"/></div>
           <span className="text-muted-foreground">Neizmireno</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-4 rounded bg-green-50 border border-green-200 flex items-center justify-center"><span className="text-green-500 text-xs">✓</span></div>
+          <span className="text-muted-foreground">Nedjelja besplatna</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-4 rounded bg-amber-50 border border-amber-200 flex items-center justify-center"><span className="text-amber-500 text-xs font-bold">!</span></div>
+          <span className="text-muted-foreground">Nedjelja se naplaćuje</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="h-4 w-4 rounded bg-white border border-gray-200"/>
@@ -228,11 +259,9 @@ const CalendarPage = () => {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              {/* Ime vozača */}
               <th className="sticky left-0 z-20 bg-muted border border-gray-200 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase min-w-[150px]">
                 Vozač
               </th>
-              {/* Dani */}
               {days.map(day => {
                 const dow     = getDow(year, month, day);
                 const dateStr = getDateStr(year, month, day);
@@ -242,7 +271,7 @@ const CalendarPage = () => {
                 return (
                   <th key={day} className={`border px-0.5 py-1.5 text-center min-w-[36px] w-9 ${
                     isTod ? "bg-primary/10 text-primary" :
-                    isSun ? "bg-gray-100 text-gray-400" :
+                    isSun ? "bg-gray-100 text-gray-500" :
                     isOb  ? "bg-green-50/70 text-green-700" :
                             "bg-muted/40 text-muted-foreground"
                   }`}>
@@ -251,7 +280,6 @@ const CalendarPage = () => {
                   </th>
                 );
               })}
-              {/* Statistika */}
               <th className="sticky right-0 z-20 bg-muted border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase min-w-[100px]">
                 Stanje
               </th>
@@ -262,24 +290,26 @@ const CalendarPage = () => {
               const stats = getDriverStats(driver.id);
               return (
                 <tr key={driver.id} className="hover:bg-muted/10 transition-colors">
-                  {/* Ime */}
                   <td className="sticky left-0 z-10 bg-card border border-gray-200 px-3 py-2 min-w-[150px]">
                     <p className="font-semibold text-sm">{driver.full_name}</p>
                     <p className="text-xs text-muted-foreground">{driver.driver_type === "renta" ? "Renta" : "Vlastito"}</p>
                   </td>
-                  {/* Ćelije */}
                   {days.map(day => {
+                    const dow     = getDow(year, month, day);
                     const dateStr = getDateStr(year, month, day);
                     const key     = `${driver.id}_${dateStr}`;
+                    const isSun   = dow === 0;
+                    const sunFree = isSun ? isSundayFree(statuses, driver.id, dateStr) : false;
                     return (
                       <Cell
                         key={day}
                         status={statuses[key] ?? null}
+                        isSun={isSun}
+                        sunFree={sunFree}
                         onClick={() => handleCellClick(driver.id, dateStr)}
                       />
                     );
                   })}
-                  {/* Statistika */}
                   <td className="sticky right-0 z-10 bg-card border border-gray-200 px-2 py-2 text-center min-w-[100px]">
                     <div className="flex items-center justify-center gap-2 text-xs">
                       <span className="text-green-600 font-bold">{stats.izm}✓</span>
@@ -293,7 +323,6 @@ const CalendarPage = () => {
         </table>
       </div>
 
-      {/* MODAL */}
       <DetailModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -301,6 +330,7 @@ const CalendarPage = () => {
         date={modalDate}
         status={statuses[`${modalDriver}_${modalDate}`] ?? null}
         onSave={handleSave}
+        sundayFree={modalSunFree}
       />
     </div>
   );
