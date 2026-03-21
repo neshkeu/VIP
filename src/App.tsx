@@ -11,6 +11,9 @@ import DriversPage from "./pages/DriversPage";
 import VehiclesPage from "./pages/VehiclesPage";
 import CalendarPage from "./pages/CalendarPage";
 import CashPage from "./pages/CashPage";
+import DebtsPage from "./pages/DebtsPage";
+import YandexPage from "./pages/YandexPage";
+import CardsPage from "./pages/CardsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,12 +30,15 @@ const App = () => (
             <AuthGuard>
               <AppLayout>
                 <Routes>
-                  <Route path="/"          element={<Dashboard />} />
-                  <Route path="/drivers"   element={<DriversPage />} />
-                  <Route path="/vehicles"  element={<VehiclesPage />} />
+                  <Route path="/"         element={<Dashboard />} />
+                  <Route path="/vehicles" element={<VehiclesPage />} />
+                  <Route path="/drivers"  element={<DriversPage />} />
                   <Route path="/calendar" element={<CalendarPage />} />
                   <Route path="/cash"     element={<CashPage />} />
-                  <Route path="*"          element={<NotFound />} />
+                  <Route path="/debts"    element={<DebtsPage />} />
+                  <Route path="/yandex"   element={<YandexPage />} />
+                  <Route path="/cards"    element={<CardsPage />} />
+                  <Route path="*"         element={<NotFound />} />
                 </Routes>
               </AppLayout>
             </AuthGuard>
