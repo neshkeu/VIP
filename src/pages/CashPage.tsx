@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useCash } from "@/hooks/useCash";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useObracun } from "@/hooks/useObracun";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +42,7 @@ const CASH_TYPE_COLORS: Record<string,string> = {
 };
 const ULAZ_TYPES  = ["renta","clanarina","pos_naknada","komunalni","doprinosi","dugovanje","likvidnost_in"];
 const IZLAZ_TYPES = ["yandex","kartica","vaučer","pdv_gorivo","likvidnost_out"];
+const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"]; // jedini koji ne trebaju vozača
 
 function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
   const { drivers } = useDrivers();
@@ -55,6 +55,10 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
   const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const [by,setBy]=useState("");
   const [saving,setSaving]=useState(false);
+
+  const driverRequired = !NO_DRIVER_TYPES.includes(type);
+  const canSave = !!amount && !!by && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
+
   const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setBy("");setDate(new Date().toISOString().split("T")[0]);};
   return (
     <Dialog open={open} onOpenChange={v=>{setOpen(v);if(!v)reset();}}>
@@ -63,18 +67,25 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
         <DialogHeader><DialogTitle>Novi kasa unos</DialogTitle><DialogDescription>Evidentirajte uplatu ili isplatu</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={()=>{setDir("in");setType("renta");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="in"?"bg-green-50 border-green-500 text-green-700":"hover:bg-muted border-border"}`}><ArrowDownLeft className="h-4 w-4"/>Ulaz (+)</button>
-            <button type="button" onClick={()=>{setDir("out");setType("yandex");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="out"?"bg-red-50 border-red-500 text-red-700":"hover:bg-muted border-border"}`}><ArrowUpRight className="h-4 w-4"/>Izlaz (−)</button>
+            <button type="button" onClick={()=>{setDir("in");setType("renta");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="in"?"bg-green-50 border-green-500 text-green-700":"hover:bg-muted border-border"}`}><ArrowDownLeft className="h-4 w-4"/>Ulaz (+)</button>
+            <button type="button" onClick={()=>{setDir("out");setType("yandex");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="out"?"bg-red-50 border-red-500 text-red-700":"hover:bg-muted border-border"}`}><ArrowUpRight className="h-4 w-4"/>Izlaz (−)</button>
           </div>
           <div className="grid gap-2"><Label>Tip</Label>
-            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue/></SelectTrigger>
+            <Select value={type} onValueChange={v=>{setType(v);setDriverId("none");}}>
+              <SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent>{(dir==="in"?ULAZ_TYPES:IZLAZ_TYPES).map(t=><SelectItem key={t} value={t}>{CASH_TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="grid gap-2"><Label>Vozač <span className="text-muted-foreground text-xs">(opciono)</span></Label>
-            <Select value={driverId} onValueChange={setDriverId}><SelectTrigger><SelectValue placeholder="Bez vozača"/></SelectTrigger>
-              <SelectContent><SelectItem value="none">— Bez vozača —</SelectItem>{drivers.map(d=><SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}</SelectContent>
+          <div className="grid gap-2">
+            <Label>Vozač {driverRequired ? <span className="text-destructive">*</span> : <span className="text-muted-foreground text-xs">(opciono)</span>}</Label>
+            <Select value={driverId} onValueChange={setDriverId}>
+              <SelectTrigger className={driverRequired && driverId==="none" ? "border-destructive/50" : ""}><SelectValue placeholder={driverRequired ? "Obavezno — izaberi vozača" : "Bez vozača"}/></SelectTrigger>
+              <SelectContent>
+                {!driverRequired && <SelectItem value="none">— Bez vozača —</SelectItem>}
+                {drivers.map(d=><SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+              </SelectContent>
             </Select>
+            {driverRequired && driverId==="none" && <p className="text-xs text-destructive">Vozač je obavezan za ovaj tip unosa</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" placeholder="3500" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
@@ -86,7 +97,7 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
-          <Button disabled={!amount||!by||Number(amount)<=0||saving} onClick={async()=>{
+          <Button disabled={!canSave} onClick={async()=>{
             setSaving(true);
             try{await onAdd({type,direction:dir,driver_id:driverId==="none"?null:driverId,amount:Number(amount),date,description:desc,received_by:by,notes:""});
               toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);setOpen(false);reset();
@@ -103,6 +114,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const [closeBy,setCloseBy]=useState("");
   const [closeOpen,setCloseOpen]=useState(false);
   const [saving,setSaving]=useState(false);
+  const { drivers } = useDrivers();
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
@@ -136,16 +148,20 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                 <p className="text-center text-muted-foreground text-sm py-4">Nema unosa</p>
               ):(
                 <Table>
-                  <TableHeader><TableRow><TableHead>Tip</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Tip</TableHead><TableHead>Vozač</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {entries.map(e=>(
-                      <TableRow key={e.id}>
-                        <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{e.description}</TableCell>
-                        <TableCell><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{e.received_by}</TableCell>
-                      </TableRow>
-                    ))}
+                    {entries.map(e=>{
+                      const driver = e.driver_id ? drivers.find(d=>d.id===e.driver_id) : null;
+                      return(
+                        <TableRow key={e.id}>
+                          <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
+                          <TableCell className="text-sm font-medium">{driver?.full_name??<span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{e.description}</TableCell>
+                          <TableCell><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{e.received_by}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -193,6 +209,7 @@ const CashPage = () => {
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
   const {entries,loading,addEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
+  const { drivers: allDrivers } = useDrivers();
   const byDate=entries.reduce((acc,e)=>{if(!acc[e.date])acc[e.date]=[];acc[e.date].push(e);return acc;},{} as Record<string,any[]>);
   const [year,month]=filterMonth.split("-").map(Number);
   const daysInMonth=new Date(year,month,0).getDate();
@@ -236,18 +253,22 @@ const CashPage = () => {
           <TabsContent value="sve" className="mt-4">
             <Card><CardContent className="p-0">
               <Table>
-                <TableHeader><TableRow><TableHead>Datum</TableHead><TableHead>Tip</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Datum</TableHead><TableHead>Tip</TableHead><TableHead>Vozač</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {entries.length===0?<TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nema unosa</TableCell></TableRow>
-                    :entries.map(e=>(
-                      <TableRow key={e.id}>
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(e.date)}</TableCell>
-                        <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{e.description}</TableCell>
-                        <TableCell><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{e.received_by}</TableCell>
-                      </TableRow>
-                    ))}
+                  {entries.length===0?<TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema unosa</TableCell></TableRow>
+                    :entries.map(e=>{
+                      const driver = e.driver_id ? allDrivers.find((d:any)=>d.id===e.driver_id) : null;
+                      return(
+                        <TableRow key={e.id}>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(e.date)}</TableCell>
+                          <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
+                          <TableCell className="text-sm font-medium">{driver?.full_name??<span className="text-muted-foreground">—</span>}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{e.description}</TableCell>
+                          <TableCell><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{e.received_by}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                 </TableBody>
               </Table>
             </CardContent></Card>
