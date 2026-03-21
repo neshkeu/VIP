@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut, AlertCircle, Smartphone, CreditCard } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -14,23 +14,21 @@ const navItems = [
   { title: "Vozači",          url: "/drivers",   icon: Users           },
   { title: "Kalendar",        url: "/calendar",  icon: CalendarDays    },
   { title: "Kasa",            url: "/cash",      icon: Banknote        },
+  { title: "Dugovanja",       url: "/debts",     icon: AlertCircle     },
+  { title: "Yandex",          url: "/yandex",    icon: Smartphone      },
+  { title: "Kartice",         url: "/cards",     icon: CreditCard      },
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
-  const collapsed  = state === "collapsed";
-  const location   = useLocation();
-  const navigate   = useNavigate();
+  const { state }   = useSidebar();
+  const collapsed   = state === "collapsed";
+  const location    = useLocation();
+  const navigate    = useNavigate();
   const currentPath = location.pathname;
 
   const isActive = (path: string) => {
     if (path === "/") return currentPath === "/";
     return currentPath.startsWith(path);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("viptaxi_auth");
-    navigate("/login");
   };
 
   return (
@@ -48,21 +46,15 @@ export function AppSidebar() {
           )}
         </div>
       </SidebarHeader>
-
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Navigacija</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => (
+              {navItems.map(item => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/"}
-                      className="hover:bg-sidebar-accent"
-                      activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    >
+                    <NavLink to={item.url} end={item.url === "/"} className="hover:bg-sidebar-accent" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground font-medium">
                       <item.icon className="h-4 w-4" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>
@@ -73,14 +65,11 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
       <SidebarFooter className="border-t border-sidebar-border p-3">
         <div className="flex items-center justify-between gap-2">
           <ThemeToggle />
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors"
-          >
+          <button onClick={() => { localStorage.removeItem("viptaxi_auth"); navigate("/login"); }}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors">
             <LogOut className="h-4 w-4" />
             {!collapsed && <span>Odjava</span>}
           </button>
