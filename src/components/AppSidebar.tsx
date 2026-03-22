@@ -1,6 +1,7 @@
 import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut, AlertCircle, Smartphone, CreditCard } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -20,11 +21,11 @@ const navItems = [
 ];
 
 export function AppSidebar() {
-  const { state }   = useSidebar();
-  const collapsed   = state === "collapsed";
-  const location    = useLocation();
-  const navigate    = useNavigate();
-  const currentPath = location.pathname;
+  const { state }       = useSidebar();
+  const collapsed       = state === "collapsed";
+  const location        = useLocation();
+  const { displayName, logout } = useCurrentUser();
+  const currentPath     = location.pathname;
 
   const isActive = (path: string) => {
     if (path === "/") return currentPath === "/";
@@ -67,12 +68,19 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-3">
         <div className="flex items-center justify-between gap-2">
-          <ThemeToggle />
-          <button onClick={() => { localStorage.removeItem("viptaxi_auth"); navigate("/login"); }}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors">
-            <LogOut className="h-4 w-4" />
-            {!collapsed && <span>Odjava</span>}
-          </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+            {!collapsed && <span className="text-xs text-muted-foreground truncate">{displayName}</span>}
+          </div>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <button onClick={logout}
+              className="flex items-center gap-1 rounded-md px-1.5 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors">
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>
