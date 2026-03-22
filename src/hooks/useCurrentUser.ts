@@ -2,22 +2,27 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export function useCurrentUser() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser]               = useState<any>(null);
+  const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    loadUser();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => loadUser());
     return () => subscription.unsubscribe();
   }, []);
 
-  // Ime korisnika — dio emaila prije @
-  const displayName = user?.email?.split("@")[0] ?? "";
+  async function loadUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUser(user);
+    if (user) {
+      const { data } = await supabase.from("profiles").select("display_name").eq("id", user.id).single();
+      setDisplayName(data?.display_name ?? user.email?.split("@")[0] ?? "");
+    } else {
+      setDisplayName("");
+    }
+  }
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-  };
+  const logout = async () => { await supabase.auth.signOut(); };
 
   return { user, displayName, logout };
 }
