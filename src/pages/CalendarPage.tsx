@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useDrivers } from "@/hooks/useDrivers";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCalendar } from "@/hooks/useCalendar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -46,8 +47,7 @@ const ULAZ_TYPES=[
   {value:"doprinosi",label:"Doprinosi"},
 ];
 
-function DetailModal({open,onClose,driver,date,cal}:{open:boolean;onClose:()=>void;driver:any;date:string;cal:any}){
-  const [by,setBy]=useState("");
+function DetailModal({open,onClose,driver,date,cal,currentUser}:{open:boolean;onClose:()=>void;driver:any;date:string;cal:any;currentUser:string}){
   const [entryType,setEntryType]=useState("renta");
   const [entryAmount,setEntryAmount]=useState("");
   const [addOpen,setAddOpen]=useState(false);
@@ -70,12 +70,12 @@ function DetailModal({open,onClose,driver,date,cal}:{open:boolean;onClose:()=>vo
   };
 
   const handleSaveEntry=async(newStatus:DayStatus)=>{
-    if(!by.trim()){toast.error("Unesi ko evidentira!");return;}
+    
     if(!entryAmount){toast.error("Unesi iznos!");return;}
     setSaving(true);
     try{
-      await cal.saveAmount(driver.id,date,entryType,Number(entryAmount),by);
-      await cal.saveStatus(driver.id,date,newStatus!,by);
+      await cal.saveAmount(driver.id,date,entryType,Number(entryAmount),currentUser);
+      await cal.saveStatus(driver.id,date,newStatus!,currentUser);
       toast.success(`Evidentirano ${fmt(Number(entryAmount))} — ${newStatus}`);
       setAddOpen(false);setEntryAmount("");onClose();
     }catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
@@ -100,7 +100,7 @@ function DetailModal({open,onClose,driver,date,cal}:{open:boolean;onClose:()=>vo
   };
 
   const handleSundaySave=async(s:SundayStatus)=>{
-    if(!by.trim()){toast.error("Unesi ko evidentira!");return;}
+    
     setSaving(true);
     try{await cal.saveSundayStatus(driver.id,date,s!);toast.success(s==="radi"?"Evidentiran rad":"Slobodan dan");onClose();}
     catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
@@ -151,7 +151,7 @@ function DetailModal({open,onClose,driver,date,cal}:{open:boolean;onClose:()=>vo
           )}
 
           <Separator/>
-          <div className="grid gap-1.5"><Label className="text-xs">Ko evidentira</Label><Input placeholder="Nemanja, Milica..." value={by} onChange={e=>setBy(e.target.value)} className="h-9"/></div>
+          <div className="text-xs text-muted-foreground py-1">Evidentira: <strong>{currentUser}</strong></div>
 
           {!isSun&&(!addOpen?(
             <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={()=>{setAddOpen(true);setEntryType("renta");setEntryAmount(String(getAutoAmount(driver,"renta")));}}> + Evidentiraj uplatu</Button>
@@ -162,8 +162,8 @@ function DetailModal({open,onClose,driver,date,cal}:{open:boolean;onClose:()=>vo
               <Input type="number" placeholder="Iznos RSD" className="h-8 text-sm" value={entryAmount} onChange={e=>setEntryAmount(e.target.value)}/>
               <p className="text-xs text-muted-foreground">Označi status <span className="text-destructive">*</span></p>
               <div className="grid grid-cols-2 gap-2">
-                <button disabled={!entryAmount||!by||saving} onClick={()=>handleSaveEntry("izmireno")} className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200">{saving?<Loader2 className="h-4 w-4 animate-spin"/>:<Check className="h-4 w-4 text-green-600"/>}Izmireno</button>
-                <button disabled={!entryAmount||!by||saving} onClick={()=>handleSaveEntry("neizmireno")} className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-red-50 hover:border-red-400 hover:text-red-700 border-gray-200">{saving?<Loader2 className="h-4 w-4 animate-spin"/>:<X className="h-4 w-4 text-red-500"/>}Neizmireno</button>
+                <button disabled={!entryAmount||saving} onClick={()=>handleSaveEntry("izmireno")} className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200">{saving?<Loader2 className="h-4 w-4 animate-spin"/>:<Check className="h-4 w-4 text-green-600"/>}Izmireno</button>
+                <button disabled={!entryAmount||saving} onClick={()=>handleSaveEntry("neizmireno")} className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-red-50 hover:border-red-400 hover:text-red-700 border-gray-200">{saving?<Loader2 className="h-4 w-4 animate-spin"/>:<X className="h-4 w-4 text-red-500"/>}Neizmireno</button>
               </div>
               <Button size="sm" variant="ghost" className="w-full h-7 text-xs" onClick={()=>setAddOpen(false)}>Otkazi</Button>
             </div>
@@ -200,6 +200,7 @@ const CalendarPage=()=>{
   const [modalDriver,setModalDriver]=useState<any>(null);
   const [modalDate,setModalDate]=useState("");
   const {drivers,loading:loadingDrivers}=useDrivers();
+  const {displayName}=useCurrentUser();
   const cal=useCalendar(year,month);
   const activeDrivers=drivers.filter(d=>d.status==="active");
   const daysInMonth=getDaysInMonth(year,month);
@@ -276,7 +277,7 @@ const CalendarPage=()=>{
           </tbody>
         </table>
       </div>
-      <DetailModal open={modalOpen} onClose={()=>setModalOpen(false)} driver={modalDriver} date={modalDate} cal={cal}/>
+      <DetailModal open={modalOpen} onClose={()=>setModalOpen(false)} driver={modalDriver} date={modalDate} cal={cal} currentUser={displayName}/>
     </div>
   );
 };

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDebts } from "@/hooks/useDebts";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDrivers } from "@/hooks/useDrivers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -156,6 +158,7 @@ function DebtCard({ debt }: { debt: any }) {
 
 const DebtsPage = () => {
   const { debts, loading, addDebt } = useDebts();
+  const { displayName } = useCurrentUser();
   const { drivers } = useDrivers();
   const [addOpen, setAddOpen]     = useState(false);
   const [driverId, setDriverId]   = useState("none");
@@ -163,10 +166,9 @@ const DebtsPage = () => {
   const [amount, setAmount]       = useState("");
   const [desc, setDesc]           = useState("");
   const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
-  const [createdBy, setCreatedBy] = useState("");
   const [saving, setSaving]       = useState(false);
 
-  const reset = () => { setDriverId("none"); setType("steta"); setAmount(""); setDesc(""); setCreatedBy(""); setDate(new Date().toISOString().split("T")[0]); };
+  const reset = () => { setDriverId("none"); setType("steta"); setAmount(""); setDesc(""); setDate(new Date().toISOString().split("T")[0]); };
 
   const openDebts   = debts.filter(d => d.status !== "closed");
   const closedDebts = debts.filter(d => d.status === "closed");
@@ -201,14 +203,14 @@ const DebtsPage = () => {
                 <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
               </div>
               <div className="grid gap-1.5"><Label>Opis</Label><Input placeholder="Šteta — branik, kazna..." value={desc} onChange={e => setDesc(e.target.value)}/></div>
-              <div className="grid gap-1.5"><Label>Kreirao/la</Label><Input placeholder="Nemanja, Milica..." value={createdBy} onChange={e => setCreatedBy(e.target.value)}/></div>
+              <div className="text-sm text-muted-foreground py-1">Kreira: <strong>{displayName}</strong></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>
-              <Button disabled={driverId==="none"||!amount||!desc||!createdBy||saving} onClick={async () => {
+              <Button disabled={driverId==="none"||!amount||!desc||saving} onClick={async () => {
                 setSaving(true);
                 try {
-                  await addDebt({ driver_id: driverId, type: type as any, amount: Number(amount), date, description: desc, created_by: createdBy });
+                  await addDebt({ driver_id: driverId, type: type as any, amount: Number(amount), date, description: desc, created_by: displayName });
                   toast.success("Dugovanje evidentirano");
                   setAddOpen(false); reset();
                 } catch(e: any) { toast.error("Greška: " + e.message); }

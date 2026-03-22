@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useCash } from "@/hooks/useCash";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useObracun } from "@/hooks/useObracun";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,9 +44,9 @@ const CASH_TYPE_COLORS: Record<string,string> = {
 };
 const ULAZ_TYPES  = ["renta","clanarina","pos_naknada","komunalni","doprinosi","dugovanje","likvidnost_in"];
 const IZLAZ_TYPES = ["yandex","kartica","vaučer","pdv_gorivo","likvidnost_out"];
-const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"]; // jedini koji ne trebaju vozača
+const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"];
 
-function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
+function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
   const { drivers } = useDrivers();
   const [open,setOpen]=useState(false);
   const [dir,setDir]=useState<"in"|"out">("in");
@@ -54,18 +55,17 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
   const [amount,setAmount]=useState("");
   const [desc,setDesc]=useState("");
   const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
-  const [by,setBy]=useState("");
   const [saving,setSaving]=useState(false);
 
   const driverRequired = !NO_DRIVER_TYPES.includes(type);
-  const canSave = !!amount && !!by && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
+  const canSave = !!amount && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
+  const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setDate(new Date().toISOString().split("T")[0]);};
 
-  const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setBy("");setDate(new Date().toISOString().split("T")[0]);};
   return (
     <Dialog open={open} onOpenChange={v=>{setOpen(v);if(!v)reset();}}>
       <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi unos</Button></DialogTrigger>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Novi kasa unos</DialogTitle><DialogDescription>Evidentirajte uplatu ili isplatu</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Novi kasa unos</DialogTitle><DialogDescription>Evidentira: <strong>{currentUser}</strong></DialogDescription></DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={()=>{setDir("in");setType("renta");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="in"?"bg-green-50 border-green-500 text-green-700":"hover:bg-muted border-border"}`}><ArrowDownLeft className="h-4 w-4"/>Ulaz (+)</button>
@@ -94,14 +94,15 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
           </div>
           {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
           <div className="grid gap-2"><Label>Opis</Label><Input placeholder="Napomena..." value={desc} onChange={e=>setDesc(e.target.value)}/></div>
-          <div className="grid gap-2"><Label>Evidentirao/la</Label><Input placeholder="Nemanja, Milica..." value={by} onChange={e=>setBy(e.target.value)}/></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
           <Button disabled={!canSave} onClick={async()=>{
             setSaving(true);
-            try{await onAdd({type,direction:dir,driver_id:driverId==="none"?null:driverId,amount:Number(amount),date,description:desc,received_by:by,notes:""});
-              toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);setOpen(false);reset();
+            try{
+              await onAdd({type,direction:dir,driver_id:driverId==="none"?null:driverId,amount:Number(amount),date,description:desc,received_by:currentUser,notes:""});
+              toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);
+              setOpen(false);reset();
             }catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
           }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj</Button>
         </DialogFooter>
@@ -110,12 +111,11 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
   );
 }
 
-function ObracunCard({ date, entries, obracun }: { date: string; entries: any[]; obracun: any }) {
+function ObracunCard({ date, entries, obracun, allDrivers }: { date: string; entries: any[]; obracun: any; allDrivers: any[] }) {
   const [expanded,setExpanded]=useState(false);
-  const [closeBy,setCloseBy]=useState("");
   const [closeOpen,setCloseOpen]=useState(false);
   const [saving,setSaving]=useState(false);
-  const { drivers } = useDrivers();
+  const { displayName } = useCurrentUser();
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
@@ -145,14 +145,12 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
           {expanded&&(
             <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} className="overflow-hidden">
               <Separator/>
-              {entries.length===0?(
-                <p className="text-center text-muted-foreground text-sm py-4">Nema unosa</p>
-              ):(
+              {entries.length===0?<p className="text-center text-muted-foreground text-sm py-4">Nema unosa</p>:(
                 <Table>
                   <TableHeader><TableRow><TableHead>Tip</TableHead><TableHead>Vozač</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {entries.map(e=>{
-                      const driver = e.driver_id ? drivers.find(d=>d.id===e.driver_id) : null;
+                      const driver=e.driver_id?allDrivers.find((d:any)=>d.id===e.driver_id):null;
                       return(
                         <TableRow key={e.id}>
                           <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
@@ -174,13 +172,12 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                       <DialogTrigger asChild><Button size="sm"><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Zatvori obračun</Button></DialogTrigger>
                       <DialogContent className="max-w-sm">
                         <DialogHeader><DialogTitle>Zatvori obračun</DialogTitle><DialogDescription>{fmtDate(date)} — bilans: {fmt(total_in-total_out)}</DialogDescription></DialogHeader>
-                        <div className="py-3"><Label>Ko zatvara</Label><Input className="mt-2" placeholder="Nemanja, Milica..." value={closeBy} onChange={e=>setCloseBy(e.target.value)}/></div>
+                        <p className="py-3 text-sm">Zatvara: <strong>{displayName}</strong></p>
                         <DialogFooter>
                           <Button variant="outline" onClick={()=>setCloseOpen(false)}>Otkazi</Button>
-                          <Button disabled={saving||!closeBy} onClick={async()=>{
-                            if(!closeBy.trim()){toast.error("Unesi ko zatvara!");return;}
+                          <Button disabled={saving} onClick={async()=>{
                             setSaving(true);
-                            try{await obracun.closeObracun(date,closeBy,total_in,total_out);toast.success(`Obračun zatvoren — ${closeBy}`);setCloseOpen(false);setCloseBy("");}
+                            try{await obracun.closeObracun(date,displayName,total_in,total_out);toast.success(`Obračun zatvoren — ${displayName}`);setCloseOpen(false);}
                             catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
                           }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Zatvori</Button>
                         </DialogFooter>
@@ -210,7 +207,9 @@ const CashPage = () => {
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
   const {entries,loading,addEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
-  const { drivers: allDrivers } = useDrivers();
+  const { drivers: allDrivers }=useDrivers();
+  const { displayName }=useCurrentUser();
+
   const byDate=entries.reduce((acc,e)=>{if(!acc[e.date])acc[e.date]=[];acc[e.date].push(e);return acc;},{} as Record<string,any[]>);
   const [year,month]=filterMonth.split("-").map(Number);
   const daysInMonth=new Date(year,month,0).getDate();
@@ -229,7 +228,7 @@ const CashPage = () => {
         <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
-          <NewEntryDialog onAdd={addEntry}/>
+          <NewEntryDialog onAdd={addEntry} currentUser={displayName}/>
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -245,11 +244,11 @@ const CashPage = () => {
           <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="historija">Historija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
           <TabsContent value="tekuci" className="mt-4 space-y-3">
             <p className="text-xs text-muted-foreground">Naredni obračun: <strong>{fmtDate(currentObracun)}</strong></p>
-            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun}/>
+            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun} allDrivers={allDrivers}/>
           </TabsContent>
           <TabsContent value="historija" className="mt-4 space-y-3">
             {historyDates.length===0?<Card><CardContent className="py-10 text-center text-muted-foreground">Nema zatvorenih obračuna</CardContent></Card>
-              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun}/>)}
+              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun} allDrivers={allDrivers}/>)}
           </TabsContent>
           <TabsContent value="sve" className="mt-4">
             <Card><CardContent className="p-0">
@@ -258,7 +257,7 @@ const CashPage = () => {
                 <TableBody>
                   {entries.length===0?<TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema unosa</TableCell></TableRow>
                     :entries.map(e=>{
-                      const driver = e.driver_id ? allDrivers.find((d:any)=>d.id===e.driver_id) : null;
+                      const driver=e.driver_id?allDrivers.find((d:any)=>d.id===e.driver_id):null;
                       return(
                         <TableRow key={e.id}>
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(e.date)}</TableCell>
