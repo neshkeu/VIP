@@ -36,6 +36,7 @@ function isSundayFree(entries: any[], driverId:string, sundayDate:string):boolea
     const dateStr = d.toISOString().split("T")[0];
     const entry = entries.find(e => e.driver_id === driverId && e.date === dateStr);
     const s = entry?.status ?? null;
+    if(sundayDate==="2026-03-08") console.log(`  isSundayFree check: date=${dateStr}, entry=`, entry, `status=${s}`);
     if(s===null||s==="nije_radio") return false;
   }
   return true;
