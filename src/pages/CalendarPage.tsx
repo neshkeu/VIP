@@ -26,7 +26,7 @@ type DayStatus = "izmireno"|"neizmireno"|"nije_radio"|null;
 
 // Nedjelja besplatna ako su SVIH 6 dana pon-sub te sedmice radio (izmireno ILI neizmireno)
 // Gleda unazad: sub(-1), pet(-2), čet(-3), sri(-4), uto(-5), pon(-6)
-function isSundayFree(getStatus:(driverId:string,date:string)=>DayStatus, driverId:string, sundayDate:string):boolean {
+function isSundayFree(entries: any[], driverId:string, sundayDate:string):boolean {
   if(!sundayDate||!driverId) return false;
   const sun = new Date(sundayDate+"T00:00:00");
   if(isNaN(sun.getTime())) return false;
@@ -34,14 +34,10 @@ function isSundayFree(getStatus:(driverId:string,date:string)=>DayStatus, driver
     const d = new Date(sun);
     d.setDate(sun.getDate()-i);
     const dateStr = d.toISOString().split("T")[0];
-    const s = getStatus(driverId, dateStr);
-    console.log(`  Dan ${dateStr}: status=${s}`);
-    if(s===null||s==="nije_radio") {
-      console.log(`  → Nedjelja se naplaćuje zbog ${dateStr} (status=${s})`);
-      return false;
-    }
+    const entry = entries.find(e => e.driver_id === driverId && e.date === dateStr);
+    const s = entry?.status ?? null;
+    if(s===null||s==="nije_radio") return false;
   }
-  console.log(`  → Nedjelja besplatna!`);
   return true;
 }
 
@@ -67,7 +63,7 @@ function DetailModal({open,onClose,driver,date,cal,currentUser,vehicle}:{open:bo
   const dow=new Date(date+"T00:00:00").getDay();
   const isSun=dow===0;
   const status=cal.getStatus(driver.id,date) as DayStatus;
-  const sunFree=isSun?isSundayFree(cal.getStatus,driver.id,date):false;
+  const sunFree=isSun?isSundayFree(cal.entries,driver.id,date):false;
   const entries=cal.getAmounts(driver.id,date);
 
   const handleTypeChange=(type:string,half=false)=>{
@@ -343,7 +339,7 @@ const CalendarPage=()=>{
                 {days.map(day=>{
                   const dow=getDow(year,month,day);const dateStr=getDateStr(year,month,day);
                   const isSun=dow===0;
-                  const sunFree=isSun?isSundayFree(cal.getStatus,driver.id,dateStr):false;
+                  const sunFree=isSun?isSundayFree(cal.entries,driver.id,dateStr):false;
                   const totalAmount=cal.getAmounts(driver.id,dateStr).reduce((s:number,e:any)=>s+e.amount,0);
                   return<Cell key={day}
                     status={cal.getStatus(driver.id,dateStr) as DayStatus}
