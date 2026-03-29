@@ -339,6 +339,7 @@ const CalendarPage=()=>{
                 {days.map(day=>{
                   const dow=getDow(year,month,day);const dateStr=getDateStr(year,month,day);
                   const isSun=dow===0;
+                  if(isSun) console.log(`Nedjelja ${dateStr} - ${driver.full_name} - entries:`, cal.entries.filter((e:any)=>e.driver_id===driver.id).map((e:any)=>({date:e.date,status:e.status})));
                   const sunFree=isSun?isSundayFree(cal.entries,driver.id,dateStr):false;
                   const totalAmount=cal.getAmounts(driver.id,dateStr).reduce((s:number,e:any)=>s+e.amount,0);
                   return<Cell key={day}
