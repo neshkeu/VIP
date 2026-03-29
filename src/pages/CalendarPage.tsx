@@ -24,15 +24,15 @@ function fmt(n:number){return n.toLocaleString("sr-RS")+" RSD";}
 
 type DayStatus = "izmireno"|"neizmireno"|"nije_radio"|null;
 
-// Nedjelja besplatna ako su SVIH 6 dana pon-sub radio (izmireno ILI neizmireno)
-// nije_radio ili null = nije radio = nedjelja se plaća
+// Nedjelja besplatna ako su SVIH 6 dana pon-sub te sedmice radio (izmireno ILI neizmireno)
+// Gleda unazad: sub(-1), pet(-2), čet(-3), sri(-4), uto(-5), pon(-6)
 function isSundayFree(getStatus:(driverId:string,date:string)=>DayStatus, driverId:string, sundayDate:string):boolean {
   if(!sundayDate||!driverId) return false;
   const sun = new Date(sundayDate+"T00:00:00");
   if(isNaN(sun.getTime())) return false;
   for(let i=1;i<=6;i++){
     const d = new Date(sun);
-    d.setDate(sun.getDate()+i);
+    d.setDate(sun.getDate()-i); // unazad: sub, pet, čet, sri, uto, pon
     const s = getStatus(driverId, d.toISOString().split("T")[0]);
     if(s===null||s==="nije_radio") return false;
   }
