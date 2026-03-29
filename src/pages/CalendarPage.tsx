@@ -32,10 +32,16 @@ function isSundayFree(getStatus:(driverId:string,date:string)=>DayStatus, driver
   if(isNaN(sun.getTime())) return false;
   for(let i=1;i<=6;i++){
     const d = new Date(sun);
-    d.setDate(sun.getDate()-i); // unazad: sub, pet, čet, sri, uto, pon
-    const s = getStatus(driverId, d.toISOString().split("T")[0]);
-    if(s===null||s==="nije_radio") return false;
+    d.setDate(sun.getDate()-i);
+    const dateStr = d.toISOString().split("T")[0];
+    const s = getStatus(driverId, dateStr);
+    console.log(`  Dan ${dateStr}: status=${s}`);
+    if(s===null||s==="nije_radio") {
+      console.log(`  → Nedjelja se naplaćuje zbog ${dateStr} (status=${s})`);
+      return false;
+    }
   }
+  console.log(`  → Nedjelja besplatna!`);
   return true;
 }
 
