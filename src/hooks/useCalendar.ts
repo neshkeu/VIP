@@ -20,22 +20,6 @@ export function useCalendar(year: number, month: number) {
 
   useEffect(() => {
     fetchAll();
-
-    // Osvježi kad se korisnik vrati na stranicu
-    const onFocus = () => fetchAll();
-    window.addEventListener("focus", onFocus);
-
-    // Realtime
-    const sub = supabase
-      .channel(`calendar-${prefix}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_entries" }, () => fetchAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_amounts" }, () => fetchAll())
-      .subscribe();
-
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      supabase.removeChannel(sub);
-    };
   }, [prefix]);
 
   async function fetchAll() {
@@ -43,12 +27,10 @@ export function useCalendar(year: number, month: number) {
     const pfx  = `${year}-${String(month).padStart(2,"0")}`;
     const from = `${pfx}-01`;
     const to   = `${pfx}-31`;
-    const [{ data: e, error: e1 }, { data: a, error: e2 }] = await Promise.all([
+    const [{ data: e }, { data: a }] = await Promise.all([
       supabase.from("calendar_entries").select("*").gte("date", from).lte("date", to),
       supabase.from("calendar_amounts").select("*").gte("date", from).lte("date", to),
     ]);
-    console.log("entries:", e, e1);
-    console.log("amounts:", a, e2);
     setEntries(e ?? []); setAmounts(a ?? []);
     setLoading(false);
   }
