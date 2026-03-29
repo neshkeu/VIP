@@ -28,15 +28,13 @@ type DayStatus = "izmireno"|"neizmireno"|"nije_radio"|null;
 // Gleda unazad: sub(-1), pet(-2), čet(-3), sri(-4), uto(-5), pon(-6)
 function isSundayFree(entries: any[], driverId:string, sundayDate:string):boolean {
   if(!sundayDate||!driverId) return false;
-  const sun = new Date(sundayDate+"T00:00:00");
-  if(isNaN(sun.getTime())) return false;
+  const [sy,sm,sd] = sundayDate.split("-").map(Number);
   for(let i=1;i<=6;i++){
-    const d = new Date(sun);
-    d.setDate(sun.getDate()-i);
-    const dateStr = d.toISOString().split("T")[0];
+    const y = sm===1&&sd-i<1 ? sy-1 : sy;
+    const date = new Date(sy, sm-1, sd-i);
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
     const entry = entries.find(e => e.driver_id === driverId && e.date === dateStr);
     const s = entry?.status ?? null;
-    if(sundayDate==="2026-03-08") console.log(`  isSundayFree check: date=${dateStr}, entry=`, entry, `status=${s}`);
     if(s===null||s==="nije_radio") return false;
   }
   return true;
@@ -340,7 +338,6 @@ const CalendarPage=()=>{
                 {days.map(day=>{
                   const dow=getDow(year,month,day);const dateStr=getDateStr(year,month,day);
                   const isSun=dow===0;
-                  if(isSun) console.log(`Nedjelja ${dateStr} - ${driver.full_name} - entries:`, cal.entries.filter((e:any)=>e.driver_id===driver.id).map((e:any)=>({date:e.date,status:e.status})));
                   const sunFree=isSun?isSundayFree(cal.entries,driver.id,dateStr):false;
                   const totalAmount=cal.getAmounts(driver.id,dateStr).reduce((s:number,e:any)=>s+e.amount,0);
                   return<Cell key={day}
