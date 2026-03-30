@@ -1,9 +1,7 @@
+import { useApp } from "@/context/AppContext";
 import { useState } from "react";
-import { useDrivers } from "@/hooks/useDrivers";
-import { useVehicles } from "@/hooks/useVehicles";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useMonthlyAssignments } from "@/hooks/useMonthlyAssignments";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -263,11 +261,11 @@ const CalendarPage=()=>{
   const [modalDate,setModalDate]=useState("");
   const [assignOpen,setAssignOpen]=useState(false);
 
-  const {drivers,loading:loadingDrivers}=useDrivers();
-  const {vehicles}=useVehicles();
+  const { drivers, vehicles, displayName } = useApp();
+  
   const cal=useCalendar(year,month);
   const monthlyAssignments=useMonthlyAssignments(year,month);
-  const {displayName}=useCurrentUser();
+  
 
   const activeDrivers=drivers.filter(d=>d.status==="active");
   const daysInMonth=getDaysInMonth(year,month);

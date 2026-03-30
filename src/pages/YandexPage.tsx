@@ -1,9 +1,5 @@
-import { useState, useEffect } from "react";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useState } from "react";
 import { useYandex } from "@/hooks/useYandex";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useDrivers } from "@/hooks/useDrivers";
-import { useVehicles } from "@/hooks/useVehicles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,9 +18,8 @@ function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const YandexPage = () => {
   const { reports, loading, addReport, markPaidOut } = useYandex();
-  const { displayName } = useCurrentUser();
-  const { drivers } = useDrivers();
-  const { vehicles } = useVehicles();
+  
+  
 
   const [addOpen, setAddOpen]       = useState(false);
   const [driverId, setDriverId]     = useState("none");
@@ -38,6 +33,7 @@ const YandexPage = () => {
   const [saving, setSaving]         = useState(false);
 
   const [payId, setPayId]   = useState("");
+  const [payBy, setPayBy]   = useState("");
   const [payOpen, setPayOpen] = useState(false);
 
   const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
@@ -122,12 +118,12 @@ const YandexPage = () => {
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Isplati vozaču</DialogTitle></DialogHeader>
-          <div className="py-3 text-sm">Isplaćuje: <strong>{displayName}</strong></div>
+          <div className="py-3"><Label>Ko isplaćuje</Label><Input className="mt-2" placeholder="Nemanja, Milica..." value={payBy} onChange={e => setPayBy(e.target.value)}/></div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
-            <Button disabled={saving} onClick={async () => {
+            <Button disabled={!payBy || saving} onClick={async () => {
               setSaving(true);
-              try { await markPaidOut(payId, payBy); toast.success("Isplaćeno — " + payBy); setPayOpen(false);  }
+              try { await markPaidOut(payId, payBy); toast.success("Isplaćeno — " + payBy); setPayOpen(false); setPayBy(""); }
               catch(e: any) { toast.error("Greška: " + e.message); }
               finally { setSaving(false); }
             }}>
