@@ -111,8 +111,8 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
 }
 
 function ObracunCard({ date, entries, obracun }: { date: string; entries: any[]; obracun: any }) {
+  const { drivers, displayName } = useApp();
   const [expanded,setExpanded]=useState(false);
-  const [closeBy,setCloseBy]=useState("");
   const [closeOpen,setCloseOpen]=useState(false);
   const [saving,setSaving]=useState(false);
   
@@ -174,13 +174,12 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                       <DialogTrigger asChild><Button size="sm"><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Zatvori obračun</Button></DialogTrigger>
                       <DialogContent className="max-w-sm">
                         <DialogHeader><DialogTitle>Zatvori obračun</DialogTitle><DialogDescription>{fmtDate(date)} — bilans: {fmt(total_in-total_out)}</DialogDescription></DialogHeader>
-                        <div className="py-3"><Label>Ko zatvara</Label><Input className="mt-2" placeholder="Nemanja, Milica..." value={closeBy} onChange={e=>setCloseBy(e.target.value)}/></div>
+                        <div className="py-3 text-sm">Zatvara: <strong>{displayName}</strong></div>
                         <DialogFooter>
                           <Button variant="outline" onClick={()=>setCloseOpen(false)}>Otkazi</Button>
-                          <Button disabled={saving||!closeBy} onClick={async()=>{
-                            if(!closeBy.trim()){toast.error("Unesi ko zatvara!");return;}
+                          <Button disabled={saving} onClick={async()=>{
                             setSaving(true);
-                            try{await obracun.closeObracun(date,closeBy,total_in,total_out);toast.success(`Obračun zatvoren — ${closeBy}`);setCloseOpen(false);setCloseBy("");}
+                            try{await obracun.closeObracun(date,displayName,total_in,total_out);toast.success(`Obračun zatvoren — ${displayName}`);setCloseOpen(false);}
                             catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
                           }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Zatvori</Button>
                         </DialogFooter>
