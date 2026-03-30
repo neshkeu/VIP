@@ -26,7 +26,8 @@ export function useCalendar(year: number, month: number) {
     setLoading(true);
     const pfx  = `${year}-${String(month).padStart(2,"0")}`;
     const from = `${pfx}-01`;
-    const to   = `${pfx}-31`;
+    const lastDay = new Date(year, month, 0).getDate(); // stvarni zadnji dan
+    const to   = `${pfx}-${String(lastDay).padStart(2,"0")}`;
     const [{ data: e }, { data: a }] = await Promise.all([
       supabase.from("calendar_entries").select("*").gte("date", from).lte("date", to),
       supabase.from("calendar_amounts").select("*").gte("date", from).lte("date", to),
