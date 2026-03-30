@@ -45,8 +45,8 @@ const ULAZ_TYPES  = ["renta","clanarina","pos_naknada","komunalni","doprinosi","
 const IZLAZ_TYPES = ["yandex","kartica","vaučer","pdv_gorivo","likvidnost_out"];
 const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"]; // jedini koji ne trebaju vozača
 
-function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
-  
+function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
+  const { drivers } = useApp();
   const [open,setOpen]=useState(false);
   const [dir,setDir]=useState<"in"|"out">("in");
   const [type,setType]=useState("renta");
@@ -58,9 +58,9 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
   const [saving,setSaving]=useState(false);
 
   const driverRequired = !NO_DRIVER_TYPES.includes(type);
-  const canSave = !!amount && !!by && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
+  const canSave = !!amount && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
 
-  const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setBy("");setDate(new Date().toISOString().split("T")[0]);};
+  const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setDate(new Date().toISOString().split("T")[0]);};
   return (
     <Dialog open={open} onOpenChange={v=>{setOpen(v);if(!v)reset();}}>
       <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi unos</Button></DialogTrigger>
@@ -94,13 +94,13 @@ function NewEntryDialog({ onAdd }: { onAdd: (e: any) => Promise<void> }) {
           </div>
           {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
           <div className="grid gap-2"><Label>Opis</Label><Input placeholder="Napomena..." value={desc} onChange={e=>setDesc(e.target.value)}/></div>
-          <div className="grid gap-2"><Label>Evidentirao/la</Label><Input placeholder="Nemanja, Milica..." value={by} onChange={e=>setBy(e.target.value)}/></div>
+          <div className="text-xs text-muted-foreground">Evidentira: <strong>{currentUser}</strong></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
           <Button disabled={!canSave} onClick={async()=>{
             setSaving(true);
-            try{await onAdd({type,direction:dir,driver_id:driverId==="none"?null:driverId,amount:Number(amount),date,description:desc,received_by:by,notes:""});
+            try{await onAdd({type,direction:dir,driver_id:driverId==="none"?null:driverId,amount:Number(amount),date,description:desc,received_by:currentUser,notes:""});
               toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);setOpen(false);reset();
             }catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
           }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj</Button>
@@ -230,7 +230,7 @@ const CashPage = () => {
         <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
-          <NewEntryDialog onAdd={addEntry}/>
+          <NewEntryDialog onAdd={addEntry} currentUser={displayName}/>
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
