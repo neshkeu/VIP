@@ -1,3 +1,4 @@
+import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { useCards, CARD_DEDUCTIONS, CardType } from "@/hooks/useCards";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +21,7 @@ const CARD_LABELS: Record<CardType, string> = {
 };
 
 const CardsPage = () => {
+  const { drivers, vehicles, displayName } = useApp();
   const { reports, loading, addReport, markPaidOut } = useCards();
   
   

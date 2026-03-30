@@ -1,3 +1,4 @@
+import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { useYandex } from "@/hooks/useYandex";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import { TrendingUp } from "lucide-react";
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const YandexPage = () => {
+  const { drivers, vehicles, displayName } = useApp();
   const { reports, loading, addReport, markPaidOut } = useYandex();
   
   

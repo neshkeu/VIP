@@ -1,3 +1,4 @@
+import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { useDebts } from "@/hooks/useDebts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -154,6 +155,7 @@ function DebtCard({ debt }: { debt: any }) {
 }
 
 const DebtsPage = () => {
+  const { drivers, displayName } = useApp();
   const { debts, loading, addDebt } = useDebts();
   
   const [addOpen, setAddOpen]     = useState(false);

@@ -1,3 +1,4 @@
+import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
@@ -207,6 +208,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
 const CashPage = () => {
   const today = new Date();
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
+  const { drivers: allDrivers, displayName } = useApp();
   const {entries,loading,addEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
   
