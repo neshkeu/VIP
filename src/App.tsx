@@ -25,11 +25,11 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/*" element={
-            <AuthGuard>
-              <AppProvider>
+        <AppProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/*" element={
+              <AuthGuard>
                 <AppLayout>
                   <Routes>
                     <Route path="/"         element={<Dashboard />} />
@@ -43,10 +43,10 @@ const App = () => (
                     <Route path="*"         element={<NotFound />} />
                   </Routes>
                 </AppLayout>
-              </AppProvider>
-            </AuthGuard>
-          } />
-        </Routes>
+              </AuthGuard>
+            } />
+          </Routes>
+        </AppProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
