@@ -1,7 +1,7 @@
 import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut, AlertCircle, Smartphone, CreditCard } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useApp } from "@/context/AppContext";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -21,11 +21,11 @@ const navItems = [
 ];
 
 export function AppSidebar() {
-  const { state }       = useSidebar();
-  const collapsed       = state === "collapsed";
-  const location        = useLocation();
-  const { displayName, logout } = useCurrentUser();
-  const currentPath     = location.pathname;
+  const { state }   = useSidebar();
+  const collapsed   = state === "collapsed";
+  const location    = useLocation();
+  const { displayName, logout } = useApp();
+  const currentPath = location.pathname;
 
   const isActive = (path: string) => {
     if (path === "/") return currentPath === "/";
@@ -76,8 +76,7 @@ export function AppSidebar() {
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <button onClick={logout}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors">
+            <button onClick={logout} className="flex items-center gap-1 rounded-md px-1.5 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors">
               <LogOut className="h-4 w-4" />
             </button>
           </div>
