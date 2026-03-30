@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/AppLayout";
 import { AuthGuard } from "@/components/AuthGuard";
+import { AppProvider } from "@/context/AppContext";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import DriversPage from "./pages/DriversPage";
@@ -28,19 +29,21 @@ const App = () => (
           <Route path="/login" element={<LoginPage />} />
           <Route path="/*" element={
             <AuthGuard>
-              <AppLayout>
-                <Routes>
-                  <Route path="/"         element={<Dashboard />} />
-                  <Route path="/vehicles" element={<VehiclesPage />} />
-                  <Route path="/drivers"  element={<DriversPage />} />
-                  <Route path="/calendar" element={<CalendarPage />} />
-                  <Route path="/cash"     element={<CashPage />} />
-                  <Route path="/debts"    element={<DebtsPage />} />
-                  <Route path="/yandex"   element={<YandexPage />} />
-                  <Route path="/cards"    element={<CardsPage />} />
-                  <Route path="*"         element={<NotFound />} />
-                </Routes>
-              </AppLayout>
+              <AppProvider>
+                <AppLayout>
+                  <Routes>
+                    <Route path="/"         element={<Dashboard />} />
+                    <Route path="/vehicles" element={<VehiclesPage />} />
+                    <Route path="/drivers"  element={<DriversPage />} />
+                    <Route path="/calendar" element={<CalendarPage />} />
+                    <Route path="/cash"     element={<CashPage />} />
+                    <Route path="/debts"    element={<DebtsPage />} />
+                    <Route path="/yandex"   element={<YandexPage />} />
+                    <Route path="/cards"    element={<CardsPage />} />
+                    <Route path="*"         element={<NotFound />} />
+                  </Routes>
+                </AppLayout>
+              </AppProvider>
             </AuthGuard>
           } />
         </Routes>
