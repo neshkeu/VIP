@@ -43,7 +43,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (session?.user) loadProfile(session.user.id);
       else setDisplayName("");
     });
-    return () => subscription.unsubscribe();
+
+    // Keep-alive ping svakih 4 minute da ne timeout-uje konekcija
+    const ping = setInterval(() => {
+      supabase.from("drivers").select("id").limit(1);
+    }, 4 * 60 * 1000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearInterval(ping);
+    };
   }, []);
 
   async function loadAll() {
