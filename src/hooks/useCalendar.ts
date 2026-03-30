@@ -73,8 +73,21 @@ export function useCalendar(year: number, month: number) {
   }
 
   async function deleteAmount(id: string) {
+    // Nađi koji driver_id i date ima ovaj amount
+    const amount = amounts.find(a => a.id === id);
+    if (!amount) return;
+
     const { error } = await supabase.from("calendar_amounts").delete().eq("id", id);
     if (error) throw error;
+
+    const remaining = amounts.filter(a => a.id !== id && a.driver_id === amount.driver_id && a.date === amount.date);
+
+    // Ako nema više iznosa za taj dan — obriši i status
+    if (remaining.length === 0) {
+      await supabase.from("calendar_entries").delete().eq("driver_id", amount.driver_id).eq("date", amount.date);
+      setEntries(prev => prev.filter(e => !(e.driver_id === amount.driver_id && e.date === amount.date)));
+    }
+
     setAmounts(prev => prev.filter(a => a.id !== id));
   }
 
