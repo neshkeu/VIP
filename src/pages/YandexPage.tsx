@@ -63,20 +63,20 @@ const YandexPage = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5"><Label>Vozač</Label>
                   <Select value={driverId} onValueChange={v => { setDriverId(v); const d = drivers.find(dr => dr.id === v); const veh = vehicles.find(ve => ve.id === d?.vehicle_id); if (veh) setVehicleId(veh.id); }}>
-                    <SelectTrigger><SelectValue placeholder="Izaberi"/></SelectTrigger>
+                    <SelectTrigger><SelectValue/></SelectTrigger>
                     <SelectContent>{drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-1.5"><Label>Vozilo</Label>
                   <Select value={vehicleId} onValueChange={setVehicleId}>
-                    <SelectTrigger><SelectValue placeholder="Izaberi"/></SelectTrigger>
+                    <SelectTrigger><SelectValue/></SelectTrigger>
                     <SelectContent><SelectItem value="none">— Bez vozila —</SelectItem>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.brand} {v.model}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5"><Label>Bruto iznos (RSD)</Label><Input type="number" placeholder="5000" value={gross} onChange={e => setGross(e.target.value)}/></div>
-                <div className="grid gap-1.5"><Label>Odbitak %</Label><Input type="number" placeholder="10" value={deductPct} onChange={e => setDeductPct(e.target.value)}/></div>
+                <div className="grid gap-1.5"><Label>Bruto iznos (RSD)</Label><Input type="number" value={gross} onChange={e => setGross(e.target.value)}/></div>
+                <div className="grid gap-1.5"><Label>Odbitak %</Label><Input type="number" value={deductPct} onChange={e => setDeductPct(e.target.value)}/></div>
               </div>
               {grossNum > 0 && (
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
@@ -90,7 +90,7 @@ const YandexPage = () => {
                 <div className="grid gap-1.5"><Label>Period do</Label><Input type="date" value={periodTo} onChange={e => setPeriodTo(e.target.value)}/></div>
               </div>
               <div className="grid gap-1.5"><Label>Datum izvoda</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
-              <div className="grid gap-1.5"><Label>Napomena</Label><Input placeholder="Opciono..." value={notes} onChange={e => setNotes(e.target.value)}/></div>
+              <div className="grid gap-1.5"><Label>Napomena</Label><Input value={notes} onChange={e => setNotes(e.target.value)}/></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>
@@ -120,7 +120,7 @@ const YandexPage = () => {
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Isplati vozaču</DialogTitle></DialogHeader>
-          <div className="py-3"><Label>Ko isplaćuje</Label><Input className="mt-2" placeholder="Nemanja, Milica..." value={payBy} onChange={e => setPayBy(e.target.value)}/></div>
+          <div className="py-3"><Label>Ko isplaćuje</Label><Input className="mt-2" value={payBy} onChange={e => setPayBy(e.target.value)}/></div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
             <Button disabled={!payBy || saving} onClick={async () => {

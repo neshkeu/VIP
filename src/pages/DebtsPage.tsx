@@ -101,11 +101,11 @@ function DebtCard({ debt }: { debt: any }) {
                     </div>
                     <div className="grid gap-1.5">
                       <Label>Primio/la</Label>
-                      <Input placeholder="Nemanja, Milica..." value={payBy} onChange={e => setPayBy(e.target.value)}/>
+                      <Input value={payBy} onChange={e => setPayBy(e.target.value)}/>
                     </div>
                     <div className="grid gap-1.5">
                       <Label>Napomena</Label>
-                      <Input placeholder="Opciono..." value={payNote} onChange={e => setPayNote(e.target.value)}/>
+                      <Input value={payNote} onChange={e => setPayNote(e.target.value)}/>
                     </div>
                   </div>
                   <DialogFooter>
@@ -187,7 +187,7 @@ const DebtsPage = () => {
             <div className="grid gap-3 py-3">
               <div className="grid gap-1.5"><Label>Vozač</Label>
                 <Select value={driverId} onValueChange={setDriverId}>
-                  <SelectTrigger><SelectValue placeholder="Izaberi vozača"/></SelectTrigger>
+                  <SelectTrigger><SelectValue/></SelectTrigger>
                   <SelectContent>{drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
@@ -198,11 +198,11 @@ const DebtsPage = () => {
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" placeholder="15000" value={amount} onChange={e => setAmount(e.target.value)}/></div>
+                <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e => setAmount(e.target.value)}/></div>
                 <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
               </div>
-              <div className="grid gap-1.5"><Label>Opis</Label><Input placeholder="Šteta — branik, kazna..." value={desc} onChange={e => setDesc(e.target.value)}/></div>
-              <div className="grid gap-1.5"><Label>Kreirao/la</Label><Input placeholder="Nemanja, Milica..." value={createdBy} onChange={e => setCreatedBy(e.target.value)}/></div>
+              <div className="grid gap-1.5"><Label>Opis</Label><Input value={desc} onChange={e => setDesc(e.target.value)}/></div>
+              <div className="grid gap-1.5"><Label>Kreirao/la</Label><Input value={createdBy} onChange={e => setCreatedBy(e.target.value)}/></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>

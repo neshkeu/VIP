@@ -52,13 +52,13 @@ export function LoginPage() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="ime@viptaxi.com" value={email}
+              <Input id="email" type="email" value={email}
                 onChange={e => { setEmail(e.target.value); setError(""); }} autoFocus/>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Lozinka</Label>
               <div className="relative">
-                <Input id="password" type={showPw ? "text" : "password"} placeholder="••••••••"
+                <Input id="password" type={showPw ? "text" : "password"}
                   value={password} onChange={e => { setPassword(e.target.value); setError(""); }} className="pr-10"/>
                 <button type="button" onClick={() => setShowPw(!showPw)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">

@@ -71,13 +71,13 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
       </DialogHeader>
       <div className="grid gap-4 py-3">
         <div className="grid grid-cols-2 gap-3">
-          <div className="grid gap-2"><Label>Ime i prezime</Label><Input placeholder="Marko Petrović" value={name} onChange={e => setName(e.target.value)}/></div>
-          <div className="grid gap-2"><Label>Telefon</Label><Input placeholder="064-111-2233" value={phone} onChange={e => setPhone(e.target.value)}/></div>
+          <div className="grid gap-2"><Label>Ime i prezime</Label><Input value={name} onChange={e => setName(e.target.value)}/></div>
+          <div className="grid gap-2"><Label>Telefon</Label><Input value={phone} onChange={e => setPhone(e.target.value)}/></div>
         </div>
         <div className="grid gap-2">
           <Label>Vozilo</Label>
           <Select value={vehicleId ?? "none"} onValueChange={setVehicleId}>
-            <SelectTrigger><SelectValue placeholder="Izaberi vozilo"/></SelectTrigger>
+            <SelectTrigger><SelectValue/></SelectTrigger>
             <SelectContent>
               <SelectItem value="none">— Bez vozila —</SelectItem>
               {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number}</SelectItem>)}
@@ -102,15 +102,15 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
         <AnimatePresence mode="wait">
           {type === "renta" ? (
             <motion.div key="renta" initial={{ opacity:0 }} animate={{ opacity:1 }} className="grid grid-cols-3 gap-3">
-              <div className="grid gap-1.5"><Label className="text-xs">Dnevna renta</Label><Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDailyRate(e.target.value)}/><p className="text-xs text-muted-foreground">Dnevno</p></div>
-              <div className="grid gap-1.5"><Label className="text-xs">Članarina</Label><Input type="number" placeholder="1000" value={weekly} onChange={e => setWeekly(e.target.value)}/><p className="text-xs text-muted-foreground">Sedmično</p></div>
-              <div className="grid gap-1.5"><Label className="text-xs">POS naknada</Label><Input type="number" placeholder="800" value={posFee} onChange={e => setPosFee(e.target.value)}/><p className="text-xs text-muted-foreground">Mjesečno</p></div>
+              <div className="grid gap-1.5"><Label className="text-xs">Dnevna renta</Label><Input type="number" value={dailyRate} onChange={e => setDailyRate(e.target.value)}/><p className="text-xs text-muted-foreground">Dnevno</p></div>
+              <div className="grid gap-1.5"><Label className="text-xs">Članarina</Label><Input type="number" value={weekly} onChange={e => setWeekly(e.target.value)}/><p className="text-xs text-muted-foreground">Sedmično</p></div>
+              <div className="grid gap-1.5"><Label className="text-xs">POS naknada</Label><Input type="number" value={posFee} onChange={e => setPosFee(e.target.value)}/><p className="text-xs text-muted-foreground">Mjesečno</p></div>
             </motion.div>
           ) : (
             <motion.div key="vlastito" initial={{ opacity:0 }} animate={{ opacity:1 }} className="grid grid-cols-3 gap-3">
-              <div className="grid gap-1.5"><Label className="text-xs">Komunalni</Label><Input type="number" placeholder="5000" value={komunalni} onChange={e => setKomunalni(e.target.value)}/><p className="text-xs text-muted-foreground">Mjesečno</p></div>
-              <div className="grid gap-1.5"><Label className="text-xs">Članarina</Label><Input type="number" placeholder="800" value={memberOwn} onChange={e => setMemberOwn(e.target.value)}/><p className="text-xs text-muted-foreground">Sedmično</p></div>
-              <div className="grid gap-1.5"><Label className="text-xs">Doprinosi</Label><Input type="number" placeholder="3000" value={doprinosi} onChange={e => setDoprinosi(e.target.value)}/><p className="text-xs text-muted-foreground">Mjesečno</p></div>
+              <div className="grid gap-1.5"><Label className="text-xs">Komunalni</Label><Input type="number" value={komunalni} onChange={e => setKomunalni(e.target.value)}/><p className="text-xs text-muted-foreground">Mjesečno</p></div>
+              <div className="grid gap-1.5"><Label className="text-xs">Članarina</Label><Input type="number" value={memberOwn} onChange={e => setMemberOwn(e.target.value)}/><p className="text-xs text-muted-foreground">Sedmično</p></div>
+              <div className="grid gap-1.5"><Label className="text-xs">Doprinosi</Label><Input type="number" value={doprinosi} onChange={e => setDoprinosi(e.target.value)}/><p className="text-xs text-muted-foreground">Mjesečno</p></div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -149,7 +149,7 @@ const DriversPage = () => {
         <div className="flex gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"/>
-            <Input className="pl-8 w-56" placeholder="Pretraži..." value={search} onChange={e => setSearch(e.target.value)}/>
+            <Input className="pl-8 w-56" value={search} onChange={e => setSearch(e.target.value)}/>
           </div>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>

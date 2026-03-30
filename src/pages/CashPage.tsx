@@ -89,11 +89,11 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
             {driverRequired && driverId==="none" && <p className="text-xs text-destructive">Vozač je obavezan za ovaj tip unosa</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" placeholder="3500" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+            <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
             <div className="grid gap-2"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
           </div>
           {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
-          <div className="grid gap-2"><Label>Opis</Label><Input placeholder="Napomena..." value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+          <div className="grid gap-2"><Label>Opis</Label><Input value={desc} onChange={e=>setDesc(e.target.value)}/></div>
           <div className="text-xs text-muted-foreground">Evidentira: <strong>{currentUser}</strong></div>
         </div>
         <DialogFooter>
@@ -242,12 +242,12 @@ const CashPage = () => {
       </div>
       {loading?<div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>:(
         <Tabs defaultValue="tekuci">
-          <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="historija">Historija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
+          <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="istorija">Istorija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
           <TabsContent value="tekuci" className="mt-4 space-y-3">
             <p className="text-xs text-muted-foreground">Naredni obračun: <strong>{fmtDate(currentObracun)}</strong></p>
             <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun}/>
           </TabsContent>
-          <TabsContent value="historija" className="mt-4 space-y-3">
+          <TabsContent value="istorija" className="mt-4 space-y-3">
             {historyDates.length===0?<Card><CardContent className="py-10 text-center text-muted-foreground">Nema zatvorenih obračuna</CardContent></Card>
               :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun}/>)}
           </TabsContent>

@@ -161,7 +161,7 @@ function DetailModal({open,onClose,driver,date,cal,currentUser,vehicle}:{open:bo
                 <SelectTrigger className="h-8 text-sm"><SelectValue/></SelectTrigger>
                 <SelectContent>{ULAZ_TYPES.map(t=><SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
               </Select>
-              <Input type="number" placeholder="Iznos RSD" className="h-8 text-sm" value={entryAmount} onChange={e=>setEntryAmount(e.target.value)}/>
+              <Input type="number" className="h-8 text-sm" value={entryAmount} onChange={e=>setEntryAmount(e.target.value)}/>
               <p className="text-xs text-muted-foreground">Označi status <span className="text-destructive">*</span></p>
               <div className="grid grid-cols-2 gap-2">
                 <button disabled={!entryAmount||saving} onClick={()=>handleSaveEntry("izmireno")} className="flex items-center justify-center gap-2 rounded-lg border py-2.5 text-sm font-medium transition-all disabled:opacity-40 hover:bg-green-50 hover:border-green-400 hover:text-green-700 border-gray-200">{saving?<Loader2 className="h-4 w-4 animate-spin"/>:<Check className="h-4 w-4 text-green-600"/>}Izmireno</button>
@@ -204,19 +204,19 @@ function AssignModal({open,onClose,year,month,drivers,vehicles,monthlyAssignment
           <Separator/>
           <p className="text-xs font-semibold text-muted-foreground uppercase">Novo zaduženje</p>
           <div className="grid gap-2"><Label className="text-xs">Vozač</Label>
-            <Select value={driverId} onValueChange={setDriverId}><SelectTrigger><SelectValue placeholder="Izaberi vozača"/></SelectTrigger>
+            <Select value={driverId} onValueChange={setDriverId}><SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent>{drivers.filter((d:any)=>d.status==="active").map((d:any)=><SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="grid gap-2"><Label className="text-xs">Vozilo</Label>
-            <Select value={vehicleId} onValueChange={setVehicleId}><SelectTrigger><SelectValue placeholder="Izaberi vozilo"/></SelectTrigger>
+            <Select value={vehicleId} onValueChange={setVehicleId}><SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent>{vehicles.filter((v:any)=>v.status==="active").map((v:any)=><SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <Button disabled={driverId==="none"||vehicleId==="none"||saving} onClick={async()=>{
             if(driverId==="none"||vehicleId==="none"){toast.error("Izaberi vozača i vozilo!");return;}
             setSaving(true);
-            try{await monthlyAssignments.assign(driverId,vehicleId,currentUser);toast.success("Vozač zadužen");setDriverId("none");setVehicleId("none");}
+            try{await monthlyAssignments.assign(driverId,vehicleId,currentUser);toast.success("Vozač zadužen");setDriverId("none");setVehicleId("none");onClose();}
             catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
           }} className="w-full">
             {saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}<Plus className="h-4 w-4 mr-2"/>Dodaj zaduženje
