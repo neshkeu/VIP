@@ -1,5 +1,5 @@
 import { useApp } from "@/context/AppContext";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
 import { useCalendar } from "@/hooks/useCalendar";
@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, X, Calendar } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
@@ -33,11 +33,9 @@ function getDatesInRange(from: string, to: string): string[] {
   const dates: string[] = [];
   const start = new Date(from + "T00:00:00");
   const end   = new Date(to   + "T00:00:00");
+  if (start > end) return [];
   for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,"0");
-    const day = String(d.getDate()).padStart(2,"0");
-    dates.push(`${y}-${m}-${day}`);
+    dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
   }
   return dates;
 }
@@ -59,184 +57,134 @@ const ULAZ_TYPES  = ["renta","clanarina","pos_naknada","komunalni","doprinosi","
 const IZLAZ_TYPES = ["yandex","kartica","vaučer","pdv_gorivo","likvidnost_out"];
 const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"];
 
-// ─── RENTA UNOS — period + kalendar ──────────────────────────
-function RentaDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
-  const { drivers } = useApp();
-  const today = new Date().toISOString().split("T")[0];
-  const [open, setOpen]         = useState(false);
-  const [driverId, setDriverId] = useState("none");
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo]     = useState(today);
-  const [saving, setSaving]     = useState(false);
-
-  const driver = drivers.find(d => d.id === driverId);
-  const dates  = driverId !== "none" && dateFrom && dateTo && dateFrom <= dateTo
-    ? getDatesInRange(dateFrom, dateTo)
-    : [];
-
-  // Kalendar za izabrani period — hook za svaki mjesec koji se pojavljuje
-  const months = [...new Set(dates.map(d => d.slice(0,7)))];
-  const firstMonth = months[0]?.split("-") ?? [];
-  const calYear  = firstMonth[0] ? Number(firstMonth[0]) : new Date().getFullYear();
-  const calMonth = firstMonth[1] ? Number(firstMonth[1]) : new Date().getMonth()+1;
-  const cal = useCalendar(calYear, calMonth);
-
-  const totalAmount = driver ? dates.length * driver.daily_rate : 0;
-
-  const reset = () => {
-    setDriverId("none"); setDateFrom(today); setDateTo(today);
-  };
-
-  const handleSave = async () => {
-    if (!driver || dates.length === 0) return;
-    setSaving(true);
-    try {
-      // 1. Unesi u kasu kao jedan zapis
-      await onAdd({
-        type: "renta", direction: "in",
-        driver_id: driverId,
-        amount: totalAmount,
-        date: dateTo,
-        description: `Renta ${dateFrom} — ${dateTo} (${dates.length} dana)`,
-        received_by: currentUser, notes: ""
-      });
-
-      // 2. Čekiraj svaki dan u kalendaru kao izmireno
-      for (const date of dates) {
-        const dow = new Date(date + "T00:00:00").getDay();
-        if (dow === 0) continue; // preskoci nedjelju — ima svoju logiku
-        await cal.saveAmount(driverId, date, "renta", driver.daily_rate, currentUser);
-        await cal.saveStatus(driverId, date, "izmireno", currentUser);
-      }
-
-      toast.success(`Evidentirano ${fmt(totalAmount)} za ${dates.length} dana`);
-      setOpen(false); reset();
-    } catch (e: any) {
-      toast.error("Greška: " + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+// ─── KALENDAR MINI komponenta unutar dialoga ─────────────────
+function MiniCalendar({ driverId, dateFrom, dateTo, cal }: { driverId: string; dateFrom: string; dateTo: string; cal: any }) {
+  const dates = getDatesInRange(dateFrom, dateTo);
+  if (!dates.length || !driverId) return null;
 
   return (
-    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
-      <DialogTrigger asChild>
-        <Button variant="outline"><Calendar className="mr-2 h-4 w-4"/>Uplata rente</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Uplata rente — period</DialogTitle>
-          <DialogDescription>Izaberi vozača i period, automatski se čekira kalendar</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-2">
-            <Label>Vozač</Label>
-            <Select value={driverId} onValueChange={setDriverId}>
-              <SelectTrigger><SelectValue/></SelectTrigger>
-              <SelectContent>
-                {drivers.filter(d => d.status === "active").map(d => (
-                  <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {driver && (
-            <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Dnevna renta: <strong className="text-foreground">{fmt(driver.daily_rate)}</strong>
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-muted-foreground uppercase">Dani koji se čekiraju</p>
+      <div className="flex flex-wrap gap-1.5">
+        {dates.map(date => {
+          const dow = new Date(date + "T00:00:00").getDay();
+          const isSun = dow === 0;
+          const existing = cal.getStatus(driverId, date);
+          return (
+            <div key={date} className={`rounded-md px-2 py-1 text-xs font-medium ${
+              isSun ? "bg-gray-100 text-gray-400" :
+              existing === "izmireno" ? "bg-green-100 text-green-700 line-through opacity-60" :
+              "bg-primary/10 text-primary"
+            }`}>
+              {date.slice(8)}. {DAYS_SR[dow]}
+              {existing === "izmireno" && " ✓"}
+              {isSun && " —"}
             </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2"><Label>Od</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></div>
-            <div className="grid gap-2"><Label>Do</Label><Input type="date" value={dateTo}   onChange={e => setDateTo(e.target.value)}/></div>
-          </div>
-
-          {dates.length > 0 && driver && (
-            <>
-              <div className="rounded-lg border p-3 space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Broj dana:</span>
-                  <span className="font-semibold">{dates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Iznos:</span>
-                  <span className="font-bold text-green-600 text-base">{fmt(totalAmount)}</span>
-                </div>
-              </div>
-
-              {/* Prikaz dana */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase">Dani koji se čekiraju</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {dates.map(date => {
-                    const dow = new Date(date + "T00:00:00").getDay();
-                    const isSun = dow === 0;
-                    const existing = cal.getStatus(driverId, date);
-                    return (
-                      <div key={date} className={`rounded-md px-2 py-1 text-xs font-medium ${
-                        isSun ? "bg-gray-100 text-gray-400" :
-                        existing === "izmireno" ? "bg-green-100 text-green-700 line-through" :
-                        "bg-primary/10 text-primary"
-                      }`}>
-                        {date.slice(8)}. {DAYS_SR[dow]}
-                        {isSun && " (ned.)"}
-                        {existing === "izmireno" && " ✓"}
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">Nedjelje se ne čekiraju automatski</p>
-              </div>
-            </>
-          )}
-
-          <div className="text-xs text-muted-foreground">Evidentira: <strong>{currentUser}</strong></div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Otkazi</Button>
-          <Button disabled={driverId === "none" || dates.length === 0 || saving} onClick={handleSave}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}
-            Sačuvaj i čekiraj kalendar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">Nedjelje se preskačaju</p>
+    </div>
   );
 }
 
 // ─── NOVI UNOS DIALOG ────────────────────────────────────────
 function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
   const { drivers } = useApp();
-  const [open,setOpen]=useState(false);
-  const [dir,setDir]=useState<"in"|"out">("in");
-  const [type,setType]=useState("renta");
-  const [driverId,setDriverId]=useState("none");
-  const [amount,setAmount]=useState("");
-  const [desc,setDesc]=useState("");
-  const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
-  const [saving,setSaving]=useState(false);
+  const today = new Date().toISOString().split("T")[0];
+
+  const [open,setOpen]          = useState(false);
+  const [dir,setDir]            = useState<"in"|"out">("in");
+  const [type,setType]          = useState("renta");
+  const [driverId,setDriverId]  = useState("none");
+  const [amount,setAmount]      = useState("");
+  const [desc,setDesc]          = useState("");
+  const [date,setDate]          = useState(today);
+  const [dateFrom,setDateFrom]  = useState(today);
+  const [dateTo,setDateTo]      = useState(today);
+  const [saving,setSaving]      = useState(false);
+
+  const driver = drivers.find(d => d.id === driverId);
+  const isRenta = type === "renta" && dir === "in";
+
+  // Kalendar hook za renta period
+  const rentaDates  = isRenta && driverId !== "none" && dateFrom && dateTo ? getDatesInRange(dateFrom, dateTo) : [];
+  const calYear     = dateFrom ? Number(dateFrom.slice(0,4)) : new Date().getFullYear();
+  const calMonth    = dateFrom ? Number(dateFrom.slice(5,7)) : new Date().getMonth()+1;
+  const cal         = useCalendar(calYear, calMonth);
+
+  // Automatski preračunaj iznos kad se promijeni period ili vozač
+  const workDays    = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
+  const autoAmount  = isRenta && driver ? workDays * driver.daily_rate : 0;
 
   const driverRequired = !NO_DRIVER_TYPES.includes(type);
-  const canSave = !!amount && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
-  const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setDate(new Date().toISOString().split("T")[0]);};
+  const canSave = isRenta
+    ? driverId !== "none" && rentaDates.length > 0 && !saving
+    : !!amount && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
+
+  const reset = () => {
+    setDir("in"); setType("renta"); setDriverId("none");
+    setAmount(""); setDesc(""); setDate(today);
+    setDateFrom(today); setDateTo(today);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      if (isRenta && driver) {
+        // Unesi u kasu
+        await onAdd({
+          type: "renta", direction: "in", driver_id: driverId,
+          amount: autoAmount, date: dateTo,
+          description: `Renta ${dateFrom} — ${dateTo} (${workDays} dana)`,
+          received_by: currentUser, notes: ""
+        });
+        // Čekiraj svaki radni dan u kalendaru
+        for (const d of rentaDates) {
+          if (new Date(d+"T00:00:00").getDay() === 0) continue;
+          await cal.saveAmount(driverId, d, "renta", driver.daily_rate, currentUser);
+          await cal.saveStatus(driverId, d, "izmireno", currentUser);
+        }
+        toast.success(`Evidentirano ${fmt(autoAmount)} za ${workDays} dana`);
+      } else {
+        await onAdd({
+          type, direction: dir,
+          driver_id: driverId === "none" ? null : driverId,
+          amount: Number(amount), date,
+          description: desc, received_by: currentUser, notes: ""
+        });
+        toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);
+      }
+      setOpen(false); reset();
+    } catch (e: any) { toast.error("Greška: " + e.message); }
+    finally { setSaving(false); }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={v=>{setOpen(v);if(!v)reset();}}>
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
       <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi unos</Button></DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Novi kasa unos</DialogTitle><DialogDescription>Evidentira: <strong>{currentUser}</strong></DialogDescription></DialogHeader>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Novi kasa unos</DialogTitle>
+          <DialogDescription>Evidentira: <strong>{currentUser}</strong></DialogDescription>
+        </DialogHeader>
         <div className="grid gap-4 py-2">
+          {/* Ulaz/Izlaz */}
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={()=>{setDir("in");setType("renta");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="in"?"bg-green-50 border-green-500 text-green-700":"hover:bg-muted border-border"}`}><ArrowDownLeft className="h-4 w-4"/>Ulaz (+)</button>
             <button type="button" onClick={()=>{setDir("out");setType("yandex");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="out"?"bg-red-50 border-red-500 text-red-700":"hover:bg-muted border-border"}`}><ArrowUpRight className="h-4 w-4"/>Izlaz (−)</button>
           </div>
-          <div className="grid gap-2"><Label>Tip</Label>
+
+          {/* Tip */}
+          <div className="grid gap-2">
+            <Label>Tip</Label>
             <Select value={type} onValueChange={v=>{setType(v);setDriverId("none");}}>
               <SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent>{(dir==="in"?ULAZ_TYPES:IZLAZ_TYPES).map(t=><SelectItem key={t} value={t}>{CASH_TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+
+          {/* Vozač */}
           <div className="grid gap-2">
             <Label>Vozač {driverRequired ? <span className="text-destructive">*</span> : <span className="text-muted-foreground text-xs">(opciono)</span>}</Label>
             <Select value={driverId} onValueChange={setDriverId}>
@@ -247,21 +195,50 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
-            <div className="grid gap-2"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
-          </div>
-          {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
-          <div className="grid gap-2"><Label>Opis</Label><Input value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+
+          {/* RENTA — period + kalendar */}
+          {isRenta && driverId !== "none" && driver ? (
+            <>
+              <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                Dnevna renta: <strong className="text-foreground">{fmt(driver.daily_rate)}</strong>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2"><Label>Od</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></div>
+                <div className="grid gap-2"><Label>Do</Label><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}/></div>
+              </div>
+              {rentaDates.length > 0 && (
+                <div className="rounded-lg border p-3 space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Radnih dana:</span>
+                    <span className="font-semibold">{workDays}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Ukupno:</span>
+                    <span className="font-bold text-green-600 text-base">{fmt(autoAmount)}</span>
+                  </div>
+                </div>
+              )}
+              <MiniCalendar driverId={driverId} dateFrom={dateFrom} dateTo={dateTo} cal={cal}/>
+            </>
+          ) : (
+            /* Ostali tipovi — klasičan unos */
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+                <div className="grid gap-2"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+              </div>
+              {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
+              <div className="grid gap-2"><Label>Opis</Label><Input value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+            </>
+          )}
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
-          <Button disabled={!canSave} onClick={async()=>{
-            setSaving(true);
-            try{await onAdd({type,direction:dir,driver_id:driverId==="none"?null:driverId,amount:Number(amount),date,description:desc,received_by:currentUser,notes:""});
-              toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);setOpen(false);reset();
-            }catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
-          }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj</Button>
+          <Button disabled={!canSave} onClick={handleSave}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}
+            {isRenta ? "Sačuvaj i čekiraj kalendar" : "Sačuvaj"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -384,7 +361,6 @@ const CashPage = () => {
         <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
-          <RentaDialog onAdd={addEntry} currentUser={displayName}/>
           <NewEntryDialog onAdd={addEntry} currentUser={displayName}/>
         </div>
       </div>
