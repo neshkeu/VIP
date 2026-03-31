@@ -1,7 +1,8 @@
 import { useApp } from "@/context/AppContext";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
+import { useCalendar } from "@/hooks/useCalendar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, X, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
@@ -28,6 +29,19 @@ function isObracunDay(date: string) {
   const dow = new Date(date + "T00:00:00").getDay();
   return dow === 1 || dow === 3 || dow === 5;
 }
+function getDatesInRange(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(from + "T00:00:00");
+  const end   = new Date(to   + "T00:00:00");
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const day = String(d.getDate()).padStart(2,"0");
+    dates.push(`${y}-${m}-${day}`);
+  }
+  return dates;
+}
+
 const CASH_TYPE_LABELS: Record<string,string> = {
   renta:"Renta",clanarina:"Članarina",pos_naknada:"POS naknada",
   komunalni:"Komunalni",doprinosi:"Doprinosi",dugovanje:"Uplata dugovanja",
@@ -43,8 +57,155 @@ const CASH_TYPE_COLORS: Record<string,string> = {
 };
 const ULAZ_TYPES  = ["renta","clanarina","pos_naknada","komunalni","doprinosi","dugovanje","likvidnost_in"];
 const IZLAZ_TYPES = ["yandex","kartica","vaučer","pdv_gorivo","likvidnost_out"];
-const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"]; // jedini koji ne trebaju vozača
+const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"];
 
+// ─── RENTA UNOS — period + kalendar ──────────────────────────
+function RentaDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
+  const { drivers } = useApp();
+  const today = new Date().toISOString().split("T")[0];
+  const [open, setOpen]         = useState(false);
+  const [driverId, setDriverId] = useState("none");
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo]     = useState(today);
+  const [saving, setSaving]     = useState(false);
+
+  const driver = drivers.find(d => d.id === driverId);
+  const dates  = driverId !== "none" && dateFrom && dateTo && dateFrom <= dateTo
+    ? getDatesInRange(dateFrom, dateTo)
+    : [];
+
+  // Kalendar za izabrani period — hook za svaki mjesec koji se pojavljuje
+  const months = [...new Set(dates.map(d => d.slice(0,7)))];
+  const firstMonth = months[0]?.split("-") ?? [];
+  const calYear  = firstMonth[0] ? Number(firstMonth[0]) : new Date().getFullYear();
+  const calMonth = firstMonth[1] ? Number(firstMonth[1]) : new Date().getMonth()+1;
+  const cal = useCalendar(calYear, calMonth);
+
+  const totalAmount = driver ? dates.length * driver.daily_rate : 0;
+
+  const reset = () => {
+    setDriverId("none"); setDateFrom(today); setDateTo(today);
+  };
+
+  const handleSave = async () => {
+    if (!driver || dates.length === 0) return;
+    setSaving(true);
+    try {
+      // 1. Unesi u kasu kao jedan zapis
+      await onAdd({
+        type: "renta", direction: "in",
+        driver_id: driverId,
+        amount: totalAmount,
+        date: dateTo,
+        description: `Renta ${dateFrom} — ${dateTo} (${dates.length} dana)`,
+        received_by: currentUser, notes: ""
+      });
+
+      // 2. Čekiraj svaki dan u kalendaru kao izmireno
+      for (const date of dates) {
+        const dow = new Date(date + "T00:00:00").getDay();
+        if (dow === 0) continue; // preskoci nedjelju — ima svoju logiku
+        await cal.saveAmount(driverId, date, "renta", driver.daily_rate, currentUser);
+        await cal.saveStatus(driverId, date, "izmireno", currentUser);
+      }
+
+      toast.success(`Evidentirano ${fmt(totalAmount)} za ${dates.length} dana`);
+      setOpen(false); reset();
+    } catch (e: any) {
+      toast.error("Greška: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Calendar className="mr-2 h-4 w-4"/>Uplata rente</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Uplata rente — period</DialogTitle>
+          <DialogDescription>Izaberi vozača i period, automatski se čekira kalendar</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-2">
+          <div className="grid gap-2">
+            <Label>Vozač</Label>
+            <Select value={driverId} onValueChange={setDriverId}>
+              <SelectTrigger><SelectValue/></SelectTrigger>
+              <SelectContent>
+                {drivers.filter(d => d.status === "active").map(d => (
+                  <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {driver && (
+            <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              Dnevna renta: <strong className="text-foreground">{fmt(driver.daily_rate)}</strong>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2"><Label>Od</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></div>
+            <div className="grid gap-2"><Label>Do</Label><Input type="date" value={dateTo}   onChange={e => setDateTo(e.target.value)}/></div>
+          </div>
+
+          {dates.length > 0 && driver && (
+            <>
+              <div className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Broj dana:</span>
+                  <span className="font-semibold">{dates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Iznos:</span>
+                  <span className="font-bold text-green-600 text-base">{fmt(totalAmount)}</span>
+                </div>
+              </div>
+
+              {/* Prikaz dana */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Dani koji se čekiraju</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {dates.map(date => {
+                    const dow = new Date(date + "T00:00:00").getDay();
+                    const isSun = dow === 0;
+                    const existing = cal.getStatus(driverId, date);
+                    return (
+                      <div key={date} className={`rounded-md px-2 py-1 text-xs font-medium ${
+                        isSun ? "bg-gray-100 text-gray-400" :
+                        existing === "izmireno" ? "bg-green-100 text-green-700 line-through" :
+                        "bg-primary/10 text-primary"
+                      }`}>
+                        {date.slice(8)}. {DAYS_SR[dow]}
+                        {isSun && " (ned.)"}
+                        {existing === "izmireno" && " ✓"}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">Nedjelje se ne čekiraju automatski</p>
+              </div>
+            </>
+          )}
+
+          <div className="text-xs text-muted-foreground">Evidentira: <strong>{currentUser}</strong></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Otkazi</Button>
+          <Button disabled={driverId === "none" || dates.length === 0 || saving} onClick={handleSave}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}
+            Sačuvaj i čekiraj kalendar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── NOVI UNOS DIALOG ────────────────────────────────────────
 function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
   const { drivers } = useApp();
   const [open,setOpen]=useState(false);
@@ -54,18 +215,17 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
   const [amount,setAmount]=useState("");
   const [desc,setDesc]=useState("");
   const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
-  const [by,setBy]=useState("");
   const [saving,setSaving]=useState(false);
 
   const driverRequired = !NO_DRIVER_TYPES.includes(type);
   const canSave = !!amount && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
-
   const reset=()=>{setDir("in");setType("renta");setDriverId("none");setAmount("");setDesc("");setDate(new Date().toISOString().split("T")[0]);};
+
   return (
     <Dialog open={open} onOpenChange={v=>{setOpen(v);if(!v)reset();}}>
       <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi unos</Button></DialogTrigger>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Novi kasa unos</DialogTitle><DialogDescription>Evidentirajte uplatu ili isplatu</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Novi kasa unos</DialogTitle><DialogDescription>Evidentira: <strong>{currentUser}</strong></DialogDescription></DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={()=>{setDir("in");setType("renta");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="in"?"bg-green-50 border-green-500 text-green-700":"hover:bg-muted border-border"}`}><ArrowDownLeft className="h-4 w-4"/>Ulaz (+)</button>
@@ -80,13 +240,12 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
           <div className="grid gap-2">
             <Label>Vozač {driverRequired ? <span className="text-destructive">*</span> : <span className="text-muted-foreground text-xs">(opciono)</span>}</Label>
             <Select value={driverId} onValueChange={setDriverId}>
-              <SelectTrigger className={driverRequired && driverId==="none" ? "border-destructive/50" : ""}><SelectValue placeholder={driverRequired ? "Obavezno — izaberi vozača" : "Bez vozača"}/></SelectTrigger>
+              <SelectTrigger className={driverRequired && driverId==="none" ? "border-destructive/50" : ""}><SelectValue/></SelectTrigger>
               <SelectContent>
                 {!driverRequired && <SelectItem value="none">— Bez vozača —</SelectItem>}
                 {drivers.map(d=><SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
               </SelectContent>
             </Select>
-            {driverRequired && driverId==="none" && <p className="text-xs text-destructive">Vozač je obavezan za ovaj tip unosa</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
@@ -94,7 +253,6 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
           </div>
           {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
           <div className="grid gap-2"><Label>Opis</Label><Input value={desc} onChange={e=>setDesc(e.target.value)}/></div>
-          <div className="text-xs text-muted-foreground">Evidentira: <strong>{currentUser}</strong></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
@@ -115,7 +273,6 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const [expanded,setExpanded]=useState(false);
   const [closeOpen,setCloseOpen]=useState(false);
   const [saving,setSaving]=useState(false);
-  
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
@@ -145,14 +302,12 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
           {expanded&&(
             <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} className="overflow-hidden">
               <Separator/>
-              {entries.length===0?(
-                <p className="text-center text-muted-foreground text-sm py-4">Nema unosa</p>
-              ):(
+              {entries.length===0?<p className="text-center text-muted-foreground text-sm py-4">Nema unosa</p>:(
                 <Table>
                   <TableHeader><TableRow><TableHead>Tip</TableHead><TableHead>Vozač</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {entries.map(e=>{
-                      const driver = e.driver_id ? drivers.find(d=>d.id===e.driver_id) : null;
+                      const driver=e.driver_id?drivers.find((d:any)=>d.id===e.driver_id):null;
                       return(
                         <TableRow key={e.id}>
                           <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
@@ -174,7 +329,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                       <DialogTrigger asChild><Button size="sm"><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Zatvori obračun</Button></DialogTrigger>
                       <DialogContent className="max-w-sm">
                         <DialogHeader><DialogTitle>Zatvori obračun</DialogTitle><DialogDescription>{fmtDate(date)} — bilans: {fmt(total_in-total_out)}</DialogDescription></DialogHeader>
-                        <div className="py-3 text-sm">Zatvara: <strong>{displayName}</strong></div>
+                        <p className="py-3 text-sm">Zatvara: <strong>{displayName}</strong></p>
                         <DialogFooter>
                           <Button variant="outline" onClick={()=>setCloseOpen(false)}>Otkazi</Button>
                           <Button disabled={saving} onClick={async()=>{
@@ -207,10 +362,10 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
 const CashPage = () => {
   const today = new Date();
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
-  const { drivers: allDrivers, displayName } = useApp();
   const {entries,loading,addEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
-  
+  const { drivers: allDrivers, displayName }=useApp();
+
   const byDate=entries.reduce((acc,e)=>{if(!acc[e.date])acc[e.date]=[];acc[e.date].push(e);return acc;},{} as Record<string,any[]>);
   const [year,month]=filterMonth.split("-").map(Number);
   const daysInMonth=new Date(year,month,0).getDate();
@@ -229,6 +384,7 @@ const CashPage = () => {
         <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
+          <RentaDialog onAdd={addEntry} currentUser={displayName}/>
           <NewEntryDialog onAdd={addEntry} currentUser={displayName}/>
         </div>
       </div>
@@ -258,7 +414,7 @@ const CashPage = () => {
                 <TableBody>
                   {entries.length===0?<TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema unosa</TableCell></TableRow>
                     :entries.map(e=>{
-                      const driver = e.driver_id ? allDrivers.find((d:any)=>d.id===e.driver_id) : null;
+                      const driver=e.driver_id?allDrivers.find((d:any)=>d.id===e.driver_id):null;
                       return(
                         <TableRow key={e.id}>
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(e.date)}</TableCell>
