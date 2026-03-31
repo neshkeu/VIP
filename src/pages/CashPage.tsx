@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
@@ -56,156 +56,122 @@ const CASH_TYPE_COLORS: Record<string,string> = {
 const ULAZ_TYPES  = ["renta","clanarina","pos_naknada","komunalni","doprinosi","dugovanje","likvidnost_in"];
 const IZLAZ_TYPES = ["yandex","kartica","vaučer","pdv_gorivo","likvidnost_out"];
 const NO_DRIVER_TYPES = ["likvidnost_in","likvidnost_out"];
+const CARD_DEDUCTIONS: Record<string,number> = { visa:1.5, mastercard:1.5, dina:1.0, amex:2.5, ostalo:1.5 };
 
-// ─── KALENDAR MINI komponenta unutar dialoga ─────────────────
-function MiniCalendar({ driverId, dateFrom, dateTo, cal }: { driverId: string; dateFrom: string; dateTo: string; cal: any }) {
-  const dates = getDatesInRange(dateFrom, dateTo);
-  if (!dates.length || !driverId) return null;
+// ─── OBRACUN PO VOZACU ────────────────────────────────────────
+function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
+  onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
+}) {
+  const { drivers } = useApp();
+  const today = new Date().toISOString().split("T")[0];
+  const [open, setOpen]         = useState(false);
+  const [driverId, setDriverId] = useState("none");
+  const [saving, setSaving]     = useState(false);
+  const [step, setStep]         = useState<"driver"|"obracun">("driver");
 
-  // Posljednja uplata
+  // ULAZ stavke
+  const [rentaFrom, setRentaFrom]     = useState(today);
+  const [rentaTo, setRentaTo]         = useState(today);
+  const [rentaEnabled, setRentaEnabled] = useState(true);
+  const [clanarinaAmt, setClanarinaAmt] = useState("");
+  const [clanarinaEnabled, setClanarinaEnabled] = useState(false);
+  const [posAmt, setPosAmt]           = useState("");
+  const [posEnabled, setPosEnabled]   = useState(false);
+
+  // IZLAZ stavke
+  const [yandexGross, setYandexGross] = useState("");
+  const [yandexEnabled, setYandexEnabled] = useState(false);
+  const [karticaGross, setKarticaGross] = useState("");
+  const [karticaType, setKarticaType] = useState("visa");
+  const [karticaEnabled, setKarticaEnabled] = useState(false);
+
+  const driver = drivers.find(d => d.id === driverId);
+  const calYear  = rentaFrom ? Number(rentaFrom.slice(0,4)) : new Date().getFullYear();
+  const calMonth = rentaFrom ? Number(rentaFrom.slice(5,7)) : new Date().getMonth()+1;
+  const cal = useCalendar(calYear, calMonth);
+
+  const rentaDates   = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
+  const workDays     = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
+  const rentaTotal   = driver ? workDays * driver.daily_rate : 0;
+  const clanarinaTotal = clanarinaEnabled ? (Number(clanarinaAmt) || (driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0)) : 0;
+  const posTotal     = posEnabled ? (Number(posAmt) || (driver?.pos_monthly_fee ?? 0)) : 0;
+  const yandexNet    = yandexEnabled ? Math.round(Number(yandexGross) * 0.9) : 0;
+  const yandexDeduct = yandexEnabled ? Math.round(Number(yandexGross) * 0.1) : 0;
+  const karticaDeductPct = CARD_DEDUCTIONS[karticaType] ?? 1.5;
+  const karticaNet   = karticaEnabled ? Math.round(Number(karticaGross) * (1 - karticaDeductPct/100)) : 0;
+  const karticaDeduct = karticaEnabled ? Math.round(Number(karticaGross) * karticaDeductPct/100) : 0;
+
+  const totalUlaz    = rentaTotal + clanarinaTotal + posTotal;
+  const totalIzlaz   = yandexNet + karticaNet; // šta treba isplatiti vozaču
+  const totalDuguje  = totalUlaz - yandexDeduct - karticaDeduct; // šta vozač treba platiti
+  const saldo        = totalIzlaz - totalDuguje; // pozitivno = isplatiti, negativno = naplatiti
+
+  // Bonus nedjelja
+  const lastDate  = rentaTo ? new Date(rentaTo + "T00:00:00") : null;
+  const lastDow   = lastDate?.getDay() ?? -1;
+  const daysToSun = lastDow > 0 ? 7 - lastDow : 0;
+  const bonusSunday = daysToSun > 0 && workDays >= 6 ? (() => {
+    const sun = new Date(lastDate!);
+    sun.setDate(sun.getDate() + daysToSun);
+    return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
+  })() : null;
+
   const lastPaidDate = driverId !== "none"
-    ? [...cal.entries]
+    ? [...(cal.entries ?? [])]
         .filter((e: any) => e.driver_id === driverId && e.status === "izmireno")
         .sort((a: any, b: any) => b.date.localeCompare(a.date))[0]?.date ?? null
     : null;
 
-  // Provjeri da li nedjelja poslije perioda treba biti besplatna
-  // Uzmi sve radne dane u periodu — ako su svi izmireni ili će biti izmireni, nedjelja je bonus
-  const workDatesInPeriod = dates.filter(d => new Date(d+"T00:00:00").getDay() !== 0);
-  
-  // Nađi nedjelju koja dolazi NAKON zadnjeg dana u periodu
-  const lastDate = new Date(dateTo + "T00:00:00");
-  const lastDow  = lastDate.getDay();
-  const daysUntilSunday = lastDow === 0 ? 0 : 7 - lastDow;
-  const bonusSunday = daysUntilSunday > 0 ? (() => {
-    const sun = new Date(lastDate);
-    sun.setDate(sun.getDate() + daysUntilSunday);
-    return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
-  })() : null;
-
-  // Nedjelja je bonus ako period pokriva cijelu sedmicu (pon-sub = 6 radnih dana uzastopno)
-  const isBonusSunday = bonusSunday && workDatesInPeriod.length >= 6;
-
-  const allDates = isBonusSunday ? [...dates, bonusSunday!] : dates;
-
-  return (
-    <div className="space-y-1.5">
-      {lastPaidDate && (
-        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
-          <span className="text-muted-foreground">Posljednji izmireni dan: </span>
-          <strong>{fmtDate(lastPaidDate)}</strong>
-        </div>
-      )}
-      <p className="text-xs font-semibold text-muted-foreground uppercase">Dani koji se čekiraju</p>
-      <div className="flex flex-wrap gap-1.5">
-        {allDates.map(date => {
-          const dow = new Date(date + "T00:00:00").getDay();
-          const isSun = dow === 0;
-          const isBonus = isSun && date === bonusSunday;
-          const existing = cal.getStatus(driverId, date);
-          return (
-            <div key={date} className={`rounded-md px-2 py-1 text-xs font-medium ${
-              isBonus ? "bg-green-50 border border-green-300 text-green-700" :
-              existing === "izmireno" ? "bg-green-100 text-green-700 line-through opacity-60" :
-              "bg-primary/10 text-primary"
-            }`}>
-              {date.slice(8)}. {DAYS_SR[dow]}
-              {isBonus && " 🎉"}
-              {existing === "izmireno" && !isBonus && " ✓"}
-            </div>
-          );
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground">Označene sivom bojom nedjelje se ne naplaćuju</p>
-    </div>
-  );
-}
-
-// ─── NOVI UNOS DIALOG ────────────────────────────────────────
-function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<void>; currentUser: string }) {
-  const { drivers } = useApp();
-  const today = new Date().toISOString().split("T")[0];
-
-  const [open,setOpen]          = useState(false);
-  const [dir,setDir]            = useState<"in"|"out">("in");
-  const [type,setType]          = useState("renta");
-  const [driverId,setDriverId]  = useState("none");
-  const [amount,setAmount]      = useState("");
-  const [desc,setDesc]          = useState("");
-  const [date,setDate]          = useState(today);
-  const [dateFrom,setDateFrom]  = useState(today);
-  const [dateTo,setDateTo]      = useState(today);
-  const [saving,setSaving]      = useState(false);
-
-  const driver = drivers.find(d => d.id === driverId);
-  const isRenta = type === "renta" && dir === "in";
-
-  // Kalendar hook za renta period
-  const rentaDates  = isRenta && driverId !== "none" && dateFrom && dateTo ? getDatesInRange(dateFrom, dateTo) : [];
-  const calYear     = dateFrom ? Number(dateFrom.slice(0,4)) : new Date().getFullYear();
-  const calMonth    = dateFrom ? Number(dateFrom.slice(5,7)) : new Date().getMonth()+1;
-  const cal         = useCalendar(calYear, calMonth);
-
-  // Automatski preračunaj iznos kad se promijeni period ili vozač
-  const workDays    = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
-  const autoAmount  = isRenta && driver ? workDays * driver.daily_rate : 0;
-
-  const driverRequired = !NO_DRIVER_TYPES.includes(type);
-  const canSave = isRenta
-    ? driverId !== "none" && rentaDates.length > 0 && !saving
-    : !!amount && Number(amount) > 0 && (!driverRequired || driverId !== "none") && !saving;
-
   const reset = () => {
-    setDir("in"); setType("renta"); setDriverId("none");
-    setAmount(""); setDesc(""); setDate(today);
-    setDateFrom(today); setDateTo(today);
+    setDriverId("none"); setStep("driver");
+    setRentaFrom(today); setRentaTo(today); setRentaEnabled(true);
+    setClanarinaAmt(""); setClanarinaEnabled(false);
+    setPosAmt(""); setPosEnabled(false);
+    setYandexGross(""); setYandexEnabled(false);
+    setKarticaGross(""); setKarticaEnabled(false);
   };
 
   const handleSave = async () => {
+    if (!driver) return;
     setSaving(true);
     try {
-      if (isRenta && driver) {
-        // Izračunaj bonus nedjelju
-        const lastDate  = new Date(dateTo + "T00:00:00");
-        const lastDow   = lastDate.getDay();
-        const daysToSun = lastDow === 0 ? 0 : 7 - lastDow;
-        const workDaysInPeriod = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0);
-        let bonusSunday: string | null = null;
-        if (daysToSun > 0 && workDaysInPeriod.length >= 6) {
-          const sun = new Date(lastDate);
-          sun.setDate(sun.getDate() + daysToSun);
-          bonusSunday = `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
-        }
+      const saveDate = obracunDate || today;
 
-        // Unesi u kasu
-        await onAdd({
-          type: "renta", direction: "in", driver_id: driverId,
-          amount: autoAmount, date: dateTo,
-          description: `Renta ${dateFrom} — ${dateTo} (${workDays} dana)`,
-          received_by: currentUser, notes: ""
-        });
-        // Čekiraj radne dane
+      // Renta → kasa + kalendar
+      if (rentaEnabled && workDays > 0) {
+        await onAdd({ type:"renta", direction:"in", driver_id:driverId, amount:rentaTotal, date:saveDate,
+          description:`Renta ${rentaFrom} — ${rentaTo} (${workDays} dana)`, received_by:currentUser, notes:"" });
         for (const d of rentaDates) {
           if (new Date(d+"T00:00:00").getDay() === 0) continue;
           await cal.saveAmount(driverId, d, "renta", driver.daily_rate, currentUser);
           await cal.saveStatus(driverId, d, "izmireno", currentUser);
         }
-        // Čekiraj bonus nedjelju
-        if (bonusSunday) {
-          await cal.saveStatus(driverId, bonusSunday, "izmireno", currentUser);
-          toast.success(`Evidentirano ${fmt(autoAmount)} za ${workDays} dana + nedjelja 🎉`);
-        } else {
-          toast.success(`Evidentirano ${fmt(autoAmount)} za ${workDays} dana`);
-        }
-      } else {
-        await onAdd({
-          type, direction: dir,
-          driver_id: driverId === "none" ? null : driverId,
-          amount: Number(amount), date,
-          description: desc, received_by: currentUser, notes: ""
-        });
-        toast.success(`Evidentirano: ${dir==="in"?"+":"−"}${fmt(Number(amount))}`);
+        if (bonusSunday) await cal.saveStatus(driverId, bonusSunday, "izmireno", currentUser);
       }
+
+      // Članarina → kasa
+      if (clanarinaEnabled && clanarinaTotal > 0)
+        await onAdd({ type:"clanarina", direction:"in", driver_id:driverId, amount:clanarinaTotal, date:saveDate,
+          description:"Članarina", received_by:currentUser, notes:"" });
+
+      // POS naknada → kasa
+      if (posEnabled && posTotal > 0)
+        await onAdd({ type:"pos_naknada", direction:"in", driver_id:driverId, amount:posTotal, date:saveDate,
+          description:"POS naknada", received_by:currentUser, notes:"" });
+
+      // Yandex → kasa (neto isplata vozaču je izlaz)
+      if (yandexEnabled && Number(yandexGross) > 0) {
+        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:yandexNet, date:saveDate,
+          description:`Yandex isplata (bruto ${fmt(Number(yandexGross))}, odbitak 10%)`, received_by:currentUser, notes:"" });
+      }
+
+      // Kartica → kasa (neto isplata vozaču je izlaz)
+      if (karticaEnabled && Number(karticaGross) > 0) {
+        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karticaNet, date:saveDate,
+          description:`Kartica isplata ${karticaType.toUpperCase()} (bruto ${fmt(Number(karticaGross))}, odbitak ${karticaDeductPct}%)`, received_by:currentUser, notes:"" });
+      }
+
+      toast.success(`Obračun za ${driver.full_name} završen`);
       setOpen(false); reset();
     } catch (e: any) { toast.error("Greška: " + e.message); }
     finally { setSaving(false); }
@@ -213,82 +179,224 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
 
   return (
     <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
-      <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi unos</Button></DialogTrigger>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogTrigger asChild>
+        <Button><Plus className="mr-2 h-4 w-4"/>Novi obračun</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Novi kasa unos</DialogTitle>
-          <DialogDescription>Evidentira: <strong>{currentUser}</strong></DialogDescription>
+          <DialogTitle>Obračun vozača</DialogTitle>
+          <DialogDescription>
+            {obracunDate ? `Obračunski dan: ${fmtDate(obracunDate)}` : "Evidentira: " + currentUser}
+          </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-2">
-          {/* Ulaz/Izlaz */}
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={()=>{setDir("in");setType("renta");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="in"?"bg-green-50 border-green-500 text-green-700":"hover:bg-muted border-border"}`}><ArrowDownLeft className="h-4 w-4"/>Ulaz (+)</button>
-            <button type="button" onClick={()=>{setDir("out");setType("yandex");setDriverId("none");}} className={`flex items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition-all ${dir==="out"?"bg-red-50 border-red-500 text-red-700":"hover:bg-muted border-border"}`}><ArrowUpRight className="h-4 w-4"/>Izlaz (−)</button>
-          </div>
 
-          {/* Tip */}
-          <div className="grid gap-2">
-            <Label>Tip</Label>
-            <Select value={type} onValueChange={v=>{setType(v);setDriverId("none");}}>
-              <SelectTrigger><SelectValue/></SelectTrigger>
-              <SelectContent>{(dir==="in"?ULAZ_TYPES:IZLAZ_TYPES).map(t=><SelectItem key={t} value={t}>{CASH_TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-
+        <div className="space-y-4 py-2">
           {/* Vozač */}
           <div className="grid gap-2">
-            <Label>Vozač {driverRequired ? <span className="text-destructive">*</span> : <span className="text-muted-foreground text-xs">(opciono)</span>}</Label>
-            <Select value={driverId} onValueChange={setDriverId}>
-              <SelectTrigger className={driverRequired && driverId==="none" ? "border-destructive/50" : ""}><SelectValue/></SelectTrigger>
+            <Label>Vozač</Label>
+            <Select value={driverId} onValueChange={v => { setDriverId(v); setStep("obracun"); }}>
+              <SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent>
-                {!driverRequired && <SelectItem value="none">— Bez vozača —</SelectItem>}
-                {drivers.map(d=><SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+                {drivers.filter(d => d.status === "active").map(d => (
+                  <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* RENTA — period + kalendar */}
-          {isRenta && driverId !== "none" && driver ? (
+          {driver && (
             <>
-              <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                Dnevna renta: <strong className="text-foreground">{fmt(driver.daily_rate)}</strong>
+              {/* Info o vozaču */}
+              <div className="rounded-lg bg-muted/30 px-3 py-2 text-xs space-y-0.5">
+                <div className="flex justify-between"><span className="text-muted-foreground">Dnevna renta:</span><strong>{fmt(driver.daily_rate)}</strong></div>
+                {lastPaidDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednji izmireni dan:</span><strong>{fmtDate(lastPaidDate)}</strong></div>}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-2"><Label>Od</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}/></div>
-                <div className="grid gap-2"><Label>Do</Label><Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}/></div>
-              </div>
-              {rentaDates.length > 0 && (
-                <div className="rounded-lg border p-3 space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Radnih dana:</span>
-                    <span className="font-semibold">{workDays}</span>
+
+              <Separator/>
+
+              {/* ULAZ */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-green-700 uppercase">Ulaz (naplata)</p>
+
+                {/* Renta */}
+                <div className={`rounded-lg border p-3 space-y-3 transition-colors ${rentaEnabled ? "border-green-300 bg-green-50/50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setRentaEnabled(!rentaEnabled)}
+                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${rentaEnabled ? "bg-green-500 border-green-500" : "border-gray-300"}`}>
+                        {rentaEnabled && <Check className="h-3 w-3 text-white"/>}
+                      </button>
+                      <span className="text-sm font-medium">Renta</span>
+                    </div>
+                    {rentaEnabled && <span className="text-sm font-bold text-green-600">{fmt(rentaTotal)}</span>}
                   </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Ukupno:</span>
-                    <span className="font-bold text-green-600 text-base">{fmt(autoAmount)}</span>
-                  </div>
+                  {rentaEnabled && (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={rentaFrom} onChange={e => setRentaFrom(e.target.value)}/></div>
+                        <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={rentaTo} onChange={e => setRentaTo(e.target.value)}/></div>
+                      </div>
+                      {workDays > 0 && (
+                        <div className="text-xs text-muted-foreground">{workDays} radnih dana × {fmt(driver.daily_rate)}
+                          {bonusSunday && <span className="text-green-600 ml-1">+ nedjelja 🎉</span>}
+                        </div>
+                      )}
+                      {/* Mini kalendar */}
+                      {rentaDates.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {[...rentaDates, ...(bonusSunday ? [bonusSunday] : [])].map(date => {
+                            const dow = new Date(date+"T00:00:00").getDay();
+                            const isSun = dow === 0;
+                            const existing = cal.getStatus(driverId, date);
+                            return (
+                              <div key={date} className={`rounded px-1.5 py-0.5 text-xs ${
+                                isSun && date === bonusSunday ? "bg-green-100 text-green-700 border border-green-300" :
+                                existing === "izmireno" ? "bg-gray-100 text-gray-400 line-through" :
+                                "bg-primary/10 text-primary"
+                              }`}>
+                                {date.slice(8)}. {DAYS_SR[dow]}{isSun ? " 🎉" : ""}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-              <MiniCalendar driverId={driverId} dateFrom={dateFrom} dateTo={dateTo} cal={cal}/>
-            </>
-          ) : (
-            /* Ostali tipovi — klasičan unos */
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-2"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
-                <div className="grid gap-2"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+
+                {/* Članarina */}
+                <div className={`rounded-lg border p-3 space-y-2 transition-colors ${clanarinaEnabled ? "border-green-300 bg-green-50/50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { setClanarinaEnabled(!clanarinaEnabled); if (!clanarinaAmt && driver) setClanarinaAmt(String(driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own)); }}
+                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${clanarinaEnabled ? "bg-green-500 border-green-500" : "border-gray-300"}`}>
+                        {clanarinaEnabled && <Check className="h-3 w-3 text-white"/>}
+                      </button>
+                      <span className="text-sm font-medium">Članarina</span>
+                    </div>
+                    {clanarinaEnabled && <span className="text-sm font-bold text-green-600">{fmt(clanarinaTotal)}</span>}
+                  </div>
+                  {clanarinaEnabled && (
+                    <Input type="number" value={clanarinaAmt} onChange={e => setClanarinaAmt(e.target.value)}/>
+                  )}
+                </div>
+
+                {/* POS */}
+                {driver.driver_type === "renta" && (
+                  <div className={`rounded-lg border p-3 space-y-2 transition-colors ${posEnabled ? "border-green-300 bg-green-50/50" : "border-gray-200"}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setPosEnabled(!posEnabled); if (!posAmt) setPosAmt(String(driver.pos_monthly_fee)); }}
+                          className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${posEnabled ? "bg-green-500 border-green-500" : "border-gray-300"}`}>
+                          {posEnabled && <Check className="h-3 w-3 text-white"/>}
+                        </button>
+                        <span className="text-sm font-medium">POS naknada</span>
+                      </div>
+                      {posEnabled && <span className="text-sm font-bold text-green-600">{fmt(posTotal)}</span>}
+                    </div>
+                    {posEnabled && (
+                      <Input type="number" value={posAmt} onChange={e => setPosAmt(e.target.value)}/>
+                    )}
+                  </div>
+                )}
               </div>
-              {isObracunDay(date)&&<div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5"/>Obračunski dan</div>}
-              <div className="grid gap-2"><Label>Opis</Label><Input value={desc} onChange={e=>setDesc(e.target.value)}/></div>
+
+              <Separator/>
+
+              {/* IZLAZ */}
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-orange-700 uppercase">Izlaz (isplata vozaču)</p>
+
+                {/* Yandex */}
+                <div className={`rounded-lg border p-3 space-y-2 transition-colors ${yandexEnabled ? "border-orange-300 bg-orange-50/50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setYandexEnabled(!yandexEnabled)}
+                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${yandexEnabled ? "bg-orange-500 border-orange-500" : "border-gray-300"}`}>
+                        {yandexEnabled && <Check className="h-3 w-3 text-white"/>}
+                      </button>
+                      <span className="text-sm font-medium">Yandex</span>
+                    </div>
+                    {yandexEnabled && Number(yandexGross) > 0 && (
+                      <div className="text-right text-xs">
+                        <div className="text-muted-foreground">odbitak: −{fmt(yandexDeduct)}</div>
+                        <div className="font-bold text-orange-600">{fmt(yandexNet)}</div>
+                      </div>
+                    )}
+                  </div>
+                  {yandexEnabled && (
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Bruto iznos</Label>
+                      <Input type="number" value={yandexGross} onChange={e => setYandexGross(e.target.value)}/>
+                      {Number(yandexGross) > 0 && <p className="text-xs text-muted-foreground">Odbitak 10% = {fmt(yandexDeduct)} · Neto vozaču: {fmt(yandexNet)}</p>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Kartica */}
+                <div className={`rounded-lg border p-3 space-y-2 transition-colors ${karticaEnabled ? "border-orange-300 bg-orange-50/50" : "border-gray-200"}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setKarticaEnabled(!karticaEnabled)}
+                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${karticaEnabled ? "bg-orange-500 border-orange-500" : "border-gray-300"}`}>
+                        {karticaEnabled && <Check className="h-3 w-3 text-white"/>}
+                      </button>
+                      <span className="text-sm font-medium">Kartice</span>
+                    </div>
+                    {karticaEnabled && Number(karticaGross) > 0 && (
+                      <div className="text-right text-xs">
+                        <div className="text-muted-foreground">odbitak: −{fmt(karticaDeduct)}</div>
+                        <div className="font-bold text-orange-600">{fmt(karticaNet)}</div>
+                      </div>
+                    )}
+                  </div>
+                  {karticaEnabled && (
+                    <div className="space-y-2">
+                      <Select value={karticaType} onValueChange={setKarticaType}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue/></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="visa">Visa (1.5%)</SelectItem>
+                          <SelectItem value="mastercard">Mastercard (1.5%)</SelectItem>
+                          <SelectItem value="dina">Dina (1.0%)</SelectItem>
+                          <SelectItem value="amex">Amex (2.5%)</SelectItem>
+                          <SelectItem value="ostalo">Ostalo (1.5%)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="grid gap-1">
+                        <Label className="text-xs">Bruto iznos</Label>
+                        <Input type="number" value={karticaGross} onChange={e => setKarticaGross(e.target.value)}/>
+                        {Number(karticaGross) > 0 && <p className="text-xs text-muted-foreground">Odbitak {karticaDeductPct}% = {fmt(karticaDeduct)} · Neto vozaču: {fmt(karticaNet)}</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* SUMARNO */}
+              {(rentaEnabled || clanarinaEnabled || posEnabled || yandexEnabled || karticaEnabled) && (
+                <>
+                  <Separator/>
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <p className="text-xs font-bold uppercase">Sumarno</p>
+                    {totalUlaz > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Ukupno naplata:</span><span className="text-green-600 font-semibold">+{fmt(totalUlaz)}</span></div>}
+                    {totalIzlaz > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Ukupno isplata:</span><span className="text-orange-600 font-semibold">−{fmt(totalIzlaz)}</span></div>}
+                    <Separator/>
+                    <div className="flex justify-between text-base font-bold">
+                      <span>{saldo >= 0 ? "Vozač prima:" : "Vozač duguje:"}</span>
+                      <span className={saldo >= 0 ? "text-orange-600" : "text-green-600"}>{fmt(Math.abs(saldo))}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
-          <Button disabled={!canSave} onClick={handleSave}>
+          <Button variant="outline" onClick={() => setOpen(false)}>Otkazi</Button>
+          <Button disabled={!driver || saving} onClick={handleSave}>
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}
-            {isRenta ? "Sačuvaj i čekiraj kalendar" : "Sačuvaj"}
+            Sačuvaj obračun
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -305,7 +413,6 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
   const confirmedBy=obracun?.getConfirmedBy(date)??"";
-
   return (
     <motion.div layout initial={{opacity:0,y:6}} animate={{opacity:1,y:0}}>
       <Card className={`overflow-hidden border-l-4 ${confirmed?"border-l-green-500":"border-l-amber-400"}`}>
@@ -362,7 +469,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                           <Button variant="outline" onClick={()=>setCloseOpen(false)}>Otkazi</Button>
                           <Button disabled={saving} onClick={async()=>{
                             setSaving(true);
-                            try{await obracun.closeObracun(date,displayName,total_in,total_out);toast.success(`Obračun zatvoren — ${displayName}`);setCloseOpen(false);}
+                            try{await obracun.closeObracun(date,displayName,total_in,total_out);toast.success(`Obračun zatvoren`);setCloseOpen(false);}
                             catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
                           }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Zatvori</Button>
                         </DialogFooter>
@@ -412,7 +519,7 @@ const CashPage = () => {
         <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
-          <NewEntryDialog onAdd={addEntry} currentUser={displayName}/>
+          <ObracunVozacDialog onAdd={addEntry} currentUser={displayName} obracunDate={currentObracun}/>
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
