@@ -62,42 +62,61 @@ function MiniCalendar({ driverId, dateFrom, dateTo, cal }: { driverId: string; d
   const dates = getDatesInRange(dateFrom, dateTo);
   if (!dates.length || !driverId) return null;
 
-  // Posljednja uplata za vozača iz calendar_entries
+  // Posljednja uplata
   const lastPaidDate = driverId !== "none"
     ? [...cal.entries]
         .filter((e: any) => e.driver_id === driverId && e.status === "izmireno")
         .sort((a: any, b: any) => b.date.localeCompare(a.date))[0]?.date ?? null
     : null;
 
+  // Provjeri da li nedjelja poslije perioda treba biti besplatna
+  // Uzmi sve radne dane u periodu — ako su svi izmireni ili će biti izmireni, nedjelja je bonus
+  const workDatesInPeriod = dates.filter(d => new Date(d+"T00:00:00").getDay() !== 0);
+  
+  // Nađi nedjelju koja dolazi NAKON zadnjeg dana u periodu
+  const lastDate = new Date(dateTo + "T00:00:00");
+  const lastDow  = lastDate.getDay();
+  const daysUntilSunday = lastDow === 0 ? 0 : 7 - lastDow;
+  const bonusSunday = daysUntilSunday > 0 ? (() => {
+    const sun = new Date(lastDate);
+    sun.setDate(sun.getDate() + daysUntilSunday);
+    return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
+  })() : null;
+
+  // Nedjelja je bonus ako period pokriva cijelu sedmicu (pon-sub = 6 radnih dana uzastopno)
+  const isBonusSunday = bonusSunday && workDatesInPeriod.length >= 6;
+
+  const allDates = isBonusSunday ? [...dates, bonusSunday!] : dates;
+
   return (
     <div className="space-y-1.5">
-      {/* Posljednja uplata */}
       {lastPaidDate && (
         <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
-          <span className="text-muted-foreground">Poslednji izmireni dan: </span>
+          <span className="text-muted-foreground">Posljednji izmireni dan: </span>
           <strong>{fmtDate(lastPaidDate)}</strong>
         </div>
       )}
       <p className="text-xs font-semibold text-muted-foreground uppercase">Dani koji se čekiraju</p>
       <div className="flex flex-wrap gap-1.5">
-        {dates.map(date => {
+        {allDates.map(date => {
           const dow = new Date(date + "T00:00:00").getDay();
           const isSun = dow === 0;
+          const isBonus = isSun && date === bonusSunday;
           const existing = cal.getStatus(driverId, date);
           return (
             <div key={date} className={`rounded-md px-2 py-1 text-xs font-medium ${
-              isSun ? "bg-gray-100 text-gray-400" :
+              isBonus ? "bg-green-50 border border-green-300 text-green-700" :
               existing === "izmireno" ? "bg-green-100 text-green-700 line-through opacity-60" :
               "bg-primary/10 text-primary"
             }`}>
               {date.slice(8)}. {DAYS_SR[dow]}
-              {existing === "izmireno" && " ✓"}
-              {isSun && " —"}
+              {isBonus && " 🎉"}
+              {existing === "izmireno" && !isBonus && " ✓"}
             </div>
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">Nedjelje su označene sivom bojom</p>
+      <p className="text-xs text-muted-foreground">Označene sivom bojom nedjelje se ne naplaćuju</p>
     </div>
   );
 }
@@ -146,6 +165,18 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
     setSaving(true);
     try {
       if (isRenta && driver) {
+        // Izračunaj bonus nedjelju
+        const lastDate  = new Date(dateTo + "T00:00:00");
+        const lastDow   = lastDate.getDay();
+        const daysToSun = lastDow === 0 ? 0 : 7 - lastDow;
+        const workDaysInPeriod = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0);
+        let bonusSunday: string | null = null;
+        if (daysToSun > 0 && workDaysInPeriod.length >= 6) {
+          const sun = new Date(lastDate);
+          sun.setDate(sun.getDate() + daysToSun);
+          bonusSunday = `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
+        }
+
         // Unesi u kasu
         await onAdd({
           type: "renta", direction: "in", driver_id: driverId,
@@ -153,13 +184,19 @@ function NewEntryDialog({ onAdd, currentUser }: { onAdd: (e: any) => Promise<voi
           description: `Renta ${dateFrom} — ${dateTo} (${workDays} dana)`,
           received_by: currentUser, notes: ""
         });
-        // Čekiraj svaki radni dan u kalendaru
+        // Čekiraj radne dane
         for (const d of rentaDates) {
           if (new Date(d+"T00:00:00").getDay() === 0) continue;
           await cal.saveAmount(driverId, d, "renta", driver.daily_rate, currentUser);
           await cal.saveStatus(driverId, d, "izmireno", currentUser);
         }
-        toast.success(`Evidentirano ${fmt(autoAmount)} za ${workDays} dana`);
+        // Čekiraj bonus nedjelju
+        if (bonusSunday) {
+          await cal.saveStatus(driverId, bonusSunday, "izmireno", currentUser);
+          toast.success(`Evidentirano ${fmt(autoAmount)} za ${workDays} dana + nedjelja 🎉`);
+        } else {
+          toast.success(`Evidentirano ${fmt(autoAmount)} za ${workDays} dana`);
+        }
       } else {
         await onAdd({
           type, direction: dir,
