@@ -62,8 +62,22 @@ function MiniCalendar({ driverId, dateFrom, dateTo, cal }: { driverId: string; d
   const dates = getDatesInRange(dateFrom, dateTo);
   if (!dates.length || !driverId) return null;
 
+  // Posljednja uplata za vozača iz calendar_entries
+  const lastPaidDate = driverId !== "none"
+    ? [...cal.entries]
+        .filter((e: any) => e.driver_id === driverId && e.status === "izmireno")
+        .sort((a: any, b: any) => b.date.localeCompare(a.date))[0]?.date ?? null
+    : null;
+
   return (
     <div className="space-y-1.5">
+      {/* Posljednja uplata */}
+      {lastPaidDate && (
+        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">Poslednji izmireni dan: </span>
+          <strong>{fmtDate(lastPaidDate)}</strong>
+        </div>
+      )}
       <p className="text-xs font-semibold text-muted-foreground uppercase">Dani koji se čekiraju</p>
       <div className="flex flex-wrap gap-1.5">
         {dates.map(date => {
@@ -83,7 +97,7 @@ function MiniCalendar({ driverId, dateFrom, dateTo, cal }: { driverId: string; d
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">Nedjelje se preskačaju</p>
+      <p className="text-xs text-muted-foreground">Nedjelje se ne naplaćuju</p>
     </div>
   );
 }
