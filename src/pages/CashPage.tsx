@@ -3,8 +3,6 @@ import { useState, useMemo } from "react";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
 import { useCalendar } from "@/hooks/useCalendar";
-import { useYandex } from "@/hooks/useYandex";
-import { useCards } from "@/hooks/useCards";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,8 +111,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
 }) {
   const { drivers } = useApp();
-  const { reports: yandexReports, markPaidOut: yandexPaidOut } = useYandex();
-  const { reports: cardReports, markPaidOut: cardPaidOut } = useCards();
+  const { yandexReports, cardReports, markYandexPaid: yandexPaidOut, markCardPaid: cardPaidOut } = useApp();
   const today = new Date().toISOString().split("T")[0];
   const curYear  = new Date().getFullYear();
   const curMonth = new Date().getMonth()+1;
