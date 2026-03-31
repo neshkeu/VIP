@@ -18,7 +18,7 @@ function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const YandexPage = () => {
   const { drivers, vehicles, displayName } = useApp();
-  const { reports, loading, addReport, markPaidOut } = useYandex();
+  const { yandexReports: reports, addYandex: addReport, markYandexPaid: markPaidOut, loading } = useApp();
   
   
 

@@ -21,7 +21,7 @@ const CARD_LABELS: Record<CardType, string> = {
 
 const CardsPage = () => {
   const { drivers, vehicles, displayName } = useApp();
-  const { reports, loading, addReport, markPaidOut } = useCards();
+  const { cardReports: reports, addCard: addReport, markCardPaid: markPaidOut, loading } = useApp();
   
   
 
