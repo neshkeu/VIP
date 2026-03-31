@@ -251,7 +251,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       <DialogTrigger asChild>
         <Button><Plus className="mr-2 h-4 w-4"/>Novi obračun</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!max-w-4xl max-h-[90vh] overflow-y-auto w-[90vw]">
         <DialogHeader>
           <DialogTitle>Obračun vozača</DialogTitle>
           <DialogDescription>{obracunDate ? `Obračunski dan: ${fmtDate(obracunDate)}` : `Evidentira: ${currentUser}`}</DialogDescription>
