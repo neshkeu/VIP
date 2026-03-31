@@ -97,7 +97,7 @@ function MiniCalendar({ driverId, dateFrom, dateTo, cal }: { driverId: string; d
           );
         })}
       </div>
-      <p className="text-xs text-muted-foreground">Nedjelje se ne naplaćuju</p>
+      <p className="text-xs text-muted-foreground">Nedjelje su označene sivom bojom</p>
     </div>
   );
 }
