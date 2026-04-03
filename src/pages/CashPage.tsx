@@ -478,7 +478,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
               {/* DESNA KOLONA — kalendar + sumarno */}
               <div className="space-y-4">
-                <div className="rounded-lg border p-3">
+                <div className="rounded-lg border p-3 space-y-2">
+                  {/* Navigacija po mjesecima */}
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => { if(calMonth===1){setCalMonth(12);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); }}
+                      className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">‹</button>
+                    <span className="text-xs font-semibold">{MONTHS_SR[curMonth-1]} {curYear}</span>
+                    <button onClick={() => { if(calMonth===12){setCalMonth(1);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); }}
+                      className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">›</button>
+                  </div>
                   <KalendarPregled driverId={driverId} cal={cal} year={curYear} month={curMonth}/>
                 </div>
 
