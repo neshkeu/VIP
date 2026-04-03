@@ -1,5 +1,8 @@
 import { useApp } from "@/context/AppContext";
 import { useState } from "react";
+
+type CardType = "visa" | "mastercard" | "dina" | "amex" | "ostalo";
+const CARD_DEDUCTIONS: Record<CardType, number> = { visa:1.5, mastercard:1.5, dina:1.0, amex:2.5, ostalo:1.5 };
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

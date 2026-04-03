@@ -113,8 +113,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const { drivers } = useApp();
   const { yandexReports, cardReports, markYandexPaid: yandexPaidOut, markCardPaid: cardPaidOut } = useApp();
   const today = new Date().toISOString().split("T")[0];
-  const curYear  = new Date().getFullYear();
-  const curMonth = new Date().getMonth()+1;
+  const [calYear, setCalYear]   = useState(new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(new Date().getMonth()+1);
+  const curYear  = calYear;
+  const curMonth = calMonth;
 
   const [open, setOpen]         = useState(false);
   const [driverId, setDriverId] = useState("none");
