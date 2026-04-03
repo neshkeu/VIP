@@ -1,5 +1,6 @@
 import { useApp } from "@/context/AppContext";
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
 import { useCalendar } from "@/hooks/useCalendar";
@@ -63,43 +64,51 @@ function KalendarPregled({ driverId, cal, year, month }: { driverId: string; cal
   const daysInMonth = getDaysInMonth(year, month);
   const days = Array.from({length: daysInMonth}, (_,i) => i+1);
 
-  const statusColor = (status: string|null) => {
-    if (status === "izmireno")   return "bg-green-500";
-    if (status === "neizmireno") return "bg-red-400";
-    if (status === "nije_radio") return "bg-gray-300";
-    return "bg-gray-100";
-  };
+  function isSundayFreeLocal(sundayDate: string): boolean {
+    const sun = new Date(sundayDate + "T00:00:00");
+    if (isNaN(sun.getTime())) return false;
+    for (let i = 1; i <= 6; i++) {
+      const d = new Date(sun); d.setDate(sun.getDate() - i);
+      const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      const entry = cal.entries?.find((e:any) => e.driver_id === driverId && e.date === ds);
+      const s = entry?.status ?? null;
+      if (s === null || s === "nije_radio") return false;
+    }
+    return true;
+  }
 
   return (
     <div className="space-y-1.5">
-      <p className="text-xs font-semibold text-muted-foreground uppercase">{MONTHS_SR[month-1]} {year} — Kalendar</p>
       <div className="grid grid-cols-7 gap-0.5 text-center">
-        {["N","P","U","S","Č","Pet","Sub"].map(d => (
+        {["Ned","Pon","Uto","Sri","Čet","Pet","Sub"].map(d => (
           <div key={d} className="text-xs text-muted-foreground font-medium py-0.5">{d}</div>
         ))}
-        {/* Prazan prostor za prvi dan */}
         {Array.from({length: getDow(year, month, 1)}, (_,i) => <div key={`e${i}`}/>)}
         {days.map(day => {
-          const dow    = getDow(year, month, day);
+          const dow     = getDow(year, month, day);
           const dateStr = getDateStr(year, month, day);
           const status  = cal.getStatus(driverId, dateStr);
           const isSun   = dow === 0;
+          const sunFree = isSun ? isSundayFreeLocal(dateStr) : false;
           return (
             <div key={day} className={`rounded text-xs py-1 font-medium ${
-              isSun ? "bg-gray-50 text-gray-300" :
+              isSun && sunFree  ? "bg-green-100 text-green-700" :
+              isSun && !sunFree ? "bg-amber-50 text-amber-600" :
               status === "izmireno"   ? "bg-green-100 text-green-700" :
               status === "neizmireno" ? "bg-red-100 text-red-600" :
               status === "nije_radio" ? "bg-gray-100 text-gray-400" :
               "text-gray-300"
             }`}>
               {day}
+              {isSun && sunFree && <span className="block text-xs">✓</span>}
             </div>
           );
         })}
       </div>
-      <div className="flex gap-3 text-xs mt-1">
+      <div className="flex gap-3 text-xs mt-1 flex-wrap">
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-green-100 inline-block"/>Izmireno</span>
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-red-100 inline-block"/>Neizmireno</span>
+        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-amber-50 inline-block"/>Ned. se naplaćuje</span>
         <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-gray-100 inline-block"/>Nije radio</span>
       </div>
     </div>
@@ -142,6 +151,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(curYear, curMonth);
 
+  // Posljednji izmireni dan — iz svih mjeseci
+  const [lastPaidDate, setLastPaidDate] = useState<string|null>(null);
+  useEffect(() => {
+    if (driverId === "none") { setLastPaidDate(null); return; }
+    supabase.from("calendar_entries")
+      .select("date").eq("driver_id", driverId).eq("status", "izmireno")
+      .order("date", { ascending: false }).limit(1)
+      .then(({ data }) => setLastPaidDate(data?.[0]?.date ?? null));
+  }, [driverId]);
+
   // Neisplaćeni yandex i kartice za ovog vozača
   const driverYandex = yandexReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const driverCards  = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
@@ -179,11 +198,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     sun.setDate(sun.getDate() + daysToSun);
     return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
   })() : null;
-
-  const lastPaidDate = driverId !== "none"
-    ? [...(cal.entries ?? [])].filter((e:any) => e.driver_id === driverId && e.status === "izmireno")
-        .sort((a:any,b:any) => b.date.localeCompare(a.date))[0]?.date ?? null
-    : null;
 
   const reset = () => {
     setDriverId("none"); setShowKal(false);
