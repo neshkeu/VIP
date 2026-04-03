@@ -4,6 +4,9 @@ import { supabase } from "@/lib/supabase";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
 import { useCalendar } from "@/hooks/useCalendar";
+import { useMembership } from "@/hooks/useMembership";
+import { useFuelPdv } from "@/hooks/useFuelPdv";
+import { useDebts } from "@/hooks/useDebts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, CalendarDays } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
@@ -35,14 +38,18 @@ function getDatesInRange(from: string, to: string): string[] {
   const start = new Date(from + "T00:00:00");
   const end   = new Date(to   + "T00:00:00");
   if (start > end) return [];
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1))
     dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
-  }
   return dates;
 }
-function getDateStr(y:number,m:number,d:number){return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
 function getDow(y:number,m:number,d:number){return new Date(y,m-1,d).getDay();}
+function getDateStr(y:number,m:number,d:number){return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
 function getDaysInMonth(y:number,m:number){return new Date(y,m,0).getDate();}
+// Broj sedmica u periodu (svaka pon kao start sedmice)
+function countWeeks(from: string, to: string): number {
+  const dates = getDatesInRange(from, to);
+  return dates.filter(d => new Date(d+"T00:00:00").getDay() === 1).length;
+}
 
 const CASH_TYPE_LABELS: Record<string,string> = {
   renta:"Renta",clanarina:"Članarina",pos_naknada:"POS naknada",
@@ -57,13 +64,11 @@ const CASH_TYPE_COLORS: Record<string,string> = {
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",
   vaučer:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",
 };
-const CARD_DEDUCTIONS: Record<string,number> = { visa:1.5, mastercard:1.5, dina:1.0, amex:2.5, ostalo:1.5 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
 function KalendarPregled({ driverId, cal, year, month }: { driverId: string; cal: any; year: number; month: number }) {
   const daysInMonth = getDaysInMonth(year, month);
   const days = Array.from({length: daysInMonth}, (_,i) => i+1);
-
   function isSundayFreeLocal(sundayDate: string): boolean {
     const sun = new Date(sundayDate + "T00:00:00");
     if (isNaN(sun.getTime())) return false;
@@ -71,12 +76,10 @@ function KalendarPregled({ driverId, cal, year, month }: { driverId: string; cal
       const d = new Date(sun); d.setDate(sun.getDate() - i);
       const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
       const entry = cal.entries?.find((e:any) => e.driver_id === driverId && e.date === ds);
-      const s = entry?.status ?? null;
-      if (s === null || s === "nije_radio") return false;
+      if (!entry || entry.status === "nije_radio") return false;
     }
     return true;
   }
-
   return (
     <div className="space-y-1.5">
       <div className="grid grid-cols-7 gap-0.5 text-center">
@@ -85,135 +88,172 @@ function KalendarPregled({ driverId, cal, year, month }: { driverId: string; cal
         ))}
         {Array.from({length: getDow(year, month, 1)}, (_,i) => <div key={`e${i}`}/>)}
         {days.map(day => {
-          const dow     = getDow(year, month, day);
+          const dow = getDow(year, month, day);
           const dateStr = getDateStr(year, month, day);
-          const status  = cal.getStatus(driverId, dateStr);
-          const isSun   = dow === 0;
+          const status = cal.getStatus(driverId, dateStr);
+          const isSun = dow === 0;
           const sunFree = isSun ? isSundayFreeLocal(dateStr) : false;
           return (
             <div key={day} className={`rounded text-xs py-1 font-medium ${
               isSun && sunFree  ? "bg-green-100 text-green-700" :
-              isSun && !sunFree ? "bg-amber-50 text-amber-600" :
+              isSun && !sunFree ? "bg-amber-50 text-amber-500" :
               status === "izmireno"   ? "bg-green-100 text-green-700" :
               status === "neizmireno" ? "bg-red-100 text-red-600" :
               status === "nije_radio" ? "bg-gray-100 text-gray-400" :
               "text-gray-300"
-            }`}>
-              {day}
-              {isSun && sunFree && <span className="block text-xs">✓</span>}
-            </div>
+            }`}>{day}</div>
           );
         })}
       </div>
-      <div className="flex gap-3 text-xs mt-1 flex-wrap">
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-green-100 inline-block"/>Izmireno</span>
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-red-100 inline-block"/>Neizmireno</span>
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-amber-50 inline-block"/>Ned. se naplaćuje</span>
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-gray-100 inline-block"/>Nije radio</span>
+      <div className="flex gap-2 text-xs flex-wrap">
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-green-100 inline-block"/>Izmireno</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-red-100 inline-block"/>Neizmireno</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-amber-50 border border-amber-200 inline-block"/>Ned. naplaćuje</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-gray-100 inline-block"/>Nije radio</span>
       </div>
     </div>
   );
 }
 
-// ─── OBRACUN PO VOZACU ────────────────────────────────────────
+// ─── CHECKBOX RED ─────────────────────────────────────────────
+function CheckRow({ label, sublabel, amount, enabled, onToggle, children }: {
+  label: string; sublabel?: string; amount?: number;
+  enabled: boolean; onToggle: () => void; children?: React.ReactNode;
+}) {
+  return (
+    <div className={`rounded-lg border p-3 space-y-2 transition-colors ${enabled ? "border-green-300 bg-green-50/30" : "border-gray-200"}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={onToggle}>
+          <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${enabled ? "bg-green-500 border-green-500" : "border-gray-300"}`}>
+            {enabled && <Check className="h-3 w-3 text-white"/>}
+          </div>
+          <div>
+            <span className="text-sm font-medium">{label}</span>
+            {sublabel && <p className="text-xs text-muted-foreground">{sublabel}</p>}
+          </div>
+        </div>
+        {enabled && amount !== undefined && <span className="text-sm font-bold text-green-600">{fmt(amount)}</span>}
+      </div>
+      {enabled && children}
+    </div>
+  );
+}
+
+// ─── OBRACUN VOZACA DIALOG ────────────────────────────────────
 function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
 }) {
   const { drivers } = useApp();
   const { yandexReports, cardReports, markYandexPaid: yandexPaidOut, markCardPaid: cardPaidOut } = useApp();
   const today = new Date().toISOString().split("T")[0];
-  const [calYear, setCalYear]   = useState(new Date().getFullYear());
-  const [calMonth, setCalMonth] = useState(new Date().getMonth()+1);
-  const curYear  = calYear;
-  const curMonth = calMonth;
+  const curMonthStr = today.slice(0,7);
 
   const [open, setOpen]         = useState(false);
   const [driverId, setDriverId] = useState("none");
   const [saving, setSaving]     = useState(false);
-  const [showKal, setShowKal]   = useState(false);
+  const [calYear, setCalYear]   = useState(new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(new Date().getMonth()+1);
 
-  // ULAZ
-  const [rentaFrom, setRentaFrom]           = useState(today);
-  const [rentaTo, setRentaTo]               = useState(today);
-  const [rentaEnabled, setRentaEnabled]     = useState(true);
-  const [clanarinaAmt, setClanarinaAmt]     = useState("");
-  const [clanarinaEnabled, setClanarinaEnabled] = useState(false);
-  const [posAmt, setPosAmt]                 = useState("");
-  const [posEnabled, setPosEnabled]         = useState(false);
+  // RENTA
+  const [rentaEnabled, setRentaEnabled] = useState(true);
+  const [rentaFrom, setRentaFrom]       = useState(today);
+  const [rentaTo, setRentaTo]           = useState(today);
 
-  // YANDEX — čekiraj izvode + parcijalni iznos
+  // ČLANARINA
+  const [clanEnabled, setClanEnabled]   = useState(false);
+  const [clanFrom, setClanFrom]         = useState(today);
+  const [clanTo, setClanTo]             = useState(today);
+  const [clanAmt, setClanAmt]           = useState("");
+
+  // POS
+  const [posEnabled, setPosEnabled]     = useState(false);
+  const [posAmt, setPosAmt]             = useState("");
+
+  // PDV GORIVA
+  const [pdvEnabled, setPdvEnabled]     = useState(false);
+  const [pdvAmt, setPdvAmt]             = useState("");
+
+  // DUGOVANJA
+  const [selectedDebts, setSelectedDebts] = useState<Set<string>>(new Set());
+
+  // YANDEX + KARTICE
   const [selectedYandex, setSelectedYandex] = useState<Set<string>>(new Set());
-  const [yandexPartial, setYandexPartial]   = useState<Record<string, string>>({});
-  const [yandexCustom, setYandexCustom]     = useState<Record<string,string>>({});
   const [selectedCards, setSelectedCards]   = useState<Set<string>>(new Set());
-  const [cardCustom, setCardCustom]         = useState<Record<string,string>>({});
 
   const driver = drivers.find(d => d.id === driverId);
-  const cal    = useCalendar(curYear, curMonth);
+  const cal    = useCalendar(calYear, calMonth);
+  const membership = useMembership(driverId);
+  const fuelPdv = useFuelPdv(driverId, curMonthStr);
+  const { debts } = useDebts();
 
-  // Posljednji izmireni dan — iz svih mjeseci
+  // Posljednji izmireni dan
   const [lastPaidDate, setLastPaidDate] = useState<string|null>(null);
+  const [lastClanDate, setLastClanDate] = useState<string|null>(null);
   useEffect(() => {
-    if (driverId === "none") { setLastPaidDate(null); return; }
-    supabase.from("calendar_entries")
-      .select("date").eq("driver_id", driverId).eq("status", "izmireno")
+    if (driverId === "none") { setLastPaidDate(null); setLastClanDate(null); return; }
+    supabase.from("calendar_entries").select("date").eq("driver_id", driverId).eq("status","izmireno")
       .order("date", { ascending: false }).limit(1)
       .then(({ data }) => setLastPaidDate(data?.[0]?.date ?? null));
+    supabase.from("membership_entries").select("date_to").eq("driver_id", driverId)
+      .order("date_to", { ascending: false }).limit(1)
+      .then(({ data }) => setLastClanDate(data?.[0]?.date_to ?? null));
   }, [driverId]);
 
-  // Neisplaćeni yandex i kartice za ovog vozača
-  const driverYandex = yandexReports.filter(r => r.driver_id === driverId && !r.paid_out);
-  const driverCards  = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
+  // Auto-popuni POS i clan iznos
+  useEffect(() => {
+    if (!driver) return;
+    if (!posAmt) setPosAmt(String(driver.pos_monthly_fee));
+    const amt = driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own;
+    if (!clanAmt) setClanAmt(String(amt));
+  }, [driver]);
 
+  // Izračuni
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
   const workDays    = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
   const rentaTotal  = driver ? workDays * driver.daily_rate : 0;
-  const clanarinaTotal = clanarinaEnabled
-    ? (Number(clanarinaAmt) || (driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0))
-    : 0;
-  const posTotal = posEnabled ? (Number(posAmt) || (driver?.pos_monthly_fee ?? 0)) : 0;
 
-  // Yandex zbir selektovanih
-  const yandexSelectedReports = driverYandex.filter(r => selectedYandex.has(r.id));
-  const yandexNetTotal   = yandexSelectedReports.reduce((s,r) => s + (Number(yandexCustom[r.id]) || r.net_amount), 0);
-  const yandexGrossTotal = yandexSelectedReports.reduce((s,r) => s+r.gross_amount, 0);
-  const yandexDeductTotal = yandexSelectedReports.reduce((s,r) => s+r.deduction_amount, 0);
+  const clanWeeks  = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
+  const clanTotal  = clanEnabled ? clanWeeks * (Number(clanAmt) || 0) : 0;
 
-  // Kartice zbir selektovanih
-  const cardSelectedReports = driverCards.filter(r => selectedCards.has(r.id));
-  const cardNetTotal    = cardSelectedReports.reduce((s,r) => s + (Number(cardCustom[r.id]) || r.net_amount), 0);
-  const cardGrossTotal  = cardSelectedReports.reduce((s,r) => s+r.gross_amount, 0);
-  const cardDeductTotal = cardSelectedReports.reduce((s,r) => s+r.deduction_amount, 0);
+  const posTotal   = posEnabled ? (Number(posAmt) || 0) : 0;
 
-  const totalUlaz   = rentaTotal + clanarinaTotal + posTotal;
-  const totalIzlaz  = yandexNetTotal + cardNetTotal;
-  const saldo       = totalIzlaz - totalUlaz; // pozitivno = isplatiti vozaču
+  const pdvMax     = Math.min(Number(pdvAmt) || 0, fuelPdv.remaining);
+  const pdvTotal   = pdvEnabled ? pdvMax : 0;
+
+  const openDebts  = debts.filter(d => d.driver_id === driverId && d.status !== "closed");
+  const selectedDebtsList = openDebts.filter(d => selectedDebts.has(d.id));
+  const debtTotal  = selectedDebtsList.reduce((s,d) => s + (d.amount - d.paid_amount), 0);
+
+  // Yandex
+  const driverYandex = yandexReports.filter(r => r.driver_id === driverId && !r.paid_out);
+  const yandexSelected = driverYandex.filter(r => selectedYandex.has(r.id));
+  const yandexNet  = yandexSelected.reduce((s,r) => s+r.net_amount, 0);
+
+  // Kartice
+  const driverCards = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
+  const cardSelected = driverCards.filter(r => selectedCards.has(r.id));
+  const cardNet    = cardSelected.reduce((s,r) => s+r.net_amount, 0);
 
   // Bonus nedjelja
-  const lastDate  = rentaTo ? new Date(rentaTo + "T00:00:00") : null;
-  const lastDow   = lastDate?.getDay() ?? -1;
+  const lastDateObj = rentaTo ? new Date(rentaTo+"T00:00:00") : null;
+  const lastDow = lastDateObj?.getDay() ?? -1;
   const daysToSun = lastDow > 0 ? 7 - lastDow : 0;
   const bonusSunday = daysToSun > 0 && workDays >= 6 ? (() => {
-    const sun = new Date(lastDate!);
-    sun.setDate(sun.getDate() + daysToSun);
+    const sun = new Date(lastDateObj!); sun.setDate(sun.getDate()+daysToSun);
     return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
   })() : null;
 
-  const reset = () => {
-    setDriverId("none"); setShowKal(false);
-    setRentaFrom(today); setRentaTo(today); setRentaEnabled(true);
-    setClanarinaAmt(""); setClanarinaEnabled(false);
-    setPosAmt(""); setPosEnabled(false);
-    setSelectedYandex(new Set()); setYandexCustom({});
-    setSelectedCards(new Set()); setCardCustom({});
-  };
+  // SALDO
+  const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal; // šta vozač duguje
+  const totalPrihodi = yandexNet + cardNet + pdvTotal;                 // šta vozač prima
+  const saldo        = totalPrihodi - totalDuguje;                     // pozitivno = prima, negativno = duguje
 
-  const toggleYandex = (id: string) => setSelectedYandex(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
-  });
-  const toggleCard = (id: string) => setSelectedCards(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
-  });
+  const reset = () => {
+    setDriverId("none"); setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
+    setClanEnabled(false); setClanFrom(today); setClanTo(today); setClanAmt("");
+    setPosEnabled(false); setPosAmt(""); setPdvEnabled(false); setPdvAmt("");
+    setSelectedDebts(new Set()); setSelectedYandex(new Set()); setSelectedCards(new Set());
+  };
 
   const handleSave = async () => {
     if (!driver) return;
@@ -221,6 +261,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     try {
       const saveDate = obracunDate || today;
 
+      // 1. Renta
       if (rentaEnabled && workDays > 0) {
         await onAdd({ type:"renta", direction:"in", driver_id:driverId, amount:rentaTotal, date:saveDate,
           description:`Renta ${rentaFrom} — ${rentaTo} (${workDays} dana)`, received_by:currentUser, notes:"" });
@@ -231,29 +272,65 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         }
         if (bonusSunday) await cal.saveStatus(driverId, bonusSunday, "izmireno", currentUser);
       }
-      if (clanarinaEnabled && clanarinaTotal > 0)
-        await onAdd({ type:"clanarina", direction:"in", driver_id:driverId, amount:clanarinaTotal, date:saveDate,
-          description:"Članarina", received_by:currentUser, notes:"" });
+
+      // 2. Članarina
+      if (clanEnabled && clanTotal > 0) {
+        await onAdd({ type:"clanarina", direction:"in", driver_id:driverId, amount:clanTotal, date:saveDate,
+          description:`Članarina ${clanFrom} — ${clanTo} (${clanWeeks} sed.)`, received_by:currentUser, notes:"" });
+        await membership.addEntry({ driver_id:driverId, date_from:clanFrom, date_to:clanTo, amount:clanTotal, evidenced_by:currentUser });
+      }
+
+      // 3. POS
       if (posEnabled && posTotal > 0)
         await onAdd({ type:"pos_naknada", direction:"in", driver_id:driverId, amount:posTotal, date:saveDate,
           description:"POS naknada", received_by:currentUser, notes:"" });
 
-      // Yandex — isplati selektovane
-      for (const r of yandexSelectedReports) {
-        const amt = Number(yandexCustom[r.id]) || r.net_amount;
-        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:amt, date:saveDate,
-          description:`Yandex ${r.period_from} — ${r.period_to}${amt < r.net_amount ? ` (parcijalno ${fmt(amt)} od ${fmt(r.net_amount)})` : ""}`, received_by:currentUser, notes:"" });
-        if (amt >= r.net_amount) await yandexPaidOut(r.id, currentUser);
+      // 4. PDV goriva — izlaz (isplata vozaču)
+      if (pdvEnabled && pdvTotal > 0) {
+        await onAdd({ type:"pdv_gorivo", direction:"out", driver_id:driverId, amount:pdvTotal, date:saveDate,
+          description:`PDV goriva (limit ${fmt(fuelPdv.PDV_MONTHLY_LIMIT)}/mj)`, received_by:currentUser, notes:"" });
+        await supabase.from("fuel_pdv_entries").insert({ driver_id:driverId, date:saveDate, amount:pdvTotal, evidenced_by:currentUser });
       }
 
-      for (const r of cardSelectedReports) {
-        const amt = Number(cardCustom[r.id]) || r.net_amount;
-        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:amt, date:saveDate,
-          description:`Kartica ${r.card_type.toUpperCase()} ${r.period_from} — ${r.period_to}${amt < r.net_amount ? ` (parcijalno)` : ""}`, received_by:currentUser, notes:"" });
-        if (amt >= r.net_amount) await cardPaidOut(r.id, currentUser);
+      // 5. Dugovanja — uplata
+      for (const debt of selectedDebtsList) {
+        const amt = debt.amount - debt.paid_amount;
+        await onAdd({ type:"dugovanje", direction:"in", driver_id:driverId, amount:amt, date:saveDate,
+          description:`Uplata dugovanja: ${debt.description}`, received_by:currentUser, notes:"" });
+        await supabase.from("driver_debts").update({
+          paid_amount: debt.amount, status: "closed"
+        }).eq("id", debt.id);
       }
 
-      toast.success(`Obračun za ${driver.full_name} završen${bonusSunday?" + nedjelja 🎉":""}`);
+      // 6. Yandex
+      for (const r of yandexSelected) {
+        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:r.net_amount, date:saveDate,
+          description:`Yandex ${r.period_from} — ${r.period_to}`, received_by:currentUser, notes:"" });
+        await yandexPaidOut(r.id, currentUser);
+      }
+
+      // 7. Kartice
+      for (const r of cardSelected) {
+        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:r.net_amount, date:saveDate,
+          description:`Kartica ${r.card_type.toUpperCase()} ${r.period_from} — ${r.period_to}`, received_by:currentUser, notes:"" });
+        await cardPaidOut(r.id, currentUser);
+      }
+
+      // 8. Ako duguje više nego prima → automatsko dugovanje
+      if (saldo < 0) {
+        await supabase.from("driver_debts").insert({
+          driver_id: driverId, type:"ostalo", amount: Math.abs(saldo), paid_amount:0,
+          date: saveDate, status:"open",
+          description: `Prenos duga sa obračuna ${saveDate}`,
+          created_by: currentUser
+        });
+        toast.success(`Obračun završen — prenos duga ${fmt(Math.abs(saldo))} na sledeći obračun`);
+      } else if (saldo > 0) {
+        toast.success(`Obračun završen — isplati vozaču ${fmt(saldo)}${bonusSunday?" + nedjelja 🎉":""}`);
+      } else {
+        toast.success(`Obračun završen — vozač na nuli`);
+      }
+
       setOpen(false); reset();
     } catch (e: any) { toast.error("Greška: " + e.message); }
     finally { setSaving(false); }
@@ -264,7 +341,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       <DialogTrigger asChild>
         <Button><Plus className="mr-2 h-4 w-4"/>Novi obračun</Button>
       </DialogTrigger>
-      <DialogContent className="!max-w-4xl max-h-[90vh] overflow-y-auto w-[90vw]">
+      <DialogContent className="!max-w-5xl w-[92vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Obračun vozača</DialogTitle>
           <DialogDescription>{obracunDate ? `Obračunski dan: ${fmtDate(obracunDate)}` : `Evidentira: ${currentUser}`}</DialogDescription>
@@ -274,7 +351,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
           {/* Vozač */}
           <div className="grid gap-2">
             <Label>Vozač</Label>
-            <Select value={driverId} onValueChange={v => { setDriverId(v); setShowKal(true); }}>
+            <Select value={driverId} onValueChange={v => { setDriverId(v); }}>
               <SelectTrigger><SelectValue/></SelectTrigger>
               <SelectContent>{drivers.filter(d => d.status === "active").map(d => (
                 <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
@@ -284,224 +361,195 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
           {driver && (
             <div className="grid grid-cols-2 gap-6">
-              {/* LIJEVA KOLONA — ulaz/izlaz */}
-              <div className="space-y-4">
+
+              {/* LIJEVA KOLONA */}
+              <div className="space-y-3">
+
                 {/* Info */}
                 <div className="rounded-lg bg-muted/30 px-3 py-2 text-xs space-y-1">
                   <div className="flex justify-between"><span className="text-muted-foreground">Dnevna renta:</span><strong>{fmt(driver.daily_rate)}</strong></div>
-                  {lastPaidDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednji izmireni dan:</span><strong>{fmtDate(lastPaidDate)}</strong></div>}
+                  <div className="flex justify-between"><span className="text-muted-foreground">Članarina:</span><strong>{fmt(driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own)}/sed.</strong></div>
+                  {lastPaidDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednja renta:</span><strong>{fmtDate(lastPaidDate)}</strong></div>}
+                  {lastClanDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednja članarina:</span><strong>{fmtDate(lastClanDate)}</strong></div>}
                 </div>
 
-                <Separator/>
-                <p className="text-xs font-bold text-green-700 uppercase">Ulaz — naplata</p>
+                <p className="text-xs font-bold text-green-700 uppercase">Duguje vozač</p>
 
-              {/* Renta */}
-              <div className={`rounded-lg border p-3 space-y-3 ${rentaEnabled?"border-green-300 bg-green-50/30":"border-gray-200"}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setRentaEnabled(!rentaEnabled)}
-                      className={`h-5 w-5 rounded border-2 flex items-center justify-center ${rentaEnabled?"bg-green-500 border-green-500":"border-gray-300"}`}>
-                      {rentaEnabled && <Check className="h-3 w-3 text-white"/>}
-                    </button>
-                    <span className="text-sm font-medium">Renta</span>
+                {/* RENTA */}
+                <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
+                  amount={rentaTotal}
+                  sublabel={workDays > 0 ? `${workDays} dana × ${fmt(driver.daily_rate)}${bonusSunday?" + nedjelja 🎉":""}` : undefined}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={rentaFrom} onChange={e=>setRentaFrom(e.target.value)}/></div>
+                    <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={rentaTo} onChange={e=>setRentaTo(e.target.value)}/></div>
                   </div>
-                  {rentaEnabled && <span className="text-sm font-bold text-green-600">{fmt(rentaTotal)}</span>}
-                </div>
-                {rentaEnabled && (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={rentaFrom} onChange={e => setRentaFrom(e.target.value)}/></div>
-                      <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={rentaTo} onChange={e => setRentaTo(e.target.value)}/></div>
+                  {rentaDates.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {[...rentaDates, ...(bonusSunday?[bonusSunday]:[])].map(date => {
+                        const dow = new Date(date+"T00:00:00").getDay();
+                        const isSun = dow === 0;
+                        const existing = cal.getStatus(driverId, date);
+                        return (
+                          <div key={date} className={`rounded px-1.5 py-0.5 text-xs ${
+                            isSun&&date===bonusSunday?"bg-green-100 text-green-700 border border-green-300":
+                            existing==="izmireno"?"bg-gray-100 text-gray-400 line-through":
+                            "bg-primary/10 text-primary"}`}>
+                            {date.slice(8)}. {DAYS_SR[dow]}{isSun?" 🎉":""}
+                          </div>
+                        );
+                      })}
                     </div>
-                    {workDays > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        {workDays} dana × {fmt(driver.daily_rate)}
-                        {bonusSunday && <span className="text-green-600 ml-1">+ nedjelja 🎉</span>}
-                      </div>
-                    )}
-                    {rentaDates.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {[...rentaDates, ...(bonusSunday?[bonusSunday]:[])].map(date => {
-                          const dow = new Date(date+"T00:00:00").getDay();
-                          const isSun = dow === 0;
-                          const existing = cal.getStatus(driverId, date);
-                          return (
-                            <div key={date} className={`rounded px-1.5 py-0.5 text-xs ${
-                              isSun&&date===bonusSunday?"bg-green-100 text-green-700 border border-green-300":
-                              existing==="izmireno"?"bg-gray-100 text-gray-400 line-through":
-                              "bg-primary/10 text-primary"}`}>
-                              {date.slice(8)}. {DAYS_SR[dow]}{isSun?" 🎉":""}
+                  )}
+                </CheckRow>
+
+                {/* ČLANARINA */}
+                <CheckRow label="Članarina" enabled={clanEnabled} onToggle={() => setClanEnabled(!clanEnabled)}
+                  amount={clanTotal}
+                  sublabel={clanWeeks > 0 ? `${clanWeeks} sedmice × ${fmt(Number(clanAmt))}` : undefined}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={clanFrom} onChange={e=>setClanFrom(e.target.value)}/></div>
+                    <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={clanTo} onChange={e=>setClanTo(e.target.value)}/></div>
+                  </div>
+                  <div className="grid gap-1"><Label className="text-xs">Iznos/sedmici</Label><Input type="number" value={clanAmt} onChange={e=>setClanAmt(e.target.value)}/></div>
+                </CheckRow>
+
+                {/* POS */}
+                {driver.driver_type === "renta" && (
+                  <CheckRow label="POS naknada" enabled={posEnabled} onToggle={() => setPosEnabled(!posEnabled)} amount={posTotal}>
+                    <Input type="number" value={posAmt} onChange={e=>setPosAmt(e.target.value)}/>
+                  </CheckRow>
+                )}
+
+                {/* DUGOVANJA */}
+                {openDebts.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase">Otvorena dugovanja</p>
+                    {openDebts.map(debt => {
+                      const remaining = debt.amount - debt.paid_amount;
+                      const sel = selectedDebts.has(debt.id);
+                      return (
+                        <div key={debt.id} className={`rounded-lg border p-3 cursor-pointer transition-colors ${sel?"border-green-300 bg-green-50/30":"border-gray-200 hover:bg-muted/20"}`}
+                          onClick={() => setSelectedDebts(prev => { const n=new Set(prev); sel?n.delete(debt.id):n.add(debt.id); return n; })}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${sel?"bg-green-500 border-green-500":"border-gray-300"}`}>
+                                {sel && <Check className="h-3 w-3 text-white"/>}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium">{debt.description}</p>
+                                <p className="text-xs text-muted-foreground">{debt.type} · {debt.date}</p>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                            <span className="text-sm font-bold text-red-500">{fmt(remaining)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-              </div>
 
-              {/* Članarina */}
-              <div className={`rounded-lg border p-3 space-y-2 ${clanarinaEnabled?"border-green-300 bg-green-50/30":"border-gray-200"}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => { setClanarinaEnabled(!clanarinaEnabled); if (!clanarinaAmt && driver) setClanarinaAmt(String(driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own)); }}
-                      className={`h-5 w-5 rounded border-2 flex items-center justify-center ${clanarinaEnabled?"bg-green-500 border-green-500":"border-gray-300"}`}>
-                      {clanarinaEnabled && <Check className="h-3 w-3 text-white"/>}
-                    </button>
-                    <span className="text-sm font-medium">Članarina</span>
-                  </div>
-                  {clanarinaEnabled && <span className="text-sm font-bold text-green-600">{fmt(clanarinaTotal)}</span>}
-                </div>
-                {clanarinaEnabled && <Input type="number" value={clanarinaAmt} onChange={e => setClanarinaAmt(e.target.value)}/>}
-              </div>
+                <Separator/>
+                <p className="text-xs font-bold text-orange-700 uppercase">Prima vozač</p>
 
-              {/* POS */}
-              {driver.driver_type === "renta" && (
-                <div className={`rounded-lg border p-3 space-y-2 ${posEnabled?"border-green-300 bg-green-50/30":"border-gray-200"}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => { setPosEnabled(!posEnabled); if (!posAmt) setPosAmt(String(driver.pos_monthly_fee)); }}
-                        className={`h-5 w-5 rounded border-2 flex items-center justify-center ${posEnabled?"bg-green-500 border-green-500":"border-gray-300"}`}>
-                        {posEnabled && <Check className="h-3 w-3 text-white"/>}
-                      </button>
-                      <span className="text-sm font-medium">POS naknada</span>
-                    </div>
-                    {posEnabled && <span className="text-sm font-bold text-green-600">{fmt(posTotal)}</span>}
-                  </div>
-                  {posEnabled && <Input type="number" value={posAmt} onChange={e => setPosAmt(e.target.value)}/>}
-                </div>
-              )}
-
-              <Separator/>
-
-              {/* IZLAZ — Yandex */}
-              <p className="text-xs font-bold text-orange-700 uppercase">Izlaz — isplata vozaču</p>
-
-              {driverYandex.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nema neisplaćenih Yandex izvoda</p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">Yandex izvodi</p>
-                  {driverYandex.map(r => (
-                    <div key={r.id} className={`rounded-lg border p-3 space-y-2 transition-colors ${selectedYandex.has(r.id)?"border-orange-300 bg-orange-50/30":"border-gray-200"}`}>
-                      <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleYandex(r.id)}>
-                        <div className="flex items-center gap-2">
-                          <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${selectedYandex.has(r.id)?"bg-orange-500 border-orange-500":"border-gray-300"}`}>
-                            {selectedYandex.has(r.id) && <Check className="h-3 w-3 text-white"/>}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">{r.period_from} — {r.period_to}</p>
-                            <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Neto: {fmt(r.net_amount)}</p>
-                          </div>
-                        </div>
-                        <span className="text-sm font-bold text-orange-600">{fmt(Number(yandexCustom[r.id]) || r.net_amount)}</span>
-                      </div>
-                      {selectedYandex.has(r.id) && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <Label className="text-xs text-muted-foreground whitespace-nowrap">Isplati iznos:</Label>
-                          <Input type="number" className="h-7 text-sm"
-                            value={yandexCustom[r.id] ?? r.net_amount}
-                            onChange={e => setYandexCustom(prev => ({...prev, [r.id]: e.target.value}))}
-                            onClick={e => e.stopPropagation()}/>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">/ {fmt(r.net_amount)}</span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {selectedYandex.size > 0 && (
-                    <div className="flex justify-between text-xs px-1">
-                      <span className="text-muted-foreground">Ukupno Yandex:</span>
-                      <span className="font-bold text-orange-600">{fmt(yandexNetTotal)}</span>
-                    </div>
+                {/* PDV GORIVA */}
+                <CheckRow label="PDV goriva" enabled={pdvEnabled} onToggle={() => setPdvEnabled(!pdvEnabled)}
+                  amount={pdvTotal}
+                  sublabel={`Iskorišćeno: ${fmt(fuelPdv.totalThisMonth)} / Ostalo: ${fmt(fuelPdv.remaining)}`}>
+                  <Input type="number" value={pdvAmt} onChange={e=>setPdvAmt(e.target.value)}/>
+                  {Number(pdvAmt) > fuelPdv.remaining && (
+                    <p className="text-xs text-amber-600">Limit — biće odobreno samo {fmt(fuelPdv.remaining)}</p>
                   )}
-                </div>
-              )}
+                </CheckRow>
 
-              {/* IZLAZ — Kartice */}
-              {driverCards.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nema neisplaćenih kartica</p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">Kartice</p>
-                  {driverCards.map(r => (
-                    <div key={r.id} className={`rounded-lg border p-3 space-y-2 transition-colors ${selectedCards.has(r.id)?"border-orange-300 bg-orange-50/30":"border-gray-200"}`}>
-                      <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleCard(r.id)}>
-                        <div className="flex items-center gap-2">
-                          <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${selectedCards.has(r.id)?"bg-orange-500 border-orange-500":"border-gray-300"}`}>
-                            {selectedCards.has(r.id) && <Check className="h-3 w-3 text-white"/>}
+                {/* YANDEX */}
+                {driverYandex.length === 0
+                  ? <p className="text-xs text-muted-foreground">Nema neisplaćenih Yandex izvoda</p>
+                  : <div className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Yandex izvodi</p>
+                      {driverYandex.map(r => {
+                        const sel = selectedYandex.has(r.id);
+                        return (
+                          <div key={r.id} className={`rounded-lg border p-3 cursor-pointer transition-colors ${sel?"border-orange-300 bg-orange-50/30":"border-gray-200 hover:bg-muted/20"}`}
+                            onClick={() => setSelectedYandex(prev => { const n=new Set(prev); sel?n.delete(r.id):n.add(r.id); return n; })}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${sel?"bg-orange-500 border-orange-500":"border-gray-300"}`}>
+                                  {sel && <Check className="h-3 w-3 text-white"/>}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">{r.period_from} — {r.period_to}</p>
+                                  <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Odbitak {r.deduction_pct}%</p>
+                                </div>
+                              </div>
+                              <span className="text-sm font-bold text-orange-600">{fmt(r.net_amount)}</span>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium">{r.card_type.toUpperCase()} · {r.period_from} — {r.period_to}</p>
-                            <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Neto: {fmt(r.net_amount)}</p>
-                          </div>
-                        </div>
-                        <span className="text-sm font-bold text-orange-600">{fmt(Number(cardCustom[r.id]) || r.net_amount)}</span>
-                      </div>
-                      {selectedCards.has(r.id) && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <Label className="text-xs text-muted-foreground whitespace-nowrap">Isplati iznos:</Label>
-                          <Input type="number" className="h-7 text-sm"
-                            value={cardCustom[r.id] ?? r.net_amount}
-                            onChange={e => setCardCustom(prev => ({...prev, [r.id]: e.target.value}))}
-                            onClick={e => e.stopPropagation()}/>
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">/ {fmt(r.net_amount)}</span>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-                  ))}
-                  {selectedCards.size > 0 && (
-                    <div className="flex justify-between text-xs px-1">
-                      <span className="text-muted-foreground">Ukupno kartice neto:</span>
-                      <span className="font-bold text-orange-600">{fmt(cardNetTotal)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
+                }
 
-              {/* SUMARNO */}
-              {(totalUlaz > 0 || totalIzlaz > 0) && (
-                <>
-                  <Separator/>
-                  <div className="rounded-lg border p-3 space-y-2">
-                    <p className="text-xs font-bold uppercase">Sumarno</p>
-                    {totalUlaz > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Naplata od vozača:</span><span className="text-green-600 font-semibold">+{fmt(totalUlaz)}</span></div>}
-                    {totalIzlaz > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Isplata vozaču:</span><span className="text-orange-600 font-semibold">−{fmt(totalIzlaz)}</span></div>}
-                    <Separator/>
-                    <div className="flex justify-between text-base font-bold">
-                      <span>{saldo >= 0 ? "Vozač prima:" : "Vozač duguje:"}</span>
-                      <span className={saldo >= 0 ? "text-orange-600" : "text-green-600"}>{fmt(Math.abs(saldo))}</span>
+                {/* KARTICE */}
+                {driverCards.length === 0
+                  ? <p className="text-xs text-muted-foreground">Nema neisplaćenih kartica</p>
+                  : <div className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Kartice</p>
+                      {driverCards.map(r => {
+                        const sel = selectedCards.has(r.id);
+                        return (
+                          <div key={r.id} className={`rounded-lg border p-3 cursor-pointer transition-colors ${sel?"border-orange-300 bg-orange-50/30":"border-gray-200 hover:bg-muted/20"}`}
+                            onClick={() => setSelectedCards(prev => { const n=new Set(prev); sel?n.delete(r.id):n.add(r.id); return n; })}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${sel?"bg-orange-500 border-orange-500":"border-gray-300"}`}>
+                                  {sel && <Check className="h-3 w-3 text-white"/>}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">{r.card_type.toUpperCase()} · {r.period_from} — {r.period_to}</p>
+                                  <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Neto: {fmt(r.net_amount)}</p>
+                                </div>
+                              </div>
+                              <span className="text-sm font-bold text-orange-600">{fmt(r.net_amount)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                </>
-              )}
-              </div>{/* kraj lijeve kolone */}
+                }
+              </div>
 
               {/* DESNA KOLONA — kalendar + sumarno */}
               <div className="space-y-4">
                 <div className="rounded-lg border p-3 space-y-2">
-                  {/* Navigacija po mjesecima */}
                   <div className="flex items-center justify-between">
                     <button onClick={() => { if(calMonth===1){setCalMonth(12);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); }}
                       className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">‹</button>
-                    <span className="text-xs font-semibold">{MONTHS_SR[curMonth-1]} {curYear}</span>
+                    <span className="text-xs font-semibold">{MONTHS_SR[calMonth-1]} {calYear}</span>
                     <button onClick={() => { if(calMonth===12){setCalMonth(1);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); }}
                       className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">›</button>
                   </div>
-                  <KalendarPregled driverId={driverId} cal={cal} year={curYear} month={curMonth}/>
+                  <KalendarPregled driverId={driverId} cal={cal} year={calYear} month={calMonth}/>
                 </div>
 
-                {(totalUlaz > 0 || totalIzlaz > 0) && (
-                  <div className="rounded-lg border p-3 space-y-2 sticky top-0">
-                    <p className="text-xs font-bold uppercase">Sumarno</p>
-                    {totalUlaz > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Naplata:</span><span className="text-green-600 font-semibold">+{fmt(totalUlaz)}</span></div>}
-                    {totalIzlaz > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Isplata:</span><span className="text-orange-600 font-semibold">−{fmt(totalIzlaz)}</span></div>}
-                    <Separator/>
-                    <div className="flex justify-between text-base font-bold">
-                      <span>{saldo >= 0 ? "Vozač prima:" : "Vozač duguje:"}</span>
-                      <span className={saldo >= 0 ? "text-orange-600" : "text-green-600"}>{fmt(Math.abs(saldo))}</span>
-                    </div>
+                {/* SUMARNO */}
+                <div className="rounded-lg border p-4 space-y-3 sticky top-4">
+                  <p className="text-xs font-bold uppercase">Sumarno</p>
+                  {rentaEnabled && rentaTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Renta:</span><span className="text-green-600">+{fmt(rentaTotal)}</span></div>}
+                  {clanEnabled && clanTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Članarina:</span><span className="text-green-600">+{fmt(clanTotal)}</span></div>}
+                  {posEnabled && posTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">POS naknada:</span><span className="text-green-600">+{fmt(posTotal)}</span></div>}
+                  {debtTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Dugovanja:</span><span className="text-green-600">+{fmt(debtTotal)}</span></div>}
+                  {pdvEnabled && pdvTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">PDV goriva:</span><span className="text-orange-600">−{fmt(pdvTotal)}</span></div>}
+                  {yandexNet > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Yandex:</span><span className="text-orange-600">−{fmt(yandexNet)}</span></div>}
+                  {cardNet > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Kartice:</span><span className="text-orange-600">−{fmt(cardNet)}</span></div>}
+                  <Separator/>
+                  <div className="flex justify-between text-base font-bold">
+                    <span>{saldo >= 0 ? "Vozač prima:" : "Vozač duguje:"}</span>
+                    <span className={saldo >= 0 ? "text-orange-600" : "text-green-600"}>{fmt(Math.abs(saldo))}</span>
                   </div>
-                )}
+                  {saldo < 0 && (
+                    <p className="text-xs text-amber-600">Ostatak {fmt(Math.abs(saldo))} se prenosi kao dugovanje</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -518,6 +566,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   );
 }
 
+// ─── OBRACUN KARTICA ──────────────────────────────────────────
 function ObracunCard({ date, entries, obracun }: { date: string; entries: any[]; obracun: any }) {
   const { drivers, displayName } = useApp();
   const [expanded,setExpanded]=useState(false);
@@ -583,7 +632,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                           <Button variant="outline" onClick={()=>setCloseOpen(false)}>Otkazi</Button>
                           <Button disabled={saving} onClick={async()=>{
                             setSaving(true);
-                            try{await obracun.closeObracun(date,displayName,total_in,total_out);toast.success(`Obračun zatvoren`);setCloseOpen(false);}
+                            try{await obracun.closeObracun(date,displayName,total_in,total_out);toast.success("Obračun zatvoren");setCloseOpen(false);}
                             catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
                           }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Zatvori</Button>
                         </DialogFooter>
@@ -608,6 +657,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   );
 }
 
+// ─── GLAVNA STRANICA ─────────────────────────────────────────
 const CashPage = () => {
   const today = new Date();
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
