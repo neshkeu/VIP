@@ -34,8 +34,6 @@ const CardsPage = () => {
   const [cardType, setCardType]     = useState<CardType>("visa");
   const [gross, setGross]           = useState("");
   const [customPct, setCustomPct]   = useState("");
-  const [periodFrom, setPeriodFrom] = useState("");
-  const [periodTo, setPeriodTo]     = useState("");
   const [date, setDate]             = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes]           = useState("");
   const [saving, setSaving]         = useState(false);
@@ -43,7 +41,7 @@ const CardsPage = () => {
   const [payBy, setPayBy]           = useState("");
   const [payOpen, setPayOpen]       = useState(false);
 
-  const reset = () => { setDriverId("none"); setVehicleId("none"); setCardType("visa"); setGross(""); setCustomPct(""); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
+  const reset = () => { setDriverId("none"); setVehicleId("none"); setCardType("visa"); setGross(""); setCustomPct(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
 
   const pct        = Number(customPct) || CARD_DEDUCTIONS[cardType];
   const grossNum   = Number(gross) || 0;
@@ -95,19 +93,15 @@ const CardsPage = () => {
                   <div><p className="text-xs text-muted-foreground">Neto vozaču</p><p className="font-bold text-green-600">{fmt(netNum)}</p></div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5"><Label>Period od</Label><Input type="date" value={periodFrom} onChange={e => setPeriodFrom(e.target.value)}/></div>
-                <div className="grid gap-1.5"><Label>Period do</Label><Input type="date" value={periodTo} onChange={e => setPeriodTo(e.target.value)}/></div>
-              </div>
-              <div className="grid gap-1.5"><Label>Datum izvoda</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
-              <div className="grid gap-1.5"><Label>Napomena</Label><Input placeholder="Opciono..." value={notes} onChange={e => setNotes(e.target.value)}/></div>
+              <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
+              <div className="grid gap-1.5"><Label>Napomena</Label><Input value={notes} onChange={e => setNotes(e.target.value)}/></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>
               <Button disabled={driverId==="none"||!gross||saving} onClick={async () => {
                 setSaving(true);
                 try {
-                  await addReport({ driver_id: driverId, vehicle_id: vehicleId==="none"?null:vehicleId, card_type: cardType, gross_amount: grossNum, deduction_pct: pct, deduction_amount: deductNum, net_amount: netNum, date, period_from: periodFrom, period_to: periodTo, paid_out: false, received_by: "", notes });
+                  await addReport({ driver_id: driverId, vehicle_id: vehicleId==="none"?null:vehicleId, card_type: cardType, gross_amount: grossNum, deduction_pct: pct, deduction_amount: deductNum, net_amount: netNum, date, period_from: date, period_to: date, paid_out: false, received_by: "", notes });
                   toast.success("Kartica izvod unesen");
                   setAddOpen(false); reset();
                 } catch(e: any) { toast.error("Greška: " + e.message); }

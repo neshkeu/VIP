@@ -27,6 +27,7 @@ const YandexPage = () => {
   const [vehicleId, setVehicleId]   = useState("none");
   const [gross, setGross]           = useState("");
   const [deductPct, setDeductPct]   = useState("10");
+  const [extraPct, setExtraPct]     = useState("0");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo]     = useState("");
   const [date, setDate]             = useState(new Date().toISOString().split("T")[0]);
@@ -37,10 +38,11 @@ const YandexPage = () => {
   const [payBy, setPayBy]   = useState("");
   const [payOpen, setPayOpen] = useState(false);
 
-  const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
+  const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setExtraPct("0"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
 
   const grossNum    = Number(gross) || 0;
-  const deductNum   = grossNum * (Number(deductPct) / 100);
+  const totalPct    = Number(deductPct) + Number(extraPct);
+  const deductNum   = grossNum * (totalPct / 100);
   const netNum      = grossNum - deductNum;
 
   const unpaid = reports.filter(r => !r.paid_out);
@@ -96,7 +98,7 @@ const YandexPage = () => {
               <Button disabled={driverId==="none"||!gross||saving} onClick={async () => {
                 setSaving(true);
                 try {
-                  await addReport({ driver_id: driverId, vehicle_id: vehicleId === "none" ? null : vehicleId, gross_amount: grossNum, deduction_pct: Number(deductPct), deduction_amount: deductNum, net_amount: netNum, date, period_from: periodFrom, period_to: periodTo, paid_out: false, received_by: "", notes });
+                  await addReport({ driver_id: driverId, vehicle_id: vehicleId === "none" ? null : vehicleId, gross_amount: grossNum, deduction_pct: totalPct, deduction_amount: deductNum, net_amount: netNum, date, period_from: periodFrom, period_to: periodTo, paid_out: false, received_by: "", notes });
                   toast.success("Yandex izvod unesen");
                   setAddOpen(false); reset();
                 } catch(e: any) { toast.error("Greška: " + e.message); }

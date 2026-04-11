@@ -6,6 +6,7 @@ import { useObracun } from "@/hooks/useObracun";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useMembership } from "@/hooks/useMembership";
 import { useFuelPdv } from "@/hooks/useFuelPdv";
+import { useObracuni } from "@/hooks/useObracuni";
 import { useDebts } from "@/hooks/useDebts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -176,15 +177,22 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // DUGOVANJA
   const [selectedDebts, setSelectedDebts] = useState<Set<string>>(new Set());
 
-  // YANDEX + KARTICE
+  // YANDEX + KARTICE — parcijalni iznosi
   const [selectedYandex, setSelectedYandex] = useState<Set<string>>(new Set());
+  const [yandexAmounts, setYandexAmounts]   = useState<Record<string,string>>({});
   const [selectedCards, setSelectedCards]   = useState<Set<string>>(new Set());
+  const [cardAmounts, setCardAmounts]       = useState<Record<string,string>>({});
+  // VAUČERI
+  const [vaucerEnabled, setVaucerEnabled]   = useState(false);
+  const [vaucerCount, setVaucerCount]       = useState("");
+  const [vaucerAmt, setVaucerAmt]           = useState("100");
 
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
   const membership = useMembership(driverId);
   const fuelPdv = useFuelPdv(driverId, curMonthStr);
   const { debts } = useDebts();
+  const { saveObracun } = useObracuni();
 
   // Posljednji izmireni dan
   const [lastPaidDate, setLastPaidDate] = useState<string|null>(null);
@@ -227,12 +235,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // Yandex
   const driverYandex = yandexReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const yandexSelected = driverYandex.filter(r => selectedYandex.has(r.id));
-  const yandexNet  = yandexSelected.reduce((s,r) => s+r.net_amount, 0);
+  const yandexNet  = yandexSelected.reduce((s,r) => s + (Number(yandexAmounts[r.id]) || r.net_amount), 0);
 
   // Kartice
   const driverCards = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const cardSelected = driverCards.filter(r => selectedCards.has(r.id));
-  const cardNet    = cardSelected.reduce((s,r) => s+r.net_amount, 0);
+  const cardNet    = cardSelected.reduce((s,r) => s + (Number(cardAmounts[r.id]) || r.net_amount), 0);
+
+  // Vaučeri
+  const vaucerTotal = vaucerEnabled ? (Number(vaucerCount) || 0) * (Number(vaucerAmt) || 0) : 0;
 
   // Bonus nedjelja
   const lastDateObj = rentaTo ? new Date(rentaTo+"T00:00:00") : null;
@@ -245,14 +256,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
   // SALDO
   const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal; // šta vozač duguje
-  const totalPrihodi = yandexNet + cardNet + pdvTotal;                 // šta vozač prima
+  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal;   // šta vozač prima
   const saldo        = totalPrihodi - totalDuguje;                     // pozitivno = prima, negativno = duguje
 
   const reset = () => {
     setDriverId("none"); setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
     setClanEnabled(false); setClanFrom(today); setClanTo(today); setClanAmt("");
     setPosEnabled(false); setPosAmt(""); setPdvEnabled(false); setPdvAmt("");
-    setSelectedDebts(new Set()); setSelectedYandex(new Set()); setSelectedCards(new Set());
+    setSelectedDebts(new Set()); setSelectedYandex(new Set()); setYandexAmounts({});
+    setSelectedCards(new Set()); setCardAmounts({});
+    setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("100");
   };
 
   const handleSave = async () => {
@@ -260,6 +273,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setSaving(true);
     try {
       const saveDate = obracunDate || today;
+      const stavke: any[] = [];
 
       // 1. Renta
       if (rentaEnabled && workDays > 0) {
@@ -302,19 +316,39 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         }).eq("id", debt.id);
       }
 
-      // 6. Yandex
-      for (const r of yandexSelected) {
-        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:r.net_amount, date:saveDate,
-          description:`Yandex ${r.period_from} — ${r.period_to}`, received_by:currentUser, notes:"" });
-        await yandexPaidOut(r.id, currentUser);
+      // 6. Vaučeri
+      if (vaucerEnabled && vaucerTotal > 0) {
+        const stavka = { type:"vaučer", direction:"out", driver_id:driverId, amount:vaucerTotal, date:saveDate,
+          description:`Vaučeri: ${vaucerCount} × ${fmt(Number(vaucerAmt))}`, received_by:currentUser, notes:"" };
+        await onAdd({...stavka});
+        stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
 
-      // 7. Kartice
-      for (const r of cardSelected) {
-        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:r.net_amount, date:saveDate,
-          description:`Kartica ${r.card_type.toUpperCase()} ${r.period_from} — ${r.period_to}`, received_by:currentUser, notes:"" });
-        await cardPaidOut(r.id, currentUser);
+      // 7. Yandex
+      for (const r of yandexSelected) {
+        const amt = Number(yandexAmounts[r.id]) || r.net_amount;
+        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:amt, date:saveDate,
+          description:`Yandex ${r.period_from} — ${r.period_to}`, received_by:currentUser, notes:"" });
+        await yandexPaidOut(r.id, currentUser);
+        stavke.push({ type:"yandex", direction:"out", amount:amt, description:`Yandex ${r.period_from} — ${r.period_to}` });
       }
+
+      // 8. Kartice
+      for (const r of cardSelected) {
+        const amt = Number(cardAmounts[r.id]) || r.net_amount;
+        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:amt, date:saveDate,
+          description:`Kartica ${r.card_type.toUpperCase()} ${r.date}`, received_by:currentUser, notes:"" });
+        await cardPaidOut(r.id, currentUser);
+        stavke.push({ type:"kartica", direction:"out", amount:amt, description:`Kartica ${r.card_type.toUpperCase()} ${r.date}` });
+      }
+
+      // 9. Sačuvaj obračun
+      await saveObracun({
+        driver_id: driverId, date: saveDate,
+        total_duguje: totalDuguje, total_prima: totalPrihodi, saldo,
+        evidenced_by: currentUser, notes: "",
+        stavke
+      });
 
       // 8. Ako duguje više nego prima → automatsko dugovanje
       if (saldo < 0) {
@@ -461,6 +495,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   )}
                 </CheckRow>
 
+                {/* VAUČERI */}
+                <CheckRow label="Vaučeri" enabled={vaucerEnabled} onToggle={() => setVaucerEnabled(!vaucerEnabled)}
+                  amount={vaucerTotal}
+                  sublabel={vaucerCount && vaucerAmt ? `${vaucerCount} × ${fmt(Number(vaucerAmt))}` : undefined}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1"><Label className="text-xs">Broj vaučera</Label><Input type="number" value={vaucerCount} onChange={e=>setVaucerCount(e.target.value)}/></div>
+                    <div className="grid gap-1"><Label className="text-xs">Iznos/vaučeru</Label><Input type="number" value={vaucerAmt} onChange={e=>setVaucerAmt(e.target.value)}/></div>
+                  </div>
+                </CheckRow>
+
                 {/* YANDEX */}
                 {driverYandex.length === 0
                   ? <p className="text-xs text-muted-foreground">Nema neisplaćenih Yandex izvoda</p>
@@ -469,20 +513,28 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       {driverYandex.map(r => {
                         const sel = selectedYandex.has(r.id);
                         return (
-                          <div key={r.id} className={`rounded-lg border p-3 cursor-pointer transition-colors ${sel?"border-orange-300 bg-orange-50/30":"border-gray-200 hover:bg-muted/20"}`}
-                            onClick={() => setSelectedYandex(prev => { const n=new Set(prev); sel?n.delete(r.id):n.add(r.id); return n; })}>
-                            <div className="flex items-center justify-between">
+                          <div key={r.id} className={`rounded-lg border p-3 space-y-2 transition-colors ${sel?"border-orange-300 bg-orange-50/30":"border-gray-200 hover:bg-muted/20"}`}>
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setSelectedYandex(prev => { const n=new Set(prev); sel?n.delete(r.id):n.add(r.id); return n; })}>
                               <div className="flex items-center gap-2">
                                 <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${sel?"bg-orange-500 border-orange-500":"border-gray-300"}`}>
                                   {sel && <Check className="h-3 w-3 text-white"/>}
                                 </div>
                                 <div>
                                   <p className="text-sm font-medium">{r.period_from} — {r.period_to}</p>
-                                  <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Odbitak {r.deduction_pct}%</p>
+                                  <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Neto: {fmt(r.net_amount)}</p>
                                 </div>
                               </div>
-                              <span className="text-sm font-bold text-orange-600">{fmt(r.net_amount)}</span>
+                              <span className="text-sm font-bold text-orange-600">{fmt(Number(yandexAmounts[r.id]) || r.net_amount)}</span>
                             </div>
+                            {sel && (
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs whitespace-nowrap">Isplati iznos:</Label>
+                                <Input type="number" className="h-7 text-sm"
+                                  value={yandexAmounts[r.id] ?? r.net_amount}
+                                  onChange={e => setYandexAmounts(prev => ({...prev, [r.id]: e.target.value}))}/>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">max {fmt(r.net_amount)}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -497,20 +549,28 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       {driverCards.map(r => {
                         const sel = selectedCards.has(r.id);
                         return (
-                          <div key={r.id} className={`rounded-lg border p-3 cursor-pointer transition-colors ${sel?"border-orange-300 bg-orange-50/30":"border-gray-200 hover:bg-muted/20"}`}
-                            onClick={() => setSelectedCards(prev => { const n=new Set(prev); sel?n.delete(r.id):n.add(r.id); return n; })}>
-                            <div className="flex items-center justify-between">
+                          <div key={r.id} className={`rounded-lg border p-3 space-y-2 transition-colors ${sel?"border-orange-300 bg-orange-50/30":"border-gray-200 hover:bg-muted/20"}`}>
+                            <div className="flex items-center justify-between cursor-pointer" onClick={() => setSelectedCards(prev => { const n=new Set(prev); sel?n.delete(r.id):n.add(r.id); return n; })}>
                               <div className="flex items-center gap-2">
                                 <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${sel?"bg-orange-500 border-orange-500":"border-gray-300"}`}>
                                   {sel && <Check className="h-3 w-3 text-white"/>}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-medium">{r.card_type.toUpperCase()} · {r.period_from} — {r.period_to}</p>
+                                  <p className="text-sm font-medium">{r.card_type.toUpperCase()} · {r.date}</p>
                                   <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Neto: {fmt(r.net_amount)}</p>
                                 </div>
                               </div>
-                              <span className="text-sm font-bold text-orange-600">{fmt(r.net_amount)}</span>
+                              <span className="text-sm font-bold text-orange-600">{fmt(Number(cardAmounts[r.id]) || r.net_amount)}</span>
                             </div>
+                            {sel && (
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs whitespace-nowrap">Isplati iznos:</Label>
+                                <Input type="number" className="h-7 text-sm"
+                                  value={cardAmounts[r.id] ?? r.net_amount}
+                                  onChange={e => setCardAmounts(prev => ({...prev, [r.id]: e.target.value}))}/>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">max {fmt(r.net_amount)}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -538,6 +598,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   {clanEnabled && clanTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Članarina:</span><span className="text-green-600">+{fmt(clanTotal)}</span></div>}
                   {posEnabled && posTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">POS naknada:</span><span className="text-green-600">+{fmt(posTotal)}</span></div>}
                   {debtTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Dugovanja:</span><span className="text-green-600">+{fmt(debtTotal)}</span></div>}
+                  {vaucerEnabled && vaucerTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Vaučeri:</span><span className="text-orange-600">−{fmt(vaucerTotal)}</span></div>}
                   {pdvEnabled && pdvTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">PDV goriva:</span><span className="text-orange-600">−{fmt(pdvTotal)}</span></div>}
                   {yandexNet > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Yandex:</span><span className="text-orange-600">−{fmt(yandexNet)}</span></div>}
                   {cardNet > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Kartice:</span><span className="text-orange-600">−{fmt(cardNet)}</span></div>}
@@ -555,11 +616,45 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>Otkazi</Button>
-          <Button disabled={!driver || saving} onClick={handleSave}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj obračun
-          </Button>
+          <div className="flex gap-2 ml-auto">
+            {driver && (totalDuguje > 0 || totalPrihodi > 0) && (
+              <Button variant="outline" onClick={() => {
+                const content = `
+VIP TAXI — Obračun vozača
+==========================
+Vozač: ${driver.full_name}
+Datum: ${obracunDate || today}
+Evidentirao: ${currentUser}
+
+DUGUJE:
+${rentaEnabled && rentaTotal > 0 ? `  Renta (${workDays} dana): ${fmt(rentaTotal)}` : ""}
+${clanEnabled && clanTotal > 0 ? `  Članarina (${clanWeeks} sed.): ${fmt(clanTotal)}` : ""}
+${posEnabled && posTotal > 0 ? `  POS naknada: ${fmt(posTotal)}` : ""}
+${debtTotal > 0 ? `  Dugovanja: ${fmt(debtTotal)}` : ""}
+
+PRIMA:
+${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
+${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri: ${fmt(vaucerTotal)}` : ""}
+${yandexNet > 0 ? `  Yandex: ${fmt(yandexNet)}` : ""}
+${cardNet > 0 ? `  Kartice: ${fmt(cardNet)}` : ""}
+
+==========================
+SALDO: ${saldo >= 0 ? `Prima ${fmt(saldo)}` : `Duguje ${fmt(Math.abs(saldo))}`}
+${saldo < 0 ? `(prenos na sledeći obračun)` : ""}
+                `.trim();
+                const blob = new Blob([content], { type: "text/plain" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = `obracun-${driver.full_name.replace(" ","-")}-${obracunDate||today}.txt`;
+                a.click(); URL.revokeObjectURL(url);
+              }}>📄 Preuzmi</Button>
+            )}
+            <Button disabled={!driver || saving} onClick={handleSave}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj obračun
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
