@@ -216,35 +216,87 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     if (!clanAmt) setClanAmt(String(amt));
   }, [driver]);
 
-  // Izračuni
-  const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
-  const workDays    = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
-  const rentaTotal  = driver ? workDays * driver.daily_rate : 0;
-
-  const clanWeeks  = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
-  const clanTotal  = clanEnabled ? clanWeeks * (Number(clanAmt) || 0) : 0;
-
+  // Izračuni prihoda (bez rente i clanarine jer ih automatski popunjavamo)
   const posTotal   = posEnabled ? (Number(posAmt) || 0) : 0;
-
   const pdvMax     = Math.min(Number(pdvAmt) || 0, fuelPdv.remaining);
   const pdvTotal   = pdvEnabled ? pdvMax : 0;
-
   const openDebts  = debts.filter(d => d.driver_id === driverId && d.status !== "closed");
   const selectedDebtsList = openDebts.filter(d => selectedDebts.has(d.id));
   const debtTotal  = selectedDebtsList.reduce((s,d) => s + (d.amount - d.paid_amount), 0);
-
-  // Yandex
   const driverYandex = yandexReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const yandexSelected = driverYandex.filter(r => selectedYandex.has(r.id));
   const yandexNet  = yandexSelected.reduce((s,r) => s + (Number(yandexAmounts[r.id]) || r.net_amount), 0);
-
-  // Kartice
   const driverCards = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const cardSelected = driverCards.filter(r => selectedCards.has(r.id));
   const cardNet    = cardSelected.reduce((s,r) => s + (Number(cardAmounts[r.id]) || r.net_amount), 0);
-
-  // Vaučeri
   const vaucerTotal = vaucerEnabled ? (Number(vaucerCount) || 0) * (Number(vaucerAmt) || 0) : 0;
+
+  // AUTO LOGIKA — izračunaj rente i clanarine iz prihoda
+  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal;
+  const weeklyAmt = driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0;
+
+  // Automatski postavi period rente i clanarine kad se promijene prihodi
+  useEffect(() => {
+    if (!driver || !lastPaidDate || totalPrihodi === 0) return;
+
+    // Oduzmi dugovanja i POS
+    let budzet = totalPrihodi - debtTotal - posTotal;
+    if (budzet <= 0) return;
+
+    // Koliko cijelih dana rente može pokriti
+    const maxDana = Math.floor(budzet / driver.daily_rate);
+    if (maxDana === 0) return;
+
+    // Postavi period od dana poslije posljednje uplate
+    const startDate = new Date(lastPaidDate + "T00:00:00");
+    startDate.setDate(startDate.getDate() + 1);
+    // Preskoci nedjelje
+    let workDayCount = 0;
+    const endDate = new Date(startDate);
+    while (workDayCount < maxDana) {
+      if (endDate.getDay() !== 0) workDayCount++;
+      if (workDayCount < maxDana) endDate.setDate(endDate.getDate() + 1);
+    }
+
+    const fromStr = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,"0")}-${String(startDate.getDate()).padStart(2,"0")}`;
+    const toStr   = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,"0")}-${String(endDate.getDate()).padStart(2,"0")}`;
+
+    setRentaFrom(fromStr);
+    setRentaTo(toStr);
+    setRentaEnabled(true);
+
+    // Ostatak za clanarine
+    const rentaCost = maxDana * driver.daily_rate;
+    const ostatak = budzet - rentaCost;
+    const maxSedmica = weeklyAmt > 0 ? Math.floor(ostatak / weeklyAmt) : 0;
+
+    if (maxSedmica >= 1) {
+      // Postavi period clanarine od dana poslije posljednje clanarine ili od startDate
+      const clanStart = lastClanDate
+        ? new Date(lastClanDate + "T00:00:00")
+        : new Date(startDate);
+      if (lastClanDate) clanStart.setDate(clanStart.getDate() + 1);
+      // Nađi naredni ponedjeljak
+      while (clanStart.getDay() !== 1) clanStart.setDate(clanStart.getDate() + 1);
+      const clanEnd = new Date(clanStart);
+      clanEnd.setDate(clanStart.getDate() + (maxSedmica * 7) - 1);
+
+      const cfrom = `${clanStart.getFullYear()}-${String(clanStart.getMonth()+1).padStart(2,"0")}-${String(clanStart.getDate()).padStart(2,"0")}`;
+      const cto   = `${clanEnd.getFullYear()}-${String(clanEnd.getMonth()+1).padStart(2,"0")}-${String(clanEnd.getDate()).padStart(2,"0")}`;
+      setClanFrom(cfrom);
+      setClanTo(cto);
+      setClanEnabled(true);
+    } else {
+      setClanEnabled(false);
+    }
+  }, [totalPrihodi, lastPaidDate, lastClanDate, driver?.id]);
+
+  // Izračuni za rente i clanarine (ručno ili auto)
+  const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
+  const workDays    = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
+  const rentaTotal  = driver ? workDays * driver.daily_rate : 0;
+  const clanWeeks  = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
+  const clanTotal  = clanEnabled ? clanWeeks * (Number(clanAmt) || 0) : 0;
 
   // Bonus nedjelja
   const lastDateObj = rentaTo ? new Date(rentaTo+"T00:00:00") : null;
@@ -256,15 +308,12 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   })() : null;
 
   // SALDO
-  const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal; // šta vozač duguje
-  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal;   // šta vozač prima
-  const saldo        = totalPrihodi - totalDuguje;                     // pozitivno = prima, negativno = duguje
+  const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal;
+  const saldo        = totalPrihodi - totalDuguje;
 
   // Koliko dana rente/sedmica clanarine pokriva pozitivni saldo
-  const saldioDana   = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
-  const saldioSedmica = driver && saldo > 0 && (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) > 0
-    ? Math.floor(saldo / (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own))
-    : 0;
+  const saldioDana    = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
+  const saldioSedmica = driver && saldo > 0 && weeklyAmt > 0 ? Math.floor(saldo / weeklyAmt) : 0;
 
   const reset = () => {
     setDriverId("none"); setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
