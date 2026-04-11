@@ -78,6 +78,11 @@ const YandexPage = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5"><Label>Bruto iznos (RSD)</Label><Input type="number" placeholder="5000" value={gross} onChange={e => setGross(e.target.value)}/></div>
                 <div className="grid gap-1.5"><Label>Odbitak %</Label><Input type="number" placeholder="10" value={deductPct} onChange={e => setDeductPct(e.target.value)}/></div>
+                <div className="grid gap-1.5">
+                  <Label>Dodatni odbitak % <span className="text-xs text-muted-foreground">(opciono, npr. 3%)</span></Label>
+                  <Input type="number" placeholder="0" value={extraPct} onChange={e => setExtraPct(e.target.value)}/>
+                  {Number(extraPct) > 0 && <p className="text-xs text-muted-foreground">Ukupni odbitak: {totalPct}%</p>}
+                </div>
               </div>
               {grossNum > 0 && (
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">

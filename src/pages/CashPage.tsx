@@ -7,6 +7,7 @@ import { useCalendar } from "@/hooks/useCalendar";
 import { useMembership } from "@/hooks/useMembership";
 import { useFuelPdv } from "@/hooks/useFuelPdv";
 import { useObracuni } from "@/hooks/useObracuni";
+import { ClanarinaKalendar } from "@/components/ClanarinaKalendar";
 import { useDebts } from "@/hooks/useDebts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -156,7 +157,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [calMonth, setCalMonth] = useState(new Date().getMonth()+1);
 
   // RENTA
-  const [rentaEnabled, setRentaEnabled] = useState(true);
+  const [rentaEnabled, setRentaEnabled] = useState(false);
   const [rentaFrom, setRentaFrom]       = useState(today);
   const [rentaTo, setRentaTo]           = useState(today);
 
@@ -258,6 +259,12 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal; // šta vozač duguje
   const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal;   // šta vozač prima
   const saldo        = totalPrihodi - totalDuguje;                     // pozitivno = prima, negativno = duguje
+
+  // Koliko dana rente/sedmica clanarine pokriva pozitivni saldo
+  const saldioDana   = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
+  const saldioSedmica = driver && saldo > 0 && (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) > 0
+    ? Math.floor(saldo / (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own))
+    : 0;
 
   const reset = () => {
     setDriverId("none"); setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
@@ -591,6 +598,14 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   <KalendarPregled driverId={driverId} cal={cal} year={calYear} month={calMonth}/>
                 </div>
 
+                {/* Kalendar članarina */}
+                <div className="rounded-lg border p-3 space-y-2">
+                  <ClanarinaKalendar
+                    driverId={driverId}
+                    weeklyAmt={driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own}
+                  />
+                </div>
+
                 {/* SUMARNO */}
                 <div className="rounded-lg border p-4 space-y-3 sticky top-4">
                   <p className="text-xs font-bold uppercase">Sumarno</p>
@@ -609,6 +624,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   </div>
                   {saldo < 0 && (
                     <p className="text-xs text-amber-600">Ostatak {fmt(Math.abs(saldo))} se prenosi kao dugovanje</p>
+                  )}
+                  {saldo > 0 && driver && (saldioDana > 0 || saldioSedmica > 0) && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-2 space-y-1">
+                      <p className="text-xs font-semibold text-blue-700">Sa ostatkom može pokriti:</p>
+                      {saldioDana > 0 && <p className="text-xs text-blue-600">🗓 {saldioDana} dana rente ({fmt(driver.daily_rate)}/dan)</p>}
+                      {saldioSedmica > 0 && <p className="text-xs text-blue-600">📅 {saldioSedmica} sed. članarine ({fmt(driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own)}/sed.)</p>}
+                    </div>
                   )}
                 </div>
               </div>
