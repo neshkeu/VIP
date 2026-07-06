@@ -39,8 +39,9 @@ function DebtCard({ debt }: { debt: any }) {
   const [payNote, setPayNote]     = useState("");
   const [saving, setSaving]       = useState(false);
 
+  const { drivers } = useApp();
   const { addPayment, getPaymentsForDebt } = useDebts();
-  
+
   const driver   = drivers.find(d => d.id === debt.driver_id);
   const payments = getPaymentsForDebt(debt.id);
   const remaining = debt.amount - debt.paid_amount;
