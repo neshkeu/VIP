@@ -1,73 +1,80 @@
-# Welcome to your Lovable project
+# VIP Taxi – Sistem za upravljanje voznim parkom
 
-## Project info
+Aplikacija za taxi biznis: evidencija vozila i vozača, kalendar članarina,
+kasa (dnevne uplate/isplate), dugovanja, Yandex izveštaji i izveštaji sa kartica.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Tehnologije
 
-## How can I edit this code?
+- **Vite** + **React 18** + **TypeScript**
+- **Tailwind CSS** + **shadcn/ui** (Radix)
+- **Supabase** (PostgreSQL + Auth)
+- **React Router** za rutiranje
+- **TanStack Query** za data cache
+- **Vitest** + **Testing Library** za testove
+- **Playwright** za e2e testove
 
-There are several ways of editing your application.
+## Setup
 
-**Use Lovable**
+Potreban je Node.js 18+.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+```bash
+# 1. Instaliraj zavisnosti
+npm install
 
-Changes made via Lovable will be committed automatically to this repo.
+# 2. Kreiraj .env.local i unesi Supabase kredencijale
+cp .env.example .env.local
+# uredi .env.local
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 3. Pokreni dev server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Aplikacija se otvara na `http://localhost:8080`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Skripte
 
-**Use GitHub Codespaces**
+| Komanda | Opis |
+|--------|------|
+| `npm run dev` | Dev server sa HMR |
+| `npm run build` | Produkcioni build |
+| `npm run preview` | Preview build-a |
+| `npm run lint` | ESLint |
+| `npm run test` | Vitest unit testovi |
+| `npm run test:watch` | Testovi u watch modu |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Struktura
 
-## What technologies are used for this project?
+```
+src/
+  components/       Reusable komponente (AppLayout, AppSidebar, ErrorBoundary...)
+  components/ui/    shadcn/ui primitivi
+  context/          AppContext (globalno stanje: vozači, vozila, izveštaji)
+  data/             Mock podaci
+  hooks/            Custom React hooks (useVehicles, useCash, useDrivers...)
+  lib/              supabase klijent, utils
+  pages/            Rute (Dashboard, DriversPage, CashPage...)
+  test/             Vitest setup i primeri
+```
 
-This project is built with:
+## Stranice / rute
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- `/` – Kontrolna tabla (dashboard)
+- `/vehicles` – Vozila
+- `/drivers` – Vozači
+- `/calendar` – Kalendar članarina
+- `/cash` – Kasa
+- `/debts` – Dugovanja
+- `/yandex` – Yandex izveštaji
+- `/cards` – Kartični izveštaji
+- `/login` – Prijava
 
-## How can I deploy this project?
+## Environment varijable
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+Pogledati `.env.example`:
 
-## Can I connect a custom domain to my Lovable project?
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Ako `.env.local` ne postoji, klijent koristi fallback vrednosti iz `src/lib/supabase.ts`.

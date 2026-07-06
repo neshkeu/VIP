@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/AppLayout";
 import { AuthGuard } from "@/components/AuthGuard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppProvider } from "@/context/AppContext";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
@@ -17,39 +18,52 @@ import YandexPage from "./pages/YandexPage";
 import CardsPage from "./pages/CardsPage";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AppProvider>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/*" element={
-              <AuthGuard>
-                <AppLayout>
-                  <Routes>
-                    <Route path="/"         element={<Dashboard />} />
-                    <Route path="/vehicles" element={<VehiclesPage />} />
-                    <Route path="/drivers"  element={<DriversPage />} />
-                    <Route path="/calendar" element={<CalendarPage />} />
-                    <Route path="/cash"     element={<CashPage />} />
-                    <Route path="/debts"    element={<DebtsPage />} />
-                    <Route path="/yandex"   element={<YandexPage />} />
-                    <Route path="/cards"    element={<CardsPage />} />
-                    <Route path="*"         element={<NotFound />} />
-                  </Routes>
-                </AppLayout>
-              </AuthGuard>
-            } />
-          </Routes>
-        </AppProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AppProvider>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                path="/*"
+                element={
+                  <AuthGuard>
+                    <AppLayout>
+                      <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/vehicles" element={<VehiclesPage />} />
+                        <Route path="/drivers" element={<DriversPage />} />
+                        <Route path="/calendar" element={<CalendarPage />} />
+                        <Route path="/cash" element={<CashPage />} />
+                        <Route path="/debts" element={<DebtsPage />} />
+                        <Route path="/yandex" element={<YandexPage />} />
+                        <Route path="/cards" element={<CardsPage />} />
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                    </AppLayout>
+                  </AuthGuard>
+                }
+              />
+            </Routes>
+          </AppProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
