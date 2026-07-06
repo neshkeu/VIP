@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+export type DocStatus = "KOPIJA" | "ORIGINAL" | "NEMA" | null;
+
 export interface Vehicle {
   id: string;
   brand: string;
@@ -8,9 +10,17 @@ export interface Vehicle {
   year: number;
   license_plate: string;
   taxi_license_number: string;
+  vin: string | null;
   pos_terminal_id: string;
   registration_expiry: string;
   insurance_expiry: string;
+  taxi_license_expiry: string | null;
+  udruzenje: string | null;
+  owner_name: string | null;
+  owner_phone: string | null;
+  leg_vozila_status: DocStatus;
+  inspekcijski_status: DocStatus;
+  saobracajna_status: DocStatus;
   status: "active" | "maintenance" | "inactive";
   notes: string;
   created_at: string;

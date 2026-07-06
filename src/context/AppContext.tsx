@@ -2,20 +2,11 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback 
 import type { User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import type { Driver } from "@/hooks/useDrivers";
+import type { Vehicle } from "@/hooks/useVehicles";
 
-export interface Driver {
-  id: string; full_name: string; phone: string; license_number: string;
-  status: "active" | "inactive"; driver_type: "renta" | "vlastito_vozilo";
-  vehicle_id: string | null; daily_rate: number; weekly_membership: number;
-  pos_monthly_fee: number; komunalni_monthly: number; doprinosi_monthly: number;
-  weekly_membership_own: number; notes: string; created_at: string;
-}
-export interface Vehicle {
-  id: string; brand: string; model: string; year: number;
-  license_plate: string; taxi_license_number: string; pos_terminal_id: string;
-  registration_expiry: string; insurance_expiry: string;
-  status: "active" | "maintenance" | "inactive"; notes: string; created_at: string;
-}
+export type { Driver, Vehicle };
+export type { DocStatus } from "@/hooks/useVehicles";
 export interface YandexReport {
   id: string; driver_id: string; vehicle_id: string | null;
   gross_amount: number; deduction_pct: number; deduction_amount: number; net_amount: number;

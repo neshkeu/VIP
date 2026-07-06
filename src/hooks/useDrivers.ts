@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import type { DocStatus } from "./useVehicles";
 
 export interface Driver {
   id: string;
@@ -15,6 +16,17 @@ export interface Driver {
   komunalni_monthly: number;
   doprinosi_monthly: number;
   weekly_membership_own: number;
+  lk_status: DocStatus;
+  vozacka_status: DocStatus;
+  lekarski_status: DocStatus;
+  ugovor_status: DocStatus;
+  ma_status: DocStatus;
+  leg_vozaca_status: DocStatus;
+  diploma_status: DocStatus;
+  cpc_status: DocStatus;
+  uverenje_grad_status: DocStatus;
+  sst_status: "IMA" | "NEMA" | null;
+  dipl_cpc_sst: string | null;
   notes: string;
   created_at: string;
 }
