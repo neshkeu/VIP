@@ -156,7 +156,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) { toast.error("Greška: " + error.message); throw error; }
     setCards(prev => prev.map(r => r.id === id ? data : r));
   }
-  async function logout() { await supabase.auth.signOut(); }
+  async function logout() {
+    localStorage.removeItem("vip_pin_ok");
+    localStorage.removeItem("vip_pin_ok_at");
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }
   async function refetchDrivers() {
     const { data } = await supabase.from("drivers").select("*").order("full_name");
     setDrivers(data ?? []);
