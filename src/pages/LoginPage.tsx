@@ -56,23 +56,23 @@ function LoginPage() {
       return;
     }
 
-    if (!settings.service_email || !settings.service_password) {
-      setError("Servisni nalog nije podešen. Otvori Supabase → app_settings tabela.");
-      setLoading(false);
-      return;
-    }
-
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: settings.service_email,
-      password: settings.service_password,
-    });
-
-    if (authError) {
-      setError("Greška prilikom prijave. Proveri servisni nalog u bazi.");
-      console.error("Auth error:", authError);
-      setPin("");
-      setLoading(false);
-      return;
+    // Ako je servisni nalog podesen -> Supabase Auth login (starije podesavanje)
+    if (settings.service_email && settings.service_password) {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: settings.service_email,
+        password: settings.service_password,
+      });
+      if (authError) {
+        setError("Greška prilikom prijave. Proveri servisni nalog u bazi.");
+        console.error("Auth error:", authError);
+        setPin("");
+        setLoading(false);
+        return;
+      }
+    } else {
+      // PIN alone - samo lokalni flag (RLS mora dozvoljavati anon)
+      localStorage.setItem("vip_pin_ok", "1");
+      localStorage.setItem("vip_pin_ok_at", String(Date.now()));
     }
 
     toast.success("Dobrodošli!");
