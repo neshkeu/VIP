@@ -1,26 +1,27 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { useAppSettings } from "@/hooks/useAppSettings";
 import { Button } from "@/components/ui/button";
 import { Loader2, Delete } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-
-const APP_PIN         = import.meta.env.VITE_APP_PIN ?? "1234";
-const SERVICE_EMAIL   = import.meta.env.VITE_SERVICE_EMAIL   ?? "";
-const SERVICE_PASSWORD = import.meta.env.VITE_SERVICE_PASSWORD ?? "";
-const PIN_LEN = String(APP_PIN).length;
 
 const LOCKOUT_ATTEMPTS = 5;
 const LOCKOUT_MS       = 60_000;
 
 function LoginPage() {
   const navigate = useNavigate();
+  const { settings, loading: settingsLoading, error: settingsError } = useAppSettings();
+
   const [pin, setPin]           = useState("");
   const [attempts, setAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
+
+  const APP_PIN = settings?.pin ?? "";
+  const PIN_LEN = APP_PIN.length || 4;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -37,11 +38,11 @@ function LoginPage() {
   const locked = lockedUntil !== null && lockedUntil > Date.now();
 
   const submit = async (fullPin: string) => {
-    if (loading || locked) return;
+    if (loading || locked || !settings) return;
     setLoading(true);
     setError("");
 
-    if (fullPin !== String(APP_PIN)) {
+    if (fullPin !== APP_PIN) {
       const next = attempts + 1;
       setAttempts(next);
       setPin("");
@@ -55,19 +56,19 @@ function LoginPage() {
       return;
     }
 
-    if (!SERVICE_EMAIL || !SERVICE_PASSWORD) {
-      setError("Sistem nije konfigurisan (nedostaje servisni nalog)");
+    if (!settings.service_email || !settings.service_password) {
+      setError("Servisni nalog nije podešen. Otvori Supabase → app_settings tabela.");
       setLoading(false);
       return;
     }
 
     const { error: authError } = await supabase.auth.signInWithPassword({
-      email: SERVICE_EMAIL,
-      password: SERVICE_PASSWORD,
+      email: settings.service_email,
+      password: settings.service_password,
     });
 
     if (authError) {
-      setError("Greška prilikom prijave. Kontaktiraj administratora.");
+      setError("Greška prilikom prijave. Proveri servisni nalog u bazi.");
       console.error("Auth error:", authError);
       setPin("");
       setLoading(false);
@@ -79,7 +80,7 @@ function LoginPage() {
   };
 
   const append = (digit: string) => {
-    if (locked || loading) return;
+    if (locked || loading || !settings) return;
     setError("");
     const next = (pin + digit).slice(0, PIN_LEN);
     setPin(next);
@@ -107,7 +108,15 @@ function LoginPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pin, locked, loading]);
+  }, [pin, locked, loading, settings]);
+
+  if (settingsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -127,13 +136,17 @@ function LoginPage() {
           </div>
         </div>
 
+        {settingsError && (
+          <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+            Ne mogu da učitam podešavanja iz baze. Proveri da li tabela <code className="font-mono">app_settings</code> postoji.
+          </div>
+        )}
+
         <div className="flex justify-center gap-3">
           {Array.from({ length: PIN_LEN }).map((_, i) => (
             <motion.div
               key={i}
-              animate={{
-                scale: i < pin.length ? 1.15 : 1,
-              }}
+              animate={{ scale: i < pin.length ? 1.15 : 1 }}
               transition={{ duration: 0.15 }}
               className={`h-3.5 w-3.5 rounded-full ${i < pin.length ? "bg-primary" : "bg-muted"}`}
             />
