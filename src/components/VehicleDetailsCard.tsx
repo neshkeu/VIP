@@ -1,10 +1,10 @@
 import type { Vehicle } from "@/hooks/useVehicles";
 import type { Driver } from "@/hooks/useDrivers";
 import { DocumentStatusBadge } from "./DocumentStatusBadge";
+import { DocumentAttachment } from "./DocumentAttachment";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, Car, FileText, User, Phone, Building2, Calendar, Hash, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Car, FileText, User, Building2, Calendar, Hash } from "lucide-react";
 
 function fmtDate(d: string | null | undefined) {
   if (!d) return "—";
@@ -133,17 +133,28 @@ export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle
 
         {/* Dokumenti */}
         <Section icon={FileText} title="Dokumenti vozila">
-          <div className="flex justify-between items-center py-1.5 border-b border-border/40">
-            <span className="text-xs text-muted-foreground">Legitimacija vozila</span>
-            <DocumentStatusBadge status={vehicle.leg_vozila_status} />
-          </div>
-          <div className="flex justify-between items-center py-1.5 border-b border-border/40">
-            <span className="text-xs text-muted-foreground">Inspekcijski</span>
-            <DocumentStatusBadge status={vehicle.inspekcijski_status} />
-          </div>
-          <div className="flex justify-between items-center py-1.5">
-            <span className="text-xs text-muted-foreground">Saobraćajna</span>
-            <DocumentStatusBadge status={vehicle.saobracajna_status} />
+          <div className="space-y-3">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-muted-foreground">Legitimacija vozila</span>
+                <DocumentStatusBadge status={vehicle.leg_vozila_status} />
+              </div>
+              <DocumentAttachment entityType="vehicle" entityId={vehicle.id} docType="leg_vozila" label="Prilozi" />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-muted-foreground">Inspekcijski</span>
+                <DocumentStatusBadge status={vehicle.inspekcijski_status} />
+              </div>
+              <DocumentAttachment entityType="vehicle" entityId={vehicle.id} docType="inspekcijski" label="Prilozi" />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-muted-foreground">Saobraćajna</span>
+                <DocumentStatusBadge status={vehicle.saobracajna_status} />
+              </div>
+              <DocumentAttachment entityType="vehicle" entityId={vehicle.id} docType="saobracajna" label="Prilozi" />
+            </div>
           </div>
         </Section>
       </div>
