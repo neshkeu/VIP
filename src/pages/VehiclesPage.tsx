@@ -178,7 +178,10 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
 
   const history      = getByVehicle(vehicle.id);
   const activeEntry  = getActiveDriver(vehicle.id);
-  const activeDriver = activeEntry ? drivers.find(d => d.id === activeEntry.driver_id) : null;
+  const driverByVehicleId = drivers.find(d => d.vehicle_id === vehicle.id);
+  const activeDriver = activeEntry
+    ? drivers.find(d => d.id === activeEntry.driver_id)
+    : driverByVehicleId ?? null;
 
   const handleAssign = async () => {
     if (newDriverId === "none") { toast.error("Izaberi vozača!"); return; }
@@ -222,13 +225,17 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
                 </div>
                 <div>
                   <p className="font-semibold text-sm">{activeDriver.full_name}</p>
-                  <p className="text-xs text-muted-foreground">od {activeEntry?.date_from}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {activeEntry ? `od ${activeEntry.date_from}` : "dodeljen preko baze vozača"}
+                  </p>
                 </div>
               </div>
-              <Button size="sm" variant="outline" className="h-7 text-xs"
-                onClick={() => { setEditId(activeEntry!.id); setEditDateTo(new Date().toISOString().split("T")[0]); }}>
-                Zatvori period
-              </Button>
+              {activeEntry && (
+                <Button size="sm" variant="outline" className="h-7 text-xs"
+                  onClick={() => { setEditId(activeEntry.id); setEditDateTo(new Date().toISOString().split("T")[0]); }}>
+                  Zatvori period
+                </Button>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Nema aktivnog vozača</p>
