@@ -1,86 +1,205 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, LogIn } from "lucide-react";
+import { Loader2, Delete } from "lucide-react";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
-export function LoginPage() {
+const APP_PIN         = import.meta.env.VITE_APP_PIN ?? "1234";
+const SERVICE_EMAIL   = import.meta.env.VITE_SERVICE_EMAIL   ?? "";
+const SERVICE_PASSWORD = import.meta.env.VITE_SERVICE_PASSWORD ?? "";
+const PIN_LEN = String(APP_PIN).length;
+
+const LOCKOUT_ATTEMPTS = 5;
+const LOCKOUT_MS       = 60_000;
+
+function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw]     = useState(false);
-  const [loading, setLoading]   = useState(false);
+  const [pin, setPin]           = useState("");
+  const [attempts, setAttempts] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) navigate("/", { replace: true });
+    });
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!lockedUntil) return;
+    const t = setTimeout(() => setLockedUntil(null), lockedUntil - Date.now());
+    return () => clearTimeout(t);
+  }, [lockedUntil]);
+
+  const locked = lockedUntil !== null && lockedUntil > Date.now();
+
+  const submit = async (fullPin: string) => {
+    if (loading || locked) return;
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setError("Pogrešan email ili lozinka.");
-    } else {
-      toast.success("Dobrodošli!");
-      navigate("/");
+    setError("");
+
+    if (fullPin !== String(APP_PIN)) {
+      const next = attempts + 1;
+      setAttempts(next);
+      setPin("");
+      if (next >= LOCKOUT_ATTEMPTS) {
+        setLockedUntil(Date.now() + LOCKOUT_MS);
+        setError("Previše pokušaja. Sačekaj 60 sekundi.");
+      } else {
+        setError(`Pogrešan PIN (${LOCKOUT_ATTEMPTS - next} pokušaja preostalo)`);
+      }
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    if (!SERVICE_EMAIL || !SERVICE_PASSWORD) {
+      setError("Sistem nije konfigurisan (nedostaje servisni nalog)");
+      setLoading(false);
+      return;
+    }
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: SERVICE_EMAIL,
+      password: SERVICE_PASSWORD,
+    });
+
+    if (authError) {
+      setError("Greška prilikom prijave. Kontaktiraj administratora.");
+      console.error("Auth error:", authError);
+      setPin("");
+      setLoading(false);
+      return;
+    }
+
+    toast.success("Dobrodošli!");
+    navigate("/", { replace: true });
   };
+
+  const append = (digit: string) => {
+    if (locked || loading) return;
+    setError("");
+    const next = (pin + digit).slice(0, PIN_LEN);
+    setPin(next);
+    if (next.length === PIN_LEN) submit(next);
+  };
+
+  const remove = () => {
+    if (locked || loading) return;
+    setError("");
+    setPin(prev => prev.slice(0, -1));
+  };
+
+  const clear = () => {
+    if (locked || loading) return;
+    setError("");
+    setPin("");
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (locked || loading) return;
+      if (/^\d$/.test(e.key)) append(e.key);
+      else if (e.key === "Backspace") remove();
+      else if (e.key === "Escape") clear();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pin, locked, loading]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <motion.div initial={{ opacity:0, y:24 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.4 }} className="w-full max-w-sm space-y-8">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-24 w-24 rounded-2xl overflow-hidden shadow-lg ring-4 ring-primary/20">
-            <img src="/vip-taxi-logo.png" alt="VIP Taxi" className="h-full w-full object-cover"/>
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="w-full max-w-xs space-y-6"
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-20 w-20 rounded-2xl overflow-hidden shadow-lg ring-4 ring-primary/20">
+            <img src="/vip-taxi-logo.png" alt="VIP Taxi" className="h-full w-full object-cover" />
           </div>
           <div className="text-center">
-            <h1 className="text-3xl font-display font-bold tracking-wide">VIP TAXI</h1>
-            <p className="text-sm text-muted-foreground mt-1">Sistem za upravljanje voznim parkom</p>
+            <h1 className="text-2xl font-display font-bold tracking-wide">VIP TAXI</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">Unesi PIN za pristup</p>
           </div>
         </div>
 
-        <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.2 }}
-          className="rounded-2xl border bg-card p-6 shadow-sm space-y-5">
-          <div className="text-center">
-            <h2 className="text-base font-semibold">Prijava</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Unesite svoje podatke</p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email}
-                onChange={e => { setEmail(e.target.value); setError(""); }} autoFocus/>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Lozinka</Label>
-              <div className="relative">
-                <Input id="password" type={showPw ? "text" : "password"}
-                  value={password} onChange={e => { setPassword(e.target.value); setError(""); }} className="pr-10"/>
-                <button type="button" onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showPw ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}
-                </button>
-              </div>
-            </div>
-            {error && (
-              <motion.p initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }}
-                className="text-sm text-destructive text-center bg-destructive/10 rounded-md py-2 px-3">
-                {error}
-              </motion.p>
-            )}
-            <Button type="submit" className="w-full" disabled={loading || !email || !password}>
+        <div className="flex justify-center gap-3">
+          {Array.from({ length: PIN_LEN }).map((_, i) => (
+            <motion.div
+              key={i}
+              animate={{
+                scale: i < pin.length ? 1.15 : 1,
+              }}
+              transition={{ duration: 0.15 }}
+              className={`h-3.5 w-3.5 rounded-full ${i < pin.length ? "bg-primary" : "bg-muted"}`}
+            />
+          ))}
+        </div>
+
+        <AnimatePresence>
+          {(error || loading) && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="text-center text-sm min-h-[20px] font-medium"
+            >
               {loading
-                ? <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"/>Prijava...</span>
-                : <span className="flex items-center gap-2"><LogIn className="h-4 w-4"/>Prijavi se</span>
-              }
+                ? <span className="text-muted-foreground flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Prijava...</span>
+                : <span className={locked ? "text-amber-600" : "text-destructive"}>{error}</span>}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        <div className="grid grid-cols-3 gap-2.5">
+          {["1","2","3","4","5","6","7","8","9"].map(n => (
+            <Button
+              key={n}
+              variant="outline"
+              size="lg"
+              disabled={locked || loading}
+              onClick={() => append(n)}
+              className="h-16 text-xl font-medium select-none"
+            >
+              {n}
             </Button>
-          </form>
-        </motion.div>
-        <p className="text-center text-xs text-muted-foreground">VIP Plus Taxi © {new Date().getFullYear()}</p>
+          ))}
+          <Button
+            variant="ghost"
+            size="lg"
+            disabled={locked || loading || pin.length === 0}
+            onClick={clear}
+            className="h-16 text-xs text-muted-foreground"
+          >
+            Očisti
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={locked || loading}
+            onClick={() => append("0")}
+            className="h-16 text-xl font-medium"
+          >
+            0
+          </Button>
+          <Button
+            variant="ghost"
+            size="lg"
+            disabled={locked || loading || pin.length === 0}
+            onClick={remove}
+            className="h-16"
+          >
+            <Delete className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground">
+          VIP Plus Taxi © {new Date().getFullYear()}
+        </p>
       </motion.div>
     </div>
   );
