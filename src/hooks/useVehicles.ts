@@ -21,6 +21,8 @@ export interface Vehicle {
   leg_vozila_status: DocStatus;
   inspekcijski_status: DocStatus;
   saobracajna_status: DocStatus;
+  komunalni_amount: number;
+  komunalni_currency: "RSD" | "EUR";
   status: "active" | "maintenance" | "inactive";
   notes: string;
   created_at: string;

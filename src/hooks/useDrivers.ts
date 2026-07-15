@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { DocStatus } from "./useVehicles";
 
+export type DriverRole = "operativni" | "papiroloski";
+
 export interface Driver {
   id: string;
   full_name: string;
   phone: string;
   license_number: string;
   status: "active" | "inactive";
+  role: DriverRole;
   driver_type: "renta" | "vlastito_vozilo";
   vehicle_id: string | null;
   daily_rate: number;
