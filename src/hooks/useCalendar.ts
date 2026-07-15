@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+export type OffStatus = "nije_radio" | "servis" | "praznik" | null;
+
 export interface CalendarEntry {
   id: string; driver_id: string; date: string;
   status: "izmireno"|"neizmireno"|null;
   sunday_status: "radi"|"slobodan"|null;
+  off_status: OffStatus;
   evidenced_by: string;
 }
 export interface CalendarAmount {
@@ -45,6 +48,22 @@ export function useCalendar(year: number, month: number) {
       const exists = prev.find(e => e.driver_id === driverId && e.date === date);
       return exists ? prev.map(e => e.driver_id === driverId && e.date === date ? data : e) : [...prev, data];
     });
+  }
+
+  async function saveOffStatus(driverId: string, date: string, offStatus: OffStatus) {
+    const payload: Record<string, unknown> = { driver_id: driverId, date, off_status: offStatus };
+    const { data, error } = await supabase.from("calendar_entries")
+      .upsert(payload, { onConflict: "driver_id,date" })
+      .select().single();
+    if (error) throw error;
+    setEntries(prev => {
+      const exists = prev.find(e => e.driver_id === driverId && e.date === date);
+      return exists ? prev.map(e => e.driver_id === driverId && e.date === date ? data : e) : [...prev, data];
+    });
+  }
+
+  function getOffStatus(driverId: string, date: string): OffStatus {
+    return entries.find(e => e.driver_id === driverId && e.date === date)?.off_status ?? null;
   }
 
   async function saveSundayStatus(driverId: string, date: string, sundayStatus: "radi"|"slobodan") {
@@ -109,5 +128,5 @@ export function useCalendar(year: number, month: number) {
     return { uplaceno, izm, neizm };
   }
 
-  return { loading, entries, amounts, saveStatus, saveSundayStatus, saveAmount, updateAmount, deleteAmount, getStatus, getSundayStatus, getAmounts, getDriverMonthSummary, refetch: fetchAll };
+  return { loading, entries, amounts, saveStatus, saveSundayStatus, saveOffStatus, saveAmount, updateAmount, deleteAmount, getStatus, getSundayStatus, getOffStatus, getAmounts, getDriverMonthSummary, refetch: fetchAll };
 }
