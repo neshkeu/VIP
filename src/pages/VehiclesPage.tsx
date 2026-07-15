@@ -424,8 +424,8 @@ const VehiclesPage = () => {
                 <TableRow>
                   <TableHead>Vozilo</TableHead>
                   <TableHead>Komunalni</TableHead>
-                  <TableHead>Vlasnik / Udruženje</TableHead>
-                  <TableHead>Trenutni vozač</TableHead>
+                  <TableHead>Udruženje</TableHead>
+                  <TableHead>Vozači</TableHead>
                   <TableHead>Registracija</TableHead>
                   <TableHead>Dokumenti</TableHead>
                   <TableHead>Status</TableHead>
@@ -437,25 +437,42 @@ const VehiclesPage = () => {
                   <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
                   filtered.map((v, i) => {
-                    const activeEntry  = getActiveDriver(v.id);
-                    const activeDriver = activeEntry ? drivers.find(d => d.id === activeEntry.driver_id) : drivers.find(d => d.vehicle_id === v.id);
+                    const ops = drivers.filter(d => d.vehicle_id === v.id && d.role === "operativni");
+                    const paps = drivers.filter(d => d.vehicle_id === v.id && d.role === "papiroloski");
                     return (
                       <motion.tr key={v.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.5) }}
                         className="border-b hover:bg-muted/30 transition-colors">
                         <TableCell>
                           <p className="font-medium">{v.brand} {v.model} {v.year > 0 && <span className="text-muted-foreground text-xs">({v.year})</span>}</p>
                           <p className="text-xs text-muted-foreground font-mono">{v.license_plate}</p>
+                          {v.komunalni_amount > 0 && (
+                            <p className="text-xs text-blue-600 mt-0.5">💰 {v.komunalni_amount} {v.komunalni_currency}/mj.</p>
+                          )}
                         </TableCell>
                         <TableCell><Badge variant="secondary" className="font-mono text-xs">{v.taxi_license_number || "—"}</Badge></TableCell>
                         <TableCell>
-                          <p className="text-sm">{v.owner_name || "—"}</p>
-                          {v.udruzenje && <p className="text-xs text-muted-foreground">{v.udruzenje}</p>}
+                          {v.udruzenje ? (
+                            <p className="text-sm">{v.udruzenje}</p>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
                         </TableCell>
                         <TableCell>
-                          {activeDriver ? (
-                            <div className="flex items-center gap-1.5">
-                              <div className="h-2 w-2 rounded-full bg-green-500" />
-                              <span className="text-sm">{activeDriver.full_name}</span>
+                          {ops.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {ops.map(d => (
+                                <div key={d.id} className="flex items-center gap-1.5">
+                                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                                  <span className="text-sm font-medium">{d.full_name}</span>
+                                </div>
+                              ))}
+                              {paps.length > 0 && (
+                                <div className="text-xs text-orange-600 pl-3.5">
+                                  + {paps.length} papirološki
+                                </div>
+                              )}
+                            </div>
+                          ) : paps.length > 0 ? (
+                            <div className="text-xs text-orange-600">
+                              {paps.length} papirološki
                             </div>
                           ) : <span className="text-muted-foreground text-xs">—</span>}
                         </TableCell>

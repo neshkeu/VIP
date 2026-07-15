@@ -66,8 +66,6 @@ function DateCell({ date }: { date: string | null | undefined }) {
 }
 
 export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle; drivers?: Driver[] }) {
-  const primaryDriver = drivers.find(d => d.vehicle_id === vehicle.id);
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -121,6 +119,11 @@ export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle
             }
           />
           <Row label="Udruženje" value={vehicle.udruzenje} />
+          <Row label="Komunalni (rentiranje)" value={
+            vehicle.komunalni_amount > 0
+              ? <span className="font-semibold">{vehicle.komunalni_amount.toLocaleString("sr-RS")} {vehicle.komunalni_currency}/mj.</span>
+              : "—"
+          } />
           <Row label="POS terminal" value={vehicle.pos_terminal_id || "—"} mono />
         </Section>
 
@@ -159,30 +162,47 @@ export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle
         </Section>
       </div>
 
-      {/* Vozač */}
-      {primaryDriver && (
-        <Section icon={User} title="Trenutni vozač">
-          <Row label="Ime i prezime" value={primaryDriver.full_name} />
-          <Row
-            label="Telefon"
-            value={
-              primaryDriver.phone ? (
-                <a href={`tel:${primaryDriver.phone}`} className="text-primary hover:underline">
-                  {primaryDriver.phone}
-                </a>
-              ) : "—"
-            }
-          />
-          <Row
-            label="Tip"
-            value={
-              <Badge variant="outline" className="text-xs">
-                {primaryDriver.driver_type === "renta" ? "Renta" : "Vlastito vozilo"}
-              </Badge>
-            }
-          />
-        </Section>
-      )}
+      {(() => {
+        const ops = drivers.filter(d => d.vehicle_id === vehicle.id && d.role === "operativni");
+        const paps = drivers.filter(d => d.vehicle_id === vehicle.id && d.role === "papiroloski");
+        return (
+          <>
+            {ops.length > 0 && (
+              <Section icon={User} title={`Operativni vozač${ops.length > 1 ? "i" : ""} (${ops.length})`}>
+                {ops.map((d, i) => (
+                  <div key={d.id} className={i > 0 ? "pt-2 mt-2 border-t border-border/40" : ""}>
+                    <Row label="Ime i prezime" value={d.full_name} />
+                    <Row label="Telefon" value={
+                      d.phone ? <a href={`tel:${d.phone}`} className="text-primary hover:underline">{d.phone}</a> : "—"
+                    } />
+                    <Row label="Tip" value={
+                      <Badge variant="outline" className="text-xs">
+                        {d.driver_type === "renta" ? "Renta" : "Vlastito vozilo"}
+                      </Badge>
+                    } />
+                    {d.driver_type === "renta" && (
+                      <Row label="Dnevna renta" value={d.daily_rate.toLocaleString("sr-RS") + " RSD"} />
+                    )}
+                  </div>
+                ))}
+              </Section>
+            )}
+
+            {paps.length > 0 && (
+              <Section icon={User} title={`Papirološki vozač${paps.length > 1 ? "i" : ""} (${paps.length})`}>
+                {paps.map((d, i) => (
+                  <div key={d.id} className={i > 0 ? "pt-2 mt-2 border-t border-border/40" : ""}>
+                    <Row label="Ime i prezime" value={d.full_name} />
+                    <Row label="Telefon" value={
+                      d.phone ? <a href={`tel:${d.phone}`} className="text-primary hover:underline">{d.phone}</a> : "—"
+                    } />
+                  </div>
+                ))}
+              </Section>
+            )}
+          </>
+        );
+      })()}
 
       {/* Napomena */}
       {vehicle.notes && (
