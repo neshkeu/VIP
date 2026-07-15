@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useDrivers, type Driver, type DriverRole } from "@/hooks/useDrivers";
 import { useVehicles, type DocStatus, type Vehicle } from "@/hooks/useVehicles";
+import { useDebts } from "@/hooks/useDebts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -226,7 +227,12 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   );
 }
 
-function DriversTable({ list, vehicles, onEdit }: { list: Driver[]; vehicles: Vehicle[]; onEdit: (d: Driver) => void }) {
+function DriversTable({ list, vehicles, onEdit, debtByDriver }: {
+  list: Driver[];
+  vehicles: Vehicle[];
+  onEdit: (d: Driver) => void;
+  debtByDriver: Record<string, number>;
+}) {
   return (
     <Card>
       <CardContent className="p-0 overflow-x-auto">
@@ -238,12 +244,13 @@ function DriversTable({ list, vehicles, onEdit }: { list: Driver[]; vehicles: Ve
               <TableHead>Vozilo</TableHead>
               <TableHead>Naknade</TableHead>
               <TableHead>Dokumenti</TableHead>
+              <TableHead>Dug</TableHead>
               <TableHead className="text-right">Akcije</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {list.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
             ) : list.map((d, i) => {
               const vehicle  = vehicles.find(v => v.id === d.vehicle_id);
               const roleCfg  = ROLE_CFG[d.role];
@@ -301,6 +308,13 @@ function DriversTable({ list, vehicles, onEdit }: { list: Driver[]; vehicles: Ve
                       <DocumentStatusBadge status={d.leg_vozaca_status} label="LV" />
                     </div>
                   </TableCell>
+                  <TableCell>
+                    {(debtByDriver[d.id] ?? 0) > 0 ? (
+                      <span className="text-sm font-bold text-red-600">{fmt(debtByDriver[d.id])}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onEdit(d)}>
                       <Pencil className="h-4 w-4" />
@@ -319,9 +333,17 @@ function DriversTable({ list, vehicles, onEdit }: { list: Driver[]; vehicles: Ve
 const DriversPage = () => {
   const { drivers, loading, addDriver, updateDriver } = useDrivers();
   const { vehicles } = useVehicles();
+  const { debts } = useDebts();
   const [search, setSearch]         = useState("");
   const [addOpen, setAddOpen]       = useState(false);
   const [editDriver, setEditDriver] = useState<Driver | null>(null);
+
+  const debtByDriver: Record<string, number> = {};
+  debts.forEach(d => {
+    if (d.status === "closed") return;
+    const remaining = d.amount - d.paid_amount;
+    debtByDriver[d.driver_id] = (debtByDriver[d.driver_id] ?? 0) + remaining;
+  });
 
   const filtered = drivers.filter(d => {
     const q = search.toLowerCase();
@@ -397,13 +419,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} />
+            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} debtByDriver={debtByDriver} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} />
+            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} debtByDriver={debtByDriver} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} />
+            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} debtByDriver={debtByDriver} />
           </TabsContent>
         </Tabs>
       )}

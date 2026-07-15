@@ -19,10 +19,18 @@ const CardsPage = () => {
   const { drivers, vehicles, displayName } = useApp();
   const { cardReports: reports, addCard: addReport, markCardPaid: markPaidOut, loading } = useApp();
 
+  const PAYMENT_METHODS = [
+    { value: "kartica",    label: "Kartica" },
+    { value: "terminal1",  label: "Terminal 1" },
+    { value: "terminal2",  label: "Terminal 2" },
+    { value: "aplikacija", label: "Aplikacija" },
+  ];
+
   const [addOpen, setAddOpen]     = useState(false);
   const [driverId, setDriverId]   = useState("none");
   const [vehicleId, setVehicleId] = useState("none");
   const [cardType, setCardType]   = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("kartica");
   const [gross, setGross]         = useState("");
   const [pctStr, setPctStr]       = useState("");
   const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
@@ -33,7 +41,7 @@ const CardsPage = () => {
   const [payOpen, setPayOpen]     = useState(false);
 
   const reset = () => {
-    setDriverId("none"); setVehicleId("none"); setCardType("");
+    setDriverId("none"); setVehicleId("none"); setCardType(""); setPaymentMethod("kartica");
     setGross(""); setPctStr(""); setNotes("");
     setDate(new Date().toISOString().split("T")[0]);
   };
@@ -87,9 +95,20 @@ const CardsPage = () => {
                   <Input type="number" step="0.1" placeholder="1.5" value={pctStr} onChange={e => setPctStr(e.target.value)} />
                 </div>
               </div>
-              <div className="grid gap-1.5">
-                <Label>Kartica (opciono)</Label>
-                <Input placeholder="Visa, Mastercard, Dina..." value={cardType} onChange={e => setCardType(e.target.value)} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>Način plaćanja</Label>
+                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_METHODS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Tip kartice (opciono)</Label>
+                  <Input placeholder="Visa, Master..." value={cardType} onChange={e => setCardType(e.target.value)} />
+                </div>
               </div>
               {grossNum > 0 && pct > 0 && (
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
@@ -108,10 +127,12 @@ const CardsPage = () => {
                 onClick={async () => {
                   setSaving(true);
                   try {
+                    const paymentLabel = PAYMENT_METHODS.find(m => m.value === paymentMethod)?.label ?? paymentMethod;
+                    const combinedType = cardType ? `${paymentLabel} · ${cardType}` : paymentLabel;
                     await addReport({
                       driver_id: driverId,
                       vehicle_id: vehicleId === "none" ? null : vehicleId,
-                      card_type: cardType || "—",
+                      card_type: combinedType,
                       gross_amount: grossNum,
                       deduction_pct: pct,
                       deduction_amount: deductNum,

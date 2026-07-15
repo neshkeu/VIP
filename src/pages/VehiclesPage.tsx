@@ -425,7 +425,8 @@ const VehiclesPage = () => {
                   <TableHead>Vozilo</TableHead>
                   <TableHead>Komunalni</TableHead>
                   <TableHead>Udruženje</TableHead>
-                  <TableHead>Vozači</TableHead>
+                  <TableHead>Operativni</TableHead>
+                  <TableHead>Papirološki</TableHead>
                   <TableHead>Registracija</TableHead>
                   <TableHead>Dokumenti</TableHead>
                   <TableHead>Status</TableHead>
@@ -434,7 +435,7 @@ const VehiclesPage = () => {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
                   filtered.map((v, i) => {
                     const ops = drivers.filter(d => d.vehicle_id === v.id && d.role === "operativni");
@@ -460,19 +461,22 @@ const VehiclesPage = () => {
                             <div className="space-y-0.5">
                               {ops.map(d => (
                                 <div key={d.id} className="flex items-center gap-1.5">
-                                  <div className="h-2 w-2 rounded-full bg-green-500" />
+                                  <div className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
                                   <span className="text-sm font-medium">{d.full_name}</span>
                                 </div>
                               ))}
-                              {paps.length > 0 && (
-                                <div className="text-xs text-orange-600 pl-3.5">
-                                  + {paps.length} papirološki
-                                </div>
-                              )}
                             </div>
-                          ) : paps.length > 0 ? (
-                            <div className="text-xs text-orange-600">
-                              {paps.length} papirološki
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {paps.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {paps.map(d => (
+                                <div key={d.id} className="flex items-center gap-1.5">
+                                  <div className="h-2 w-2 rounded-full bg-orange-500 flex-shrink-0" />
+                                  <span className="text-sm">{d.full_name}</span>
+                                </div>
+                              ))}
                             </div>
                           ) : <span className="text-muted-foreground text-xs">—</span>}
                         </TableCell>
