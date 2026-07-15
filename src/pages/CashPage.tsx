@@ -293,7 +293,12 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
   // Izračuni za rente i clanarine (ručno ili auto)
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
-  const workDays    = rentaDates.filter(d => new Date(d+"T00:00:00").getDay() !== 0).length;
+  const workDays    = rentaDates.filter(d => {
+    const dow = new Date(d+"T00:00:00").getDay();
+    if (dow === 0) return false;                    // nedelja
+    if (cal.getOffStatus(driverId, d)) return false; // off-day
+    return true;
+  }).length;
   const rentaTotal  = driver ? workDays * driver.daily_rate : 0;
   const clanWeeks  = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
   const clanTotal  = clanEnabled ? clanWeeks * (Number(clanAmt) || 0) : 0;
@@ -474,21 +479,48 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                     <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={rentaTo} onChange={e=>setRentaTo(e.target.value)}/></div>
                   </div>
                   {rentaDates.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {[...rentaDates, ...(bonusSunday?[bonusSunday]:[])].map(date => {
-                        const dow = new Date(date+"T00:00:00").getDay();
-                        const isSun = dow === 0;
-                        const existing = cal.getStatus(driverId, date);
-                        return (
-                          <div key={date} className={`rounded px-1.5 py-0.5 text-xs ${
-                            isSun&&date===bonusSunday?"bg-green-100 text-green-700 border border-green-300":
-                            existing==="izmireno"?"bg-gray-100 text-gray-400 line-through":
-                            "bg-primary/10 text-primary"}`}>
-                            {date.slice(8)}. {DAYS_SR[dow]}{isSun?" 🎉":""}
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <>
+                      <p className="text-xs text-muted-foreground mt-1">Klik na dan da označiš da nije radio (servis / praznik / nije radio)</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {[...rentaDates, ...(bonusSunday?[bonusSunday]:[])].map(date => {
+                          const dow = new Date(date+"T00:00:00").getDay();
+                          const isSun = dow === 0;
+                          const existing = cal.getStatus(driverId, date);
+                          const off = cal.getOffStatus(driverId, date);
+                          const canToggle = !isSun && existing !== "izmireno";
+                          const cycleOff = () => {
+                            if (!canToggle) return;
+                            const nextMap: Record<string, "nije_radio"|"servis"|"praznik"|null> = {
+                              "":"nije_radio", "nije_radio":"servis", "servis":"praznik", "praznik": null,
+                            };
+                            const next = nextMap[off ?? ""];
+                            cal.saveOffStatus(driverId, date, next).catch(e => toast.error("Greška: " + e.message));
+                          };
+                          const cls = off === "nije_radio" ? "bg-red-100 text-red-700 border border-red-300 line-through"
+                                    : off === "servis" ? "bg-amber-100 text-amber-700 border border-amber-300 line-through"
+                                    : off === "praznik" ? "bg-purple-100 text-purple-700 border border-purple-300 line-through"
+                                    : isSun && date === bonusSunday ? "bg-green-100 text-green-700 border border-green-300"
+                                    : existing === "izmireno" ? "bg-gray-100 text-gray-400 line-through"
+                                    : "bg-primary/10 text-primary hover:bg-primary/20";
+                          const title = off === "nije_radio" ? "Nije radio (klik: → servis)"
+                                      : off === "servis" ? "Servis (klik: → praznik)"
+                                      : off === "praznik" ? "Praznik (klik: → očisti)"
+                                      : "Klik da označiš (nije radio → servis → praznik)";
+                          return (
+                            <button
+                              type="button"
+                              key={date}
+                              onClick={cycleOff}
+                              disabled={!canToggle}
+                              title={title}
+                              className={`rounded px-1.5 py-0.5 text-xs transition-colors ${cls} ${!canToggle ? "cursor-default" : "cursor-pointer"}`}
+                            >
+                              {date.slice(8)}. {DAYS_SR[dow]}{isSun?" 🎉":""}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
                   )}
                 </CheckRow>
 
