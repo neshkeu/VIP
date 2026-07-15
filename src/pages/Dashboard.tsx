@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/StatCard";
+import { ExpiryAlerts } from "@/components/ExpiryAlerts";
 import { Users, Car, Wallet, TrendingUp, Loader2 } from "lucide-react";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useVehicles } from "@/hooks/useVehicles";
@@ -87,7 +88,11 @@ const Dashboard = () => {
           </Card>
         </motion.div>
 
-        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }}>
+        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.15 }}>
+          <ExpiryAlerts />
+        </motion.div>
+
+        <motion.div initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }} className="lg:col-span-2">
           <Card>
             <CardHeader className="pb-2"><CardTitle className="font-display text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary"/>Zadnji unosi u kasu</CardTitle></CardHeader>
             <CardContent className="space-y-2">
