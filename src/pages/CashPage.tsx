@@ -18,8 +18,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, Wrench, PartyPopper, X, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
@@ -480,43 +481,60 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   </div>
                   {rentaDates.length > 0 && (
                     <>
-                      <p className="text-xs text-muted-foreground mt-1">Klik na dan da označiš da nije radio (servis / praznik / nije radio)</p>
+                      <p className="text-xs text-muted-foreground mt-1">Klik na dan da označiš razlog (nije radio / servis / praznik)</p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {[...rentaDates, ...(bonusSunday?[bonusSunday]:[])].map(date => {
                           const dow = new Date(date+"T00:00:00").getDay();
                           const isSun = dow === 0;
                           const existing = cal.getStatus(driverId, date);
                           const off = cal.getOffStatus(driverId, date);
-                          const canToggle = !isSun && existing !== "izmireno";
-                          const cycleOff = () => {
-                            if (!canToggle) return;
-                            const nextMap: Record<string, "nije_radio"|"servis"|"praznik"|null> = {
-                              "":"nije_radio", "nije_radio":"servis", "servis":"praznik", "praznik": null,
-                            };
-                            const next = nextMap[off ?? ""];
-                            cal.saveOffStatus(driverId, date, next).catch(e => toast.error("Greška: " + e.message));
+                          const canEdit = !isSun && existing !== "izmireno";
+                          const setOff = (v: "nije_radio"|"servis"|"praznik"|null) => {
+                            cal.saveOffStatus(driverId, date, v).catch(e => toast.error("Greška: " + e.message));
                           };
+                          const label = off === "nije_radio" ? "Nije radio"
+                                      : off === "servis" ? "Servis"
+                                      : off === "praznik" ? "Praznik" : "";
                           const cls = off === "nije_radio" ? "bg-red-100 text-red-700 border border-red-300 line-through"
                                     : off === "servis" ? "bg-amber-100 text-amber-700 border border-amber-300 line-through"
                                     : off === "praznik" ? "bg-purple-100 text-purple-700 border border-purple-300 line-through"
                                     : isSun && date === bonusSunday ? "bg-green-100 text-green-700 border border-green-300"
                                     : existing === "izmireno" ? "bg-gray-100 text-gray-400 line-through"
                                     : "bg-primary/10 text-primary hover:bg-primary/20";
-                          const title = off === "nije_radio" ? "Nije radio (klik: → servis)"
-                                      : off === "servis" ? "Servis (klik: → praznik)"
-                                      : off === "praznik" ? "Praznik (klik: → očisti)"
-                                      : "Klik da označiš (nije radio → servis → praznik)";
-                          return (
-                            <button
-                              type="button"
-                              key={date}
-                              onClick={cycleOff}
-                              disabled={!canToggle}
-                              title={title}
-                              className={`rounded px-1.5 py-0.5 text-xs transition-colors ${cls} ${!canToggle ? "cursor-default" : "cursor-pointer"}`}
-                            >
+                          const pillContent = (
+                            <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors ${cls} ${canEdit ? "cursor-pointer" : "cursor-default"}`}>
                               {date.slice(8)}. {DAYS_SR[dow]}{isSun?" 🎉":""}
-                            </button>
+                              {label && <span className="text-[10px] opacity-70">· {label}</span>}
+                            </span>
+                          );
+                          if (!canEdit) return <span key={date}>{pillContent}</span>;
+                          return (
+                            <Popover key={date}>
+                              <PopoverTrigger asChild>
+                                <button type="button">{pillContent}</button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-52 p-1" align="start">
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground border-b mb-1">
+                                  {new Date(date+"T00:00:00").toLocaleDateString("sr-RS", { weekday:"long", day:"numeric", month:"long" })}
+                                </div>
+                                <button type="button" onClick={() => setOff(null)}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${!off ? "bg-primary/10" : ""}`}>
+                                  <Sun className="h-3.5 w-3.5 text-primary" />Radni dan {!off && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                </button>
+                                <button type="button" onClick={() => setOff("nije_radio")}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "nije_radio" ? "bg-red-50" : ""}`}>
+                                  <X className="h-3.5 w-3.5 text-red-600" />Nije radio {off === "nije_radio" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                </button>
+                                <button type="button" onClick={() => setOff("servis")}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "servis" ? "bg-amber-50" : ""}`}>
+                                  <Wrench className="h-3.5 w-3.5 text-amber-600" />Servis {off === "servis" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                </button>
+                                <button type="button" onClick={() => setOff("praznik")}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "praznik" ? "bg-purple-50" : ""}`}>
+                                  <PartyPopper className="h-3.5 w-3.5 text-purple-600" />Praznik {off === "praznik" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                </button>
+                              </PopoverContent>
+                            </Popover>
                           );
                         })}
                       </div>
