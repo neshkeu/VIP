@@ -65,7 +65,19 @@ const YandexPage = () => {
                 <div className="grid gap-1.5"><Label>Vozač</Label>
                   <Select value={driverId} onValueChange={v => { setDriverId(v); const d = drivers.find(dr => dr.id === v); const veh = vehicles.find(ve => ve.id === d?.vehicle_id); if (veh) setVehicleId(veh.id); }}>
                     <SelectTrigger><SelectValue placeholder="Izaberi"/></SelectTrigger>
-                    <SelectContent>{drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {drivers
+                        .filter(d => d.role === "operativni" && d.status === "active")
+                        .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                        .map(d => {
+                          const veh = vehicles.find(v => v.id === d.vehicle_id);
+                          return (
+                            <SelectItem key={d.id} value={d.id}>
+                              {d.full_name}{veh ? ` — ${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : " — bez vozila"}
+                            </SelectItem>
+                          );
+                        })}
+                    </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-1.5"><Label>Vozilo</Label>

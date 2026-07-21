@@ -364,7 +364,7 @@ const VehiclesPage = () => {
         <div className="flex gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-8 w-56" placeholder="Marka, tablice, vlasnik..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Input className="pl-8 w-56" placeholder="Marka, tablice, komunalni, VIN..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>

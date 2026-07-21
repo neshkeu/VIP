@@ -184,10 +184,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [yandexAmounts, setYandexAmounts]   = useState<Record<string,string>>({});
   const [selectedCards, setSelectedCards]   = useState<Set<string>>(new Set());
   const [cardAmounts, setCardAmounts]       = useState<Record<string,string>>({});
-  // VAUČERI
-  const [vaucerEnabled, setVaucerEnabled]   = useState(false);
-  const [vaucerCount, setVaucerCount]       = useState("");
-  const [vaucerAmt, setVaucerAmt]           = useState("100");
+  // VAUČERI - dva tipa: nasi (fiksno 400) i MB (varijabilno)
+  const [vaucerEnabled, setVaucerEnabled]       = useState(false);
+  const [vaucerCount, setVaucerCount]           = useState("");
+  const [vaucerAmt, setVaucerAmt]               = useState("400");
+  const [vaucerMbEnabled, setVaucerMbEnabled]   = useState(false);
+  const [vaucerMbCount, setVaucerMbCount]       = useState("");
+  const [vaucerMbAmt, setVaucerMbAmt]           = useState("200");
 
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
@@ -230,10 +233,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const driverCards = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const cardSelected = driverCards.filter(r => selectedCards.has(r.id));
   const cardNet    = cardSelected.reduce((s,r) => s + (Number(cardAmounts[r.id]) || r.net_amount), 0);
-  const vaucerTotal = vaucerEnabled ? (Number(vaucerCount) || 0) * (Number(vaucerAmt) || 0) : 0;
+  const vaucerTotal   = vaucerEnabled   ? (Number(vaucerCount)   || 0) * (Number(vaucerAmt)   || 0) : 0;
+  const vaucerMbTotal = vaucerMbEnabled ? (Number(vaucerMbCount) || 0) * (Number(vaucerMbAmt) || 0) : 0;
 
   // AUTO LOGIKA — izračunaj rente i clanarine iz prihoda
-  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal;
+  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal + vaucerMbTotal;
   const weeklyAmt = driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0;
 
   // Automatski postavi period rente i clanarine kad se promijene prihodi
@@ -327,7 +331,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setPosEnabled(false); setPosAmt(""); setPdvEnabled(false); setPdvAmt("");
     setSelectedDebts(new Set()); setSelectedYandex(new Set()); setYandexAmounts({});
     setSelectedCards(new Set()); setCardAmounts({});
-    setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("100");
+    setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("400");
+    setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
   };
 
   const handleSave = async () => {
@@ -378,10 +383,17 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         }).eq("id", debt.id);
       }
 
-      // 6. Vaučeri
+      // 6. Vaučeri (naši)
       if (vaucerEnabled && vaucerTotal > 0) {
         const stavka = { type:"vaučer", direction:"out", driver_id:driverId, amount:vaucerTotal, date:saveDate,
-          description:`Vaučeri: ${vaucerCount} × ${fmt(Number(vaucerAmt))}`, received_by:currentUser, notes:"" };
+          description:`Vaučeri (naši): ${vaucerCount} × ${fmt(Number(vaucerAmt))}`, received_by:currentUser, notes:"" };
+        await onAdd({...stavka});
+        stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
+      }
+      // 6b. MB Vaučeri
+      if (vaucerMbEnabled && vaucerMbTotal > 0) {
+        const stavka = { type:"vaučer_mb", direction:"out", driver_id:driverId, amount:vaucerMbTotal, date:saveDate,
+          description:`Vaučeri (MB): ${vaucerMbCount} × ${fmt(Number(vaucerMbAmt))}`, received_by:currentUser, notes:"" };
         await onAdd({...stavka});
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
@@ -449,9 +461,19 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
             <Label>Vozač</Label>
             <Select value={driverId} onValueChange={v => { setDriverId(v); }}>
               <SelectTrigger><SelectValue/></SelectTrigger>
-              <SelectContent>{drivers.filter(d => d.status === "active").map(d => (
-                <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
-              ))}</SelectContent>
+              <SelectContent>
+                {drivers
+                  .filter(d => d.role === "operativni" && d.status === "active")
+                  .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                  .map(d => {
+                    const veh = vehicles.find(v => v.id === d.vehicle_id);
+                    return (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.full_name}{veh ? ` — ${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : " — bez vozila"}
+                      </SelectItem>
+                    );
+                  })}
+              </SelectContent>
             </Select>
           </div>
 
@@ -601,13 +623,23 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   )}
                 </CheckRow>
 
-                {/* VAUČERI */}
-                <CheckRow label="Vaučeri" enabled={vaucerEnabled} onToggle={() => setVaucerEnabled(!vaucerEnabled)}
+                {/* VAUČERI - naši (fiksno 400) */}
+                <CheckRow label="Vaučeri (naši)" enabled={vaucerEnabled} onToggle={() => setVaucerEnabled(!vaucerEnabled)}
                   amount={vaucerTotal}
                   sublabel={vaucerCount && vaucerAmt ? `${vaucerCount} × ${fmt(Number(vaucerAmt))}` : undefined}>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="grid gap-1"><Label className="text-xs">Broj vaučera</Label><Input type="number" value={vaucerCount} onChange={e=>setVaucerCount(e.target.value)}/></div>
                     <div className="grid gap-1"><Label className="text-xs">Iznos/vaučeru</Label><Input type="number" value={vaucerAmt} onChange={e=>setVaucerAmt(e.target.value)}/></div>
+                  </div>
+                </CheckRow>
+
+                {/* VAUČERI - MB (varijabilni) */}
+                <CheckRow label="Vaučeri (MB)" enabled={vaucerMbEnabled} onToggle={() => setVaucerMbEnabled(!vaucerMbEnabled)}
+                  amount={vaucerMbTotal}
+                  sublabel={vaucerMbCount && vaucerMbAmt ? `${vaucerMbCount} × ${fmt(Number(vaucerMbAmt))}` : undefined}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-1"><Label className="text-xs">Broj vaučera</Label><Input type="number" value={vaucerMbCount} onChange={e=>setVaucerMbCount(e.target.value)}/></div>
+                    <div className="grid gap-1"><Label className="text-xs">Iznos/vaučeru</Label><Input type="number" value={vaucerMbAmt} onChange={e=>setVaucerMbAmt(e.target.value)}/></div>
                   </div>
                 </CheckRow>
 
@@ -712,7 +744,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   {clanEnabled && clanTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Članarina:</span><span className="text-green-600">+{fmt(clanTotal)}</span></div>}
                   {posEnabled && posTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">POS naknada:</span><span className="text-green-600">+{fmt(posTotal)}</span></div>}
                   {debtTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Dugovanja:</span><span className="text-green-600">+{fmt(debtTotal)}</span></div>}
-                  {vaucerEnabled && vaucerTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Vaučeri:</span><span className="text-orange-600">−{fmt(vaucerTotal)}</span></div>}
+                  {vaucerEnabled && vaucerTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Vaučeri (naši):</span><span className="text-orange-600">−{fmt(vaucerTotal)}</span></div>}
+                  {vaucerMbEnabled && vaucerMbTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Vaučeri (MB):</span><span className="text-orange-600">−{fmt(vaucerMbTotal)}</span></div>}
                   {pdvEnabled && pdvTotal > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">PDV goriva:</span><span className="text-orange-600">−{fmt(pdvTotal)}</span></div>}
                   {yandexNet > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Yandex:</span><span className="text-orange-600">−{fmt(yandexNet)}</span></div>}
                   {cardNet > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Kartice:</span><span className="text-orange-600">−{fmt(cardNet)}</span></div>}
@@ -757,7 +790,8 @@ ${debtTotal > 0 ? `  Dugovanja: ${fmt(debtTotal)}` : ""}
 
 PRIMA:
 ${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
-${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri: ${fmt(vaucerTotal)}` : ""}
+${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri (naši): ${fmt(vaucerTotal)}` : ""}
+${vaucerMbEnabled && vaucerMbTotal > 0 ? `  Vaučeri (MB): ${fmt(vaucerMbTotal)}` : ""}
 ${yandexNet > 0 ? `  Yandex: ${fmt(yandexNet)}` : ""}
 ${cardNet > 0 ? `  Kartice: ${fmt(cardNet)}` : ""}
 
