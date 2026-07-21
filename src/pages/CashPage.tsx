@@ -146,7 +146,7 @@ function CheckRow({ label, sublabel, amount, enabled, onToggle, children }: {
 function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
 }) {
-  const { drivers } = useApp();
+  const { drivers, vehicles } = useApp();
   const { yandexReports, cardReports, markYandexPaid: yandexPaidOut, markCardPaid: cardPaidOut } = useApp();
   const today = new Date().toISOString().split("T")[0];
   const curMonthStr = today.slice(0,7);
