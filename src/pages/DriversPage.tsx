@@ -241,6 +241,7 @@ function DriversTable({ list, vehicles, onEdit, debtByDriver }: {
             <TableRow>
               <TableHead>Vozač</TableHead>
               <TableHead>Uloga</TableHead>
+              <TableHead>Komunalni</TableHead>
               <TableHead>Vozilo</TableHead>
               <TableHead>Naknade</TableHead>
               <TableHead>Dokumenti</TableHead>
@@ -250,7 +251,7 @@ function DriversTable({ list, vehicles, onEdit, debtByDriver }: {
           </TableHeader>
           <TableBody>
             {list.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
             ) : list.map((d, i) => {
               const vehicle  = vehicles.find(v => v.id === d.vehicle_id);
               const roleCfg  = ROLE_CFG[d.role];
@@ -275,11 +276,15 @@ function DriversTable({ list, vehicles, onEdit, debtByDriver }: {
                     </Badge>
                   </TableCell>
                   <TableCell>
+                    {vehicle?.taxi_license_number ? (
+                      <Badge variant="secondary" className="font-mono text-xs">{vehicle.taxi_license_number}</Badge>
+                    ) : <span className="text-muted-foreground text-xs">—</span>}
+                  </TableCell>
+                  <TableCell>
                     {vehicle ? (
                       <div className="flex items-center gap-1.5">
                         <Car className="h-3.5 w-3.5 text-muted-foreground" />
                         <span className="text-sm">{vehicle.brand} {vehicle.model}</span>
-                        <Badge variant="secondary" className="font-mono text-xs">{vehicle.taxi_license_number}</Badge>
                       </div>
                     ) : <span className="text-muted-foreground text-sm">—</span>}
                   </TableCell>
