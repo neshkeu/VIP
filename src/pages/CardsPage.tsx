@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, CheckCircle2, Clock, CreditCard } from "lucide-react";
+import { Plus, Loader2, CheckCircle2, Clock, CreditCard, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 
@@ -17,7 +17,7 @@ function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const CardsPage = () => {
   const { drivers, vehicles, displayName } = useApp();
-  const { cardReports: reports, addCard: addReport, markCardPaid: markPaidOut, loading } = useApp();
+  const { cardReports: reports, addCard: addReport, markCardPaid: markPaidOut, updateCard, deleteCard, loading } = useApp();
 
   const PAYMENT_METHODS = [
     { value: "kartica",    label: "Kartica" },
@@ -39,6 +39,13 @@ const CardsPage = () => {
   const [payId, setPayId]         = useState("");
   const [payBy, setPayBy]         = useState("");
   const [payOpen, setPayOpen]     = useState(false);
+
+  // Edit state
+  const [editId, setEditId]       = useState<string | null>(null);
+  const [editGross, setEditGross] = useState("");
+  const [editProv, setEditProv]   = useState("");
+  const [editDate, setEditDate]   = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   const reset = () => {
     setDriverId("none"); setVehicleId("none"); setCardType(""); setPaymentMethod("kartica");
@@ -179,6 +186,68 @@ const CardsPage = () => {
         <StatCard title="Isplaćenih" value={paid.length} icon={CheckCircle2} />
       </div>
 
+      {/* Edit dialog */}
+      <Dialog open={editId !== null} onOpenChange={v => { if (!v) setEditId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Uredi izvod</DialogTitle>
+            <DialogDescription>Ispravi iznos, proviziju ili datum</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Iznos transakcije (RSD)</Label>
+                <Input type="number" value={editGross} onChange={e => setEditGross(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Provizija (RSD)</Label>
+                <Input type="number" step="0.01" value={editProv} onChange={e => setEditProv(e.target.value)} />
+              </div>
+            </div>
+            {Number(editGross) > 0 && (
+              <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
+                <div><p className="text-xs text-muted-foreground">Iznos</p><p className="font-semibold">{fmt(Number(editGross))}</p></div>
+                <div><p className="text-xs text-muted-foreground">Provizija</p><p className="font-semibold text-red-500">−{fmt(Number(editProv) || 0)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Za uplatu</p><p className="font-bold text-green-600">{fmt(Number(editGross) - (Number(editProv) || 0))}</p></div>
+              </div>
+            )}
+            <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} /></div>
+            <div className="grid gap-1.5"><Label>Napomena</Label><Input value={editNotes} onChange={e => setEditNotes(e.target.value)} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditId(null)}>Otkazi</Button>
+            <Button
+              disabled={!editGross || !editProv || saving}
+              onClick={async () => {
+                if (!editId) return;
+                setSaving(true);
+                try {
+                  const g = Number(editGross);
+                  const p = Number(editProv);
+                  const pct = g > 0 ? Number(((p / g) * 100).toFixed(2)) : 0;
+                  await updateCard(editId, {
+                    gross_amount: g,
+                    deduction_amount: p,
+                    deduction_pct: pct,
+                    net_amount: g - p,
+                    date: editDate,
+                    period_from: editDate,
+                    period_to: editDate,
+                    notes: editNotes,
+                  });
+                  toast.success("Izvod ažuriran");
+                  setEditId(null);
+                } catch (e) {
+                  toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+                } finally { setSaving(false); }
+              }}
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Isplati vozaču</DialogTitle></DialogHeader>
@@ -232,11 +301,12 @@ const CardsPage = () => {
                         <TableHead>Provizija</TableHead>
                         <TableHead>Za uplatu</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Akcije</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {(tab === "unpaid" ? unpaid : paid).length === 0
-                        ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
+                        ? <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
                         : (tab === "unpaid" ? unpaid : paid).map(r => {
                             const driver = drivers.find(d => d.id === r.driver_id);
                             return (
@@ -256,6 +326,32 @@ const CardsPage = () => {
                                     ? <Badge variant="default" className="text-xs">Isplaćeno — {r.received_by}</Badge>
                                     : <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPayId(r.id); setPayOpen(true); }}>Isplati</Button>
                                   }
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-0.5">
+                                    <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi"
+                                      onClick={() => {
+                                        setEditId(r.id);
+                                        setEditGross(String(r.gross_amount));
+                                        setEditProv(String(r.deduction_amount));
+                                        setEditDate(r.date);
+                                        setEditNotes(r.notes ?? "");
+                                      }}>
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši"
+                                      onClick={async () => {
+                                        if (!confirm(`Obrisati izvod od ${fmt(r.gross_amount)} (${r.date})?`)) return;
+                                        try {
+                                          await deleteCard(r.id);
+                                          toast.success("Obrisano");
+                                        } catch (e) {
+                                          toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+                                        }
+                                      }}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             );
