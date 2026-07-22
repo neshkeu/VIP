@@ -134,7 +134,7 @@ function DebtCard({ debt }: { debt: any }) {
             <motion.div initial={{ height:0, opacity:0 }} animate={{ height:"auto", opacity:1 }} exit={{ height:0, opacity:0 }} className="overflow-hidden">
               <Separator/>
               <div className="px-4 py-3 space-y-2 bg-muted/20">
-                <p className="text-xs font-semibold text-muted-foreground uppercase">Historija uplata</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Istorija uplata</p>
                 {payments.map(p => (
                   <div key={p.id} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
