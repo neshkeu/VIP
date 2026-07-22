@@ -32,7 +32,7 @@ const CardsPage = () => {
   const [cardType, setCardType]   = useState("");
   const [paymentMethod, setPaymentMethod] = useState("kartica");
   const [gross, setGross]         = useState("");
-  const [pctStr, setPctStr]       = useState("");
+  const [provizija, setProvizija] = useState("");
   const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes]         = useState("");
   const [saving, setSaving]       = useState(false);
@@ -42,14 +42,14 @@ const CardsPage = () => {
 
   const reset = () => {
     setDriverId("none"); setVehicleId("none"); setCardType(""); setPaymentMethod("kartica");
-    setGross(""); setPctStr(""); setNotes("");
+    setGross(""); setProvizija(""); setNotes("");
     setDate(new Date().toISOString().split("T")[0]);
   };
 
-  const pct       = Number(pctStr) || 0;
-  const grossNum  = Number(gross) || 0;
-  const deductNum = grossNum * (pct / 100);
-  const netNum    = grossNum - deductNum;
+  const grossNum     = Number(gross)     || 0;
+  const provizijaNum = Number(provizija) || 0;
+  const netNum       = grossNum - provizijaNum;
+  const pctCalc      = grossNum > 0 ? (provizijaNum / grossNum) * 100 : 0;
 
   const unpaid = reports.filter(r => !r.paid_out);
   const paid   = reports.filter(r => r.paid_out);
@@ -60,14 +60,14 @@ const CardsPage = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Kartice</h1>
-          <p className="text-muted-foreground text-sm">POS izvodi — ručno unesi procenat odbitka</p>
+          <p className="text-muted-foreground text-sm">POS izvodi — unesi iznos transakcije i proviziju</p>
         </div>
         <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) reset(); }}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" />Novi izvod</Button></DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Unesi kartica izvod</DialogTitle>
-              <DialogDescription>Ručno unesi bruto iznos i procenat odbitka</DialogDescription>
+              <DialogDescription>Unesi iznos transakcije i proviziju — za uplatu se računa automatski</DialogDescription>
             </DialogHeader>
             <div className="grid gap-3 py-3">
               <div className="grid gap-1.5">
@@ -99,12 +99,12 @@ const CardsPage = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">
-                  <Label>Bruto iznos (RSD)</Label>
+                  <Label>Iznos transakcije (RSD)</Label>
                   <Input type="number" placeholder="3000" value={gross} onChange={e => setGross(e.target.value)} />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label>Procenat odbitka</Label>
-                  <Input type="number" step="0.1" placeholder="1.5" value={pctStr} onChange={e => setPctStr(e.target.value)} />
+                  <Label>Provizija (RSD)</Label>
+                  <Input type="number" step="0.01" placeholder="45" value={provizija} onChange={e => setProvizija(e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -122,11 +122,11 @@ const CardsPage = () => {
                   <Input placeholder="Visa, Master..." value={cardType} onChange={e => setCardType(e.target.value)} />
                 </div>
               </div>
-              {grossNum > 0 && pct > 0 && (
+              {grossNum > 0 && (
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
-                  <div><p className="text-xs text-muted-foreground">Bruto</p><p className="font-semibold">{fmt(grossNum)}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Odbitak</p><p className="font-semibold text-red-500">−{fmt(deductNum)}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Neto vozaču</p><p className="font-bold text-green-600">{fmt(netNum)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Iznos transakcije</p><p className="font-semibold">{fmt(grossNum)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Provizija ({pctCalc.toFixed(2)}%)</p><p className="font-semibold text-red-500">−{fmt(provizijaNum)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Za uplatu</p><p className="font-bold text-green-600">{fmt(netNum)}</p></div>
                 </div>
               )}
               <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
@@ -135,7 +135,7 @@ const CardsPage = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>
               <Button
-                disabled={driverId === "none" || !gross || !pctStr || saving}
+                disabled={driverId === "none" || !gross || !provizija || saving}
                 onClick={async () => {
                   setSaving(true);
                   try {
@@ -146,8 +146,8 @@ const CardsPage = () => {
                       vehicle_id: vehicleId === "none" ? null : vehicleId,
                       card_type: combinedType,
                       gross_amount: grossNum,
-                      deduction_pct: pct,
-                      deduction_amount: deductNum,
+                      deduction_pct: Number(pctCalc.toFixed(2)),
+                      deduction_amount: provizijaNum,
                       net_amount: netNum,
                       date,
                       period_from: date,
@@ -228,9 +228,9 @@ const CardsPage = () => {
                         <TableHead>Vozač</TableHead>
                         <TableHead>Kartica</TableHead>
                         <TableHead>Period</TableHead>
-                        <TableHead>Bruto</TableHead>
-                        <TableHead>Odbitak</TableHead>
-                        <TableHead>Neto</TableHead>
+                        <TableHead>Iznos</TableHead>
+                        <TableHead>Provizija</TableHead>
+                        <TableHead>Za uplatu</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
