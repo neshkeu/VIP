@@ -13,7 +13,7 @@ import { ChevronLeft, ChevronRight, Check, X, Loader2, Pencil, Trash2, Car, Plus
 import { toast } from "sonner";
 
 const DAYS_SR   = ["Ned","Pon","Uto","Sri","Čet","Pet","Sub"];
-const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Juni","Juli","Avgust","Septembar","Oktobar","Novembar","Decembar"];
+const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
 
 function getDaysInMonth(y:number,m:number){return new Date(y,m,0).getDate();}
 function getDateStr(y:number,m:number,d:number){return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
