@@ -38,6 +38,10 @@ interface AppContextType {
   markYandexPaid: (id: string, by: string) => Promise<void>;
   addCard: (r: Omit<CardReport, "id" | "created_at">) => Promise<CardReport>;
   markCardPaid: (id: string, by: string) => Promise<void>;
+  updateCard: (id: string, updates: Partial<CardReport>) => Promise<CardReport>;
+  deleteCard: (id: string) => Promise<void>;
+  updateYandex: (id: string, updates: Partial<YandexReport>) => Promise<YandexReport>;
+  deleteYandex: (id: string) => Promise<void>;
   logout: () => Promise<void>;
   refetchDrivers: () => Promise<void>;
   refetchAll: () => Promise<void>;
@@ -156,6 +160,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) { toast.error("Greška: " + error.message); throw error; }
     setCards(prev => prev.map(r => r.id === id ? data : r));
   }
+  async function updateCard(id: string, updates: Partial<CardReport>) {
+    const { data, error } = await supabase.from("card_reports")
+      .update(updates).eq("id", id).select().single();
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setCards(prev => prev.map(r => r.id === id ? data : r));
+    return data;
+  }
+  async function deleteCard(id: string) {
+    const { error } = await supabase.from("card_reports").delete().eq("id", id);
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setCards(prev => prev.filter(r => r.id !== id));
+  }
+  async function updateYandex(id: string, updates: Partial<YandexReport>) {
+    const { data, error } = await supabase.from("yandex_reports")
+      .update(updates).eq("id", id).select().single();
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setYandex(prev => prev.map(r => r.id === id ? data : r));
+    return data;
+  }
+  async function deleteYandex(id: string) {
+    const { error } = await supabase.from("yandex_reports").delete().eq("id", id);
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setYandex(prev => prev.filter(r => r.id !== id));
+  }
   async function logout() {
     localStorage.removeItem("vip_pin_ok");
     localStorage.removeItem("vip_pin_ok_at");
@@ -171,7 +199,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       drivers, vehicles, yandexReports, cardReports, displayName, user, loading, error,
       addDriver, updateDriver, addVehicle, updateVehicle,
-      addYandex, markYandexPaid, addCard, markCardPaid,
+      addYandex, markYandexPaid, updateYandex, deleteYandex,
+      addCard, markCardPaid, updateCard, deleteCard,
       logout, refetchDrivers, refetchAll: loadAll,
     }}>
       {children}
