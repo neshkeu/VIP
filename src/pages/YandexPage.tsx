@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, CheckCircle2, Clock } from "lucide-react";
+import { Plus, Loader2, CheckCircle2, Clock, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { TrendingUp } from "lucide-react";
@@ -18,7 +18,7 @@ function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const YandexPage = () => {
   const { drivers, vehicles, displayName } = useApp();
-  const { yandexReports: reports, addYandex: addReport, markYandexPaid: markPaidOut, loading } = useApp();
+  const { yandexReports: reports, addYandex: addReport, markYandexPaid: markPaidOut, updateYandex, deleteYandex, loading } = useApp();
   
   
 
@@ -37,6 +37,15 @@ const YandexPage = () => {
   const [payId, setPayId]   = useState("");
   const [payBy, setPayBy]   = useState("");
   const [payOpen, setPayOpen] = useState(false);
+
+  // Edit state
+  const [editId, setEditId]           = useState<string | null>(null);
+  const [editGross, setEditGross]     = useState("");
+  const [editPct, setEditPct]         = useState("");
+  const [editFrom, setEditFrom]       = useState("");
+  const [editTo, setEditTo]           = useState("");
+  const [editDate, setEditDate]       = useState("");
+  const [editNotes, setEditNotes]     = useState("");
 
   const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setExtraPct("0"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
 
@@ -134,6 +143,73 @@ const YandexPage = () => {
         <StatCard title="Isplaćenih" value={paid.length} icon={CheckCircle2}/>
       </div>
 
+      {/* Edit dialog */}
+      <Dialog open={editId !== null} onOpenChange={v => { if (!v) setEditId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Uredi Yandex izvod</DialogTitle>
+            <DialogDescription>Ispravi bruto iznos, procenat, period ili datum</DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const g = Number(editGross) || 0;
+            const p = Number(editPct) || 0;
+            const d = g * (p / 100);
+            const n = g - d;
+            return (
+              <>
+                <div className="grid gap-3 py-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5"><Label>Bruto iznos (RSD)</Label><Input type="number" value={editGross} onChange={e => setEditGross(e.target.value)} /></div>
+                    <div className="grid gap-1.5"><Label>Odbitak %</Label><Input type="number" step="0.1" value={editPct} onChange={e => setEditPct(e.target.value)} /></div>
+                  </div>
+                  {g > 0 && (
+                    <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
+                      <div><p className="text-xs text-muted-foreground">Bruto</p><p className="font-semibold">{fmt(g)}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Odbitak</p><p className="font-semibold text-red-500">−{fmt(d)}</p></div>
+                      <div><p className="text-xs text-muted-foreground">Neto</p><p className="font-bold text-green-600">{fmt(n)}</p></div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5"><Label>Period od</Label><Input type="date" value={editFrom} onChange={e => setEditFrom(e.target.value)} /></div>
+                    <div className="grid gap-1.5"><Label>Period do</Label><Input type="date" value={editTo} onChange={e => setEditTo(e.target.value)} /></div>
+                  </div>
+                  <div className="grid gap-1.5"><Label>Datum izvoda</Label><Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} /></div>
+                  <div className="grid gap-1.5"><Label>Napomena</Label><Input value={editNotes} onChange={e => setEditNotes(e.target.value)} /></div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditId(null)}>Otkazi</Button>
+                  <Button
+                    disabled={!editGross || !editPct || saving}
+                    onClick={async () => {
+                      if (!editId) return;
+                      setSaving(true);
+                      try {
+                        await updateYandex(editId, {
+                          gross_amount: g,
+                          deduction_pct: p,
+                          deduction_amount: d,
+                          net_amount: n,
+                          period_from: editFrom,
+                          period_to: editTo,
+                          date: editDate,
+                          notes: editNotes,
+                        });
+                        toast.success("Yandex izvod ažuriran");
+                        setEditId(null);
+                      } catch (e) {
+                        toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+                      } finally { setSaving(false); }
+                    }}
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
       {/* Isplati dialog */}
       <Dialog open={payOpen} onOpenChange={setPayOpen}>
         <DialogContent className="max-w-sm">
@@ -163,10 +239,10 @@ const YandexPage = () => {
             <TabsContent key={tab} value={tab} className="mt-4">
               <Card><CardContent className="p-0">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Vozač</TableHead><TableHead>Period</TableHead><TableHead>Bruto</TableHead><TableHead>Odbitak</TableHead><TableHead>Neto vozaču</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Vozač</TableHead><TableHead>Period</TableHead><TableHead>Bruto</TableHead><TableHead>Odbitak</TableHead><TableHead>Neto vozaču</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Akcije</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {(tab === "unpaid" ? unpaid : paid).length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
                     ) : (tab === "unpaid" ? unpaid : paid).map(r => {
                       const driver = drivers.find(d => d.id === r.driver_id);
                       return (
@@ -181,6 +257,34 @@ const YandexPage = () => {
                               ? <Badge variant="default" className="text-xs">Isplaćeno — {r.received_by}</Badge>
                               : <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPayId(r.id); setPayOpen(true); }}>Isplati</Button>
                             }
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi"
+                                onClick={() => {
+                                  setEditId(r.id);
+                                  setEditGross(String(r.gross_amount));
+                                  setEditPct(String(r.deduction_pct));
+                                  setEditFrom(r.period_from);
+                                  setEditTo(r.period_to);
+                                  setEditDate(r.date);
+                                  setEditNotes(r.notes ?? "");
+                                }}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši"
+                                onClick={async () => {
+                                  if (!confirm(`Obrisati Yandex izvod od ${fmt(r.gross_amount)} (${r.period_from} — ${r.period_to})?`)) return;
+                                  try {
+                                    await deleteYandex(r.id);
+                                    toast.success("Obrisano");
+                                  } catch (e) {
+                                    toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+                                  }
+                                }}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
