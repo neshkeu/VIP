@@ -176,8 +176,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [pdvEnabled, setPdvEnabled]     = useState(false);
   const [pdvAmt, setPdvAmt]             = useState("");
 
-  // DUGOVANJA
+  // DUGOVANJA (izbor + delimični iznos)
   const [selectedDebts, setSelectedDebts] = useState<Set<string>>(new Set());
+  const [debtAmounts, setDebtAmounts]     = useState<Record<string,string>>({});
 
   // YANDEX + KARTICE — parcijalni iznosi
   const [selectedYandex, setSelectedYandex] = useState<Set<string>>(new Set());
@@ -225,8 +226,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const pdvMax     = Math.min(Number(pdvAmt) || 0, fuelPdv.remaining);
   const pdvTotal   = pdvEnabled ? pdvMax : 0;
   const openDebts  = debts.filter(d => d.driver_id === driverId && d.status !== "closed");
+  const totalOpenDebt = openDebts.reduce((s,d) => s + (d.amount - d.paid_amount), 0);
   const selectedDebtsList = openDebts.filter(d => selectedDebts.has(d.id));
-  const debtTotal  = selectedDebtsList.reduce((s,d) => s + (d.amount - d.paid_amount), 0);
+  const debtTotal  = selectedDebtsList.reduce((s,d) => {
+    const remaining = d.amount - d.paid_amount;
+    const custom = Number(debtAmounts[d.id]);
+    return s + (custom > 0 && custom <= remaining ? custom : remaining);
+  }, 0);
   const driverYandex = yandexReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const yandexSelected = driverYandex.filter(r => selectedYandex.has(r.id));
   const yandexNet  = yandexSelected.reduce((s,r) => s + (Number(yandexAmounts[r.id]) || r.net_amount), 0);
@@ -329,7 +335,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setDriverId("none"); setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
     setClanEnabled(false); setClanFrom(today); setClanTo(today); setClanAmt("");
     setPosEnabled(false); setPosAmt(""); setPdvEnabled(false); setPdvAmt("");
-    setSelectedDebts(new Set()); setSelectedYandex(new Set()); setYandexAmounts({});
+    setSelectedDebts(new Set()); setDebtAmounts({});
+    setSelectedYandex(new Set()); setYandexAmounts({});
     setSelectedCards(new Set()); setCardAmounts({});
     setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("400");
     setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
@@ -373,14 +380,24 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await supabase.from("fuel_pdv_entries").insert({ driver_id:driverId, date:saveDate, amount:pdvTotal, evidenced_by:currentUser });
       }
 
-      // 5. Dugovanja — uplata
+      // 5. Dugovanja — uplata (delimično ili u celosti)
       for (const debt of selectedDebtsList) {
-        const amt = debt.amount - debt.paid_amount;
+        const remaining = debt.amount - debt.paid_amount;
+        const custom = Number(debtAmounts[debt.id]);
+        const amt = custom > 0 && custom <= remaining ? custom : remaining;
         await onAdd({ type:"dugovanje", direction:"in", driver_id:driverId, amount:amt, date:saveDate,
-          description:`Uplata dugovanja: ${debt.description}`, received_by:currentUser, notes:"" });
+          description:`Uplata dugovanja: ${debt.description}${amt < remaining ? " (delimično)" : ""}`,
+          received_by:currentUser, notes:"" });
+        const newPaid = debt.paid_amount + amt;
+        const newStatus = newPaid >= debt.amount ? "closed" : "partial";
         await supabase.from("driver_debts").update({
-          paid_amount: debt.amount, status: "closed"
+          paid_amount: newPaid, status: newStatus
         }).eq("id", debt.id);
+        // Evidencija u debt_payments (za istoriju)
+        await supabase.from("debt_payments").insert({
+          debt_id: debt.id, driver_id: driverId,
+          amount: amt, date: saveDate, received_by: currentUser, notes: "Uplata kroz kasu",
+        });
       }
 
       // 6. Vaučeri (naši)
@@ -491,6 +508,19 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   {lastClanDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednja članarina:</span><strong>{fmtDate(lastClanDate)}</strong></div>}
                 </div>
 
+                {/* Banner ako vozac ima otvorena dugovanja */}
+                {totalOpenDebt > 0 && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-600" />
+                      <span className="font-semibold text-red-700">
+                        Otvorena dugovanja: {openDebts.length} ({fmt(totalOpenDebt)})
+                      </span>
+                    </div>
+                    <span className="text-red-600 text-[10px]">↓ vidi ispod</span>
+                  </div>
+                )}
+
                 <p className="text-xs font-bold text-green-700 uppercase">Duguje vozač</p>
 
                 {/* RENTA */}
@@ -585,25 +615,47 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 {/* DUGOVANJA */}
                 {openDebts.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase">Otvorena dugovanja</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Otvorena dugovanja</p>
+                      <span className="text-xs font-bold text-red-600">Ukupno: {fmt(totalOpenDebt)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground italic">Ček znači "plaća sad" — iznos se skida iz prihoda vozača</p>
                     {openDebts.map(debt => {
                       const remaining = debt.amount - debt.paid_amount;
                       const sel = selectedDebts.has(debt.id);
+                      const custom = Number(debtAmounts[debt.id]);
+                      const willPay = sel ? (custom > 0 && custom <= remaining ? custom : remaining) : 0;
                       return (
-                        <div key={debt.id} className={`rounded-lg border p-3 cursor-pointer transition-colors ${sel?"border-green-300 bg-green-50/30":"border-gray-200 hover:bg-muted/20"}`}
-                          onClick={() => setSelectedDebts(prev => { const n=new Set(prev); sel?n.delete(debt.id):n.add(debt.id); return n; })}>
-                          <div className="flex items-center justify-between">
+                        <div key={debt.id} className={`rounded-lg border p-3 space-y-2 transition-colors ${sel?"border-green-300 bg-green-50/30":"border-gray-200 hover:bg-muted/20"}`}>
+                          <div className="flex items-center justify-between cursor-pointer"
+                            onClick={() => setSelectedDebts(prev => { const n=new Set(prev); sel?n.delete(debt.id):n.add(debt.id); return n; })}>
                             <div className="flex items-center gap-2">
                               <div className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${sel?"bg-green-500 border-green-500":"border-gray-300"}`}>
                                 {sel && <Check className="h-3 w-3 text-white"/>}
                               </div>
                               <div>
                                 <p className="text-sm font-medium">{debt.description}</p>
-                                <p className="text-xs text-muted-foreground">{debt.type} · {debt.date}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {debt.type} · {debt.date}
+                                  {debt.paid_amount > 0 && ` · plaćeno ${fmt(debt.paid_amount)} od ${fmt(debt.amount)}`}
+                                </p>
                               </div>
                             </div>
                             <span className="text-sm font-bold text-red-500">{fmt(remaining)}</span>
                           </div>
+                          {sel && (
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs whitespace-nowrap">Uplati iznos:</Label>
+                              <Input type="number" className="h-7 text-sm"
+                                placeholder={String(remaining)}
+                                value={debtAmounts[debt.id] ?? ""}
+                                onChange={e => setDebtAmounts(prev => ({...prev, [debt.id]: e.target.value}))} />
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">max {fmt(remaining)}</span>
+                            </div>
+                          )}
+                          {sel && willPay > 0 && willPay < remaining && (
+                            <p className="text-xs text-amber-600">↳ Ostaje {fmt(remaining - willPay)} — dug ostaje otvoren</p>
+                          )}
                         </div>
                       );
                     })}
