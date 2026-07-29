@@ -30,7 +30,7 @@ function ThreePercentDialog() {
   const [ym, setYm]       = useState(`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`);
   const [driverId, setDriverId] = useState("");
   const [amount, setAmount]     = useState("");
-  const [items, setItems] = useState<{ driverId: string; name: string; amount: number }[]>([]);
+  const [savedCount, setSavedCount] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const ops = drivers
@@ -39,96 +39,62 @@ function ThreePercentDialog() {
 
   const [y, m] = ym.split("-").map(Number);
   const monthLabel = `${MONTHS_SR[m-1]} ${y}`;
-  const total = items.reduce((s, i) => s + i.amount, 0);
 
   const options: ComboOption[] = ops.map(d => {
     const veh = vehicles.find(v => v.id === d.vehicle_id);
     return { value: d.id, label: d.full_name, sublabel: veh ? veh.taxi_license_number : "bez vozila" };
   });
 
-  const addItem = () => {
+  const save = async () => {
     if (!driverId || !(Number(amount) > 0)) { toast.error("Izaberi vozača i iznos"); return; }
-    const d = drivers.find(x => x.id === driverId);
-    if (!d) return;
-    setItems(prev => {
-      const without = prev.filter(i => i.driverId !== driverId);
-      return [...without, { driverId, name: d.full_name, amount: Number(amount) }];
-    });
-    setDriverId(""); setAmount("");
-  };
-
-  const saveAll = async () => {
-    if (items.length === 0) { toast.error("Dodaj bar jednu stavku"); return; }
     setSaving(true);
     try {
-      const dateStr = `${ym}-01`;
-      for (const it of items) {
-        await supabase.from("driver_debts").insert({
-          driver_id: it.driverId, type: "ostalo", amount: it.amount,
-          paid_amount: 0, status: "open", date: dateStr,
-          description: `3% provizija — ${monthLabel}`, created_by: displayName,
-        });
-      }
-      toast.success(`Uneseno ${items.length} stavki (dugovanja) za ${monthLabel}`);
-      setItems([]); setOpen(false);
+      await supabase.from("driver_debts").insert({
+        driver_id: driverId, type: "ostalo", amount: Number(amount),
+        paid_amount: 0, status: "open", date: `${ym}-01`,
+        description: `3% provizija — ${monthLabel}`, created_by: displayName,
+      });
+      const name = drivers.find(d => d.id === driverId)?.full_name ?? "";
+      toast.success(`${name}: ${fmt(Number(amount))} — dodato`);
+      setSavedCount(c => c + 1);
+      setDriverId(""); setAmount("");
     } catch (e) {
       toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
     } finally { setSaving(false); }
   };
 
   return (
-    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setItems([]); setDriverId(""); setAmount(""); } }}>
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setDriverId(""); setAmount(""); setSavedCount(0); } }}>
       <DialogTrigger asChild>
         <Button variant="outline"><Percent className="mr-2 h-4 w-4" />3% odbitak</Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>3% odbitak — prethodni mjesec</DialogTitle>
-          <DialogDescription>Kucaj ime, unesi iznos, dodaj. Kreira se kao dugovanje (skida se u kasi).</DialogDescription>
+          <DialogDescription>Kucaj ime, unesi iznos, sačuvaj. Kreira se kao dugovanje (skida se u kasi).</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 py-2">
           <div className="grid gap-1.5">
             <Label>Mjesec</Label>
             <Input type="month" value={ym} onChange={e => setYm(e.target.value)} />
           </div>
-          <div className="grid grid-cols-[1fr,auto] gap-2 items-end">
-            <div className="grid gap-1.5">
-              <Label>Vozač</Label>
-              <DriverCombobox value={driverId} onChange={setDriverId} options={options} />
-            </div>
+          <div className="grid gap-1.5">
+            <Label>Vozač</Label>
+            <DriverCombobox value={driverId} onChange={setDriverId} options={options} />
           </div>
-          <div className="grid grid-cols-[1fr,auto] gap-2 items-end">
-            <div className="grid gap-1.5">
-              <Label>3% odbitak (RSD)</Label>
-              <Input type="number" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") addItem(); }} />
-            </div>
-            <Button variant="secondary" onClick={addItem}><Plus className="h-4 w-4" /></Button>
+          <div className="grid gap-1.5">
+            <Label>3% odbitak (RSD)</Label>
+            <Input type="number" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && driverId && Number(amount) > 0) save(); }} />
           </div>
-
-          {items.length > 0 && (
-            <div className="rounded-lg border divide-y max-h-52 overflow-y-auto">
-              {items.map(it => (
-                <div key={it.driverId} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span>{it.name}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-red-600">{fmt(it.amount)}</span>
-                    <button onClick={() => setItems(prev => prev.filter(i => i.driverId !== it.driverId))}
-                      className="text-muted-foreground hover:text-destructive">✕</button>
-                  </div>
-                </div>
-              ))}
-              <div className="flex items-center justify-between px-3 py-2 text-sm font-bold bg-muted/30">
-                <span>Ukupno ({items.length})</span>
-                <span>{fmt(total)}</span>
-              </div>
-            </div>
+          {savedCount > 0 && (
+            <p className="text-xs text-green-600">✓ Uneseno {savedCount} {savedCount === 1 ? "stavka" : "stavke"} za {monthLabel}</p>
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Otkazi</Button>
-          <Button disabled={items.length === 0 || saving} onClick={saveAll}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj ({items.length})
+          <Button variant="outline" onClick={() => setOpen(false)}>Zatvori</Button>
+          <Button disabled={!driverId || !(Number(amount) > 0) || saving} onClick={save}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj
           </Button>
         </DialogFooter>
       </DialogContent>
