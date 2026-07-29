@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut, AlertCircle, Smartphone, CreditCard } from "lucide-react";
+import { LayoutDashboard, Users, Car, CalendarDays, Banknote, LogOut, AlertCircle, Smartphone, CreditCard, Gavel } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
@@ -16,6 +16,7 @@ const navItems = [
   { title: "Kalendar",        url: "/calendar",  icon: CalendarDays    },
   { title: "Kasa",            url: "/cash",      icon: Banknote        },
   { title: "Dugovanja",       url: "/debts",     icon: AlertCircle     },
+  { title: "Kazne",           url: "/kazne",     icon: Gavel           },
   { title: "Yandex",          url: "/yandex",    icon: Smartphone      },
   { title: "Kartice",         url: "/cards",     icon: CreditCard      },
 ];
