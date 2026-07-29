@@ -9,6 +9,7 @@ import { useFuelPdv } from "@/hooks/useFuelPdv";
 import { useObracuni } from "@/hooks/useObracuni";
 import { ClanarinaKalendar } from "@/components/ClanarinaKalendar";
 import { useDebts } from "@/hooks/useDebts";
+import { useDeposits } from "@/hooks/useDeposits";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,14 +60,14 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   renta:"Renta",clanarina:"Članarina",pos_naknada:"POS naknada",
   komunalni:"Komunalni",doprinosi:"Doprinosi",dugovanje:"Uplata dugovanja",
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
-  kartica:"Kartica isplata",vaučer:"Vaučer",pdv_gorivo:"PDV gorivo",
-  likvidnost_out:"Podizanje gotovine",
+  kartica:"Kartica isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
+  likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
   komunalni:"text-green-700",doprinosi:"text-green-700",dugovanje:"text-blue-700",
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",
-  vaučer:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",
+  vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
@@ -194,12 +195,17 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [vaucerMbCount, setVaucerMbCount]       = useState("");
   const [vaucerMbAmt, setVaucerMbAmt]           = useState("200");
 
+  // DEPOZIT — prebaci deo isplate na račun vozača
+  const [depositEnabled, setDepositEnabled]     = useState(false);
+  const [depositAmt, setDepositAmt]             = useState("");
+
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
   const membership = useMembership(driverId);
   const fuelPdv = useFuelPdv(driverId, curMonthStr);
   const { debts } = useDebts();
   const { saveObracun } = useObracuni();
+  const { balanceFor, addTransaction: addDeposit } = useDeposits();
 
   // Posljednji izmireni dan
   const [lastPaidDate, setLastPaidDate] = useState<string|null>(null);
@@ -342,6 +348,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setSelectedCards(new Set()); setCardAmounts({});
     setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("400");
     setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
+    setDepositEnabled(false); setDepositAmt("");
   };
 
   const reset = () => {
@@ -443,6 +450,19 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
           description:`Kartica ${r.card_type.toUpperCase()} ${r.date}`, received_by:currentUser, notes:"" });
         await cardPaidOut(r.id, currentUser);
         stavke.push({ type:"kartica", direction:"out", amount:amt, description:`Kartica ${r.card_type.toUpperCase()} ${r.date}` });
+      }
+
+      // 8b. Depozit — prebaci deo isplate na račun vozača
+      if (depositEnabled && Number(depositAmt) > 0) {
+        const dep = Number(depositAmt);
+        await addDeposit({
+          driver_id: driverId, amount: dep, date: saveDate,
+          description: `Uplata na depozit iz obračuna ${saveDate}`, created_by: currentUser,
+        });
+        // Novac ostaje u firmi (vozač ne uzima keš) → dolazi kao ulaz u kasu
+        await onAdd({ type:"depozit", direction:"in", driver_id:driverId, amount:dep, date:saveDate,
+          description:"Prebačeno na depozit vozača", received_by:currentUser, notes:"" });
+        stavke.push({ type:"depozit", direction:"in", amount:dep, description:"Prebačeno na depozit vozača" });
       }
 
       // 9. Sačuvaj obračun
@@ -781,6 +801,27 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       })}
                     </div>
                 }
+
+                {/* DEPOZIT — prebaci deo isplate na račun vozača */}
+                <Separator/>
+                <div className="rounded-lg border p-3 space-y-2 bg-blue-50/30 border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={depositEnabled} onChange={() => setDepositEnabled(!depositEnabled)} className="h-4 w-4"/>
+                      <span className="text-sm font-medium">💰 Prebaci na depozit vozača</span>
+                    </label>
+                    <span className="text-xs text-muted-foreground">Stanje: <strong>{fmt(balanceFor(driverId))}</strong></span>
+                  </div>
+                  {depositEnabled && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Iznos za depozit (RSD)</Label>
+                      <Input type="number" placeholder={saldo > 0 ? String(saldo) : "0"} value={depositAmt} onChange={e=>setDepositAmt(e.target.value)}/>
+                      <p className="text-xs text-muted-foreground">
+                        Umesto keša — ostaje na računu vozača (npr. za novo vozilo). Novo stanje: {fmt(balanceFor(driverId) + (Number(depositAmt) || 0))}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* DESNA KOLONA — kalendar + sumarno */}
@@ -910,6 +951,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                         <span>{saldo >= 0 ? "Vozač prima:" : "Vozač duguje:"}</span>
                         <span className={saldo >= 0 ? "text-orange-600" : "text-green-600"}>{fmt(Math.abs(saldo))}</span>
                       </div>
+                      {depositEnabled && Number(depositAmt) > 0 && (
+                        <>
+                          <div className="flex justify-between text-sm text-blue-700">
+                            <span>💰 Na depozit:</span><span>−{fmt(Number(depositAmt))}</span>
+                          </div>
+                          <div className="flex justify-between text-sm font-bold">
+                            <span>U keš vozaču:</span><span className="text-orange-600">{fmt(Math.max(saldo - Number(depositAmt), 0))}</span>
+                          </div>
+                        </>
+                      )}
                       {saldo < 0 && (
                         <p className="text-xs text-amber-600">Ostatak {fmt(Math.abs(saldo))} se prenosi kao dugovanje</p>
                       )}
