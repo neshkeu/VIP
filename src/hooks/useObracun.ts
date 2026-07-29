@@ -10,16 +10,33 @@ export interface ObracunDay {
   total_out: number;
 }
 
+export interface StornoLog {
+  id: string;
+  date: string;
+  reason: string;
+  storno_by: string;
+  created_at: string;
+}
+
 export function useObracun(month: string) {
   const [obracunDays, setObracunDays] = useState<ObracunDay[]>([]);
+  const [stornoLogs, setStornoLogs]   = useState<StornoLog[]>([]);
 
   useEffect(() => { fetchObracun(); }, [month]);
 
   async function fetchObracun() {
     const from = `${month}-01`;
     const to   = `${month}-31`;
-    const { data } = await supabase.from("obracun_days").select("*").gte("date", from).lte("date", to);
+    const [{ data }, { data: logs }] = await Promise.all([
+      supabase.from("obracun_days").select("*").gte("date", from).lte("date", to),
+      supabase.from("obracun_storno_log").select("*").gte("date", from).lte("date", to).order("created_at", { ascending: false }),
+    ]);
     setObracunDays(data ?? []);
+    setStornoLogs(logs ?? []);
+  }
+
+  function getStornoLogs(date: string) {
+    return stornoLogs.filter(l => l.date === date);
   }
 
   async function closeObracun(date: string, confirmedBy: string, totalIn: number, totalOut: number) {
@@ -34,7 +51,14 @@ export function useObracun(month: string) {
     });
   }
 
-  async function stornoObracun(date: string) {
+  async function stornoObracun(date: string, reason: string, by: string) {
+    // 1) Zapiši u audit log (ostaje trag zauvek)
+    const { data: log, error: le } = await supabase
+      .from("obracun_storno_log")
+      .insert({ date, reason, storno_by: by })
+      .select().single();
+    if (le) throw le;
+    // 2) Otvori obračun ponovo
     const { data, error } = await supabase
       .from("obracun_days")
       .update({ confirmed: false, confirmed_by: "" })
@@ -42,6 +66,7 @@ export function useObracun(month: string) {
       .select().single();
     if (error) throw error;
     setObracunDays(prev => prev.map(o => o.date === date ? data : o));
+    setStornoLogs(prev => [log, ...prev]);
   }
 
   function isConfirmed(date: string) {
@@ -52,5 +77,5 @@ export function useObracun(month: string) {
     return obracunDays.find(o => o.date === date)?.confirmed_by ?? "";
   }
 
-  return { obracunDays, closeObracun, stornoObracun, isConfirmed, getConfirmedBy, refetch: fetchObracun };
+  return { obracunDays, stornoLogs, closeObracun, stornoObracun, getStornoLogs, isConfirmed, getConfirmedBy, refetch: fetchObracun };
 }

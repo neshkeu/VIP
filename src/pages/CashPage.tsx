@@ -958,11 +958,37 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const { drivers, displayName } = useApp();
   const [expanded,setExpanded]=useState(false);
   const [closeOpen,setCloseOpen]=useState(false);
+  const [stornoOpen,setStornoOpen]=useState(false);
+  const [stornoReason,setStornoReason]=useState("");
   const [saving,setSaving]=useState(false);
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
   const confirmedBy=obracun?.getConfirmedBy(date)??"";
+  const stornoLogs =obracun?.getStornoLogs(date)??[];
+
+  const printObracun=()=>{
+    const w=window.open("","_blank","width=420,height=640");
+    if(!w)return;
+    const rows=entries.map(e=>{
+      const driver=e.driver_id?drivers.find((d:any)=>d.id===e.driver_id):null;
+      return `<tr><td>${CASH_TYPE_LABELS[e.type]??e.type}</td><td>${driver?.full_name??""}</td><td style="text-align:right;color:${e.direction==="in"?"#080":"#c00"}">${e.direction==="in"?"+":"−"}${fmt(e.amount)}</td></tr>`;
+    }).join("");
+    w.document.write(`
+      <html><head><title>Obračun ${fmtDate(date)}</title>
+      <style>body{font-family:monospace;font-size:12px;padding:16px;max-width:400px}h2{text-align:center;margin:0}
+      .sub{text-align:center;color:#666;font-size:11px;margin-bottom:10px}table{width:100%;border-collapse:collapse}
+      td{padding:2px 0;border-bottom:1px solid #eee}th{text-align:left;border-bottom:1px solid #000;font-size:11px}
+      .total{font-weight:bold;border-top:2px solid #000}.foot{text-align:center;color:#999;font-size:10px;margin-top:14px}</style>
+      </head><body><h2>VIP PLUS TAXI</h2><div class="sub">Obračun · ${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
+      <table><tr><th>Tip</th><th>Vozač</th><th style="text-align:right">Iznos</th></tr>${rows}
+      <tr class="total"><td colspan="2">Ulaz</td><td style="text-align:right;color:#080">+${fmt(total_in)}</td></tr>
+      <tr class="total"><td colspan="2">Izlaz</td><td style="text-align:right;color:#c00">−${fmt(total_out)}</td></tr>
+      <tr class="total"><td colspan="2">BILANS</td><td style="text-align:right">${fmt(total_in-total_out)}</td></tr></table>
+      <div class="foot">${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}</div>
+      </body></html>`);
+    w.document.close();w.print();
+  };
   return (
     <motion.div layout initial={{opacity:0,y:6}} animate={{opacity:1,y:0}}>
       <Card className={`overflow-hidden border-l-4 ${confirmed?"border-l-green-500":"border-l-amber-400"}`}>
@@ -1027,15 +1053,54 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                     </Dialog>
                   </div>
                 ):(
-                  <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center justify-between w-full gap-2 flex-wrap">
                     <div className="flex items-center gap-2 text-sm text-green-700"><CheckCircle2 className="h-4 w-4"/><span>Zatvoren — <strong>{confirmedBy}</strong></span></div>
-                    <Button size="sm" variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" disabled={saving}
-                      onClick={async()=>{setSaving(true);try{await obracun.stornoObracun(date);toast.success("Obračun storniran");}catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}}}>
-                      <RotateCcw className="mr-1.5 h-3.5 w-3.5"/>Storniraj
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={printObracun}>🖨 Štampaj</Button>
+                      <Dialog open={stornoOpen} onOpenChange={v=>{setStornoOpen(v);if(!v)setStornoReason("");}}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                            <RotateCcw className="mr-1.5 h-3.5 w-3.5"/>Storniraj
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-sm">
+                          <DialogHeader>
+                            <DialogTitle>Storniraj obračun</DialogTitle>
+                            <DialogDescription>{fmtDate(date)} — obavezno unesi razlog (ostaje trag)</DialogDescription>
+                          </DialogHeader>
+                          <div className="py-3 space-y-2">
+                            <Label className="text-xs">Razlog storniranja *</Label>
+                            <Input value={stornoReason} onChange={e=>setStornoReason(e.target.value)} placeholder="npr. pogrešan iznos rente"/>
+                            <p className="text-xs text-muted-foreground">Storno radi: <strong>{displayName}</strong></p>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={()=>setStornoOpen(false)}>Otkazi</Button>
+                            <Button variant="destructive" disabled={!stornoReason||saving} onClick={async()=>{
+                              setSaving(true);
+                              try{await obracun.stornoObracun(date,stornoReason,displayName);toast.success("Obračun storniran — možeš da menjaš unose");setStornoOpen(false);setStornoReason("");}
+                              catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
+                            }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Storniraj</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
                   </div>
                 )}
               </div>
+              {stornoLogs.length>0&&(
+                <div className="px-4 pb-3 space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase">Istorija storna</p>
+                  {stornoLogs.map(l=>(
+                    <div key={l.id} className="flex items-center gap-2 text-xs text-muted-foreground rounded bg-amber-50 border border-amber-200 px-2 py-1">
+                      <RotateCcw className="h-3 w-3 text-amber-600 flex-shrink-0"/>
+                      <span className="font-medium">{l.storno_by}</span>
+                      <span>·</span>
+                      <span>{l.reason}</span>
+                      <span className="ml-auto opacity-60">{new Date(l.created_at).toLocaleString("sr-RS")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
