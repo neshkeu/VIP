@@ -67,8 +67,8 @@ function ThreePercentDialog() {
         notes: `3% odbitak — ${monthLabel}`,
       });
       toast.success(`${d?.full_name ?? ""}: ${fmt(amt)} — dodato u Yandex`);
-      setSavedCount(c => c + 1);
-      setDriverId(""); setAmount("");
+      setDriverId(""); setAmount(""); setSavedCount(0);
+      setOpen(false);
     } catch (e) {
       toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
     } finally { setSaving(false); }
