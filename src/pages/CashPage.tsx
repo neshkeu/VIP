@@ -24,6 +24,7 @@ import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, Ch
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
+import { DriverCombobox } from "@/components/DriverCombobox";
 
 const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
 const DAYS_SR   = ["Ned","Pon","Uto","Sri","Čet","Pet","Sub"];
@@ -331,8 +332,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const saldioDana    = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
   const saldioSedmica = driver && saldo > 0 && weeklyAmt > 0 ? Math.floor(saldo / weeklyAmt) : 0;
 
-  const reset = () => {
-    setDriverId("none"); setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
+  // Resetuj sva polja unosa (bez driverId) — poziva se pri promeni vozača
+  const resetEntryFields = () => {
+    setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
     setClanEnabled(false); setClanFrom(today); setClanTo(today); setClanAmt("");
     setPosEnabled(false); setPosAmt(""); setPdvEnabled(false); setPdvAmt("");
     setSelectedDebts(new Set()); setDebtAmounts({});
@@ -340,6 +342,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setSelectedCards(new Set()); setCardAmounts({});
     setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("400");
     setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
+  };
+
+  const reset = () => {
+    setDriverId("none");
+    resetEntryFields();
+  };
+
+  const changeDriver = (v: string) => {
+    setDriverId(v);
+    resetEntryFields();
   };
 
   const handleSave = async () => {
@@ -476,22 +488,21 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
           {/* Vozač */}
           <div className="grid gap-2">
             <Label>Vozač</Label>
-            <Select value={driverId} onValueChange={v => { setDriverId(v); }}>
-              <SelectTrigger><SelectValue/></SelectTrigger>
-              <SelectContent>
-                {drivers
-                  .filter(d => d.role === "operativni" && d.status === "active")
-                  .sort((a, b) => a.full_name.localeCompare(b.full_name))
-                  .map(d => {
-                    const veh = vehicles.find(v => v.id === d.vehicle_id);
-                    return (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.full_name}{veh ? ` — ${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : " — bez vozila"}
-                      </SelectItem>
-                    );
-                  })}
-              </SelectContent>
-            </Select>
+            <DriverCombobox
+              value={driverId === "none" ? "" : driverId}
+              onChange={changeDriver}
+              options={drivers
+                .filter(d => d.role === "operativni" && d.status === "active")
+                .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                .map(d => {
+                  const veh = vehicles.find(v => v.id === d.vehicle_id);
+                  return {
+                    value: d.id,
+                    label: d.full_name,
+                    sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : "bez vozila",
+                  };
+                })}
+            />
           </div>
 
           {driver && (
