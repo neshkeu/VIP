@@ -806,14 +806,20 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
                 {/* SUMARNO — račun po stavkama */}
                 {(() => {
+                  // Razdvoj yandex: 3% odbici (negativni) idu u DUGUJE, redovni u PRIMA
+                  const yandexOdbici = yandexSelected.filter(r => r.notes?.startsWith("3% odbitak"));
+                  const yandexRedovni = yandexSelected.filter(r => !r.notes?.startsWith("3% odbitak"));
+                  const yandexRedovniNet = yandexRedovni.reduce((s, r) => s + (Number(yandexAmounts[r.id]) || r.net_amount), 0);
+
                   const dugujeStavke = [
                     rentaEnabled && rentaTotal > 0 && { label: `Renta (${workDays} dana × ${fmt(driver.daily_rate)})`, amount: rentaTotal },
                     clanEnabled && clanTotal > 0 && { label: `Članarina (${clanWeeks} sed.)`, amount: clanTotal },
                     posEnabled && posTotal > 0 && { label: "POS naknada", amount: posTotal },
                     debtTotal > 0 && { label: "Uplata dugovanja", amount: debtTotal },
+                    ...yandexOdbici.map(r => ({ label: r.notes || "3% odbitak", amount: Math.abs(Number(yandexAmounts[r.id]) || r.net_amount) })),
                   ].filter(Boolean) as { label: string; amount: number }[];
                   const primaStavke = [
-                    yandexNet > 0 && { label: "Yandex", amount: yandexNet },
+                    yandexRedovniNet > 0 && { label: "Yandex", amount: yandexRedovniNet },
                     cardNet > 0 && { label: "Kartice / POS", amount: cardNet },
                     pdvEnabled && pdvTotal > 0 && { label: "PDV goriva", amount: pdvTotal },
                     vaucerEnabled && vaucerTotal > 0 && { label: `Vaučeri (naši) ${vaucerCount}×${fmt(Number(vaucerAmt))}`, amount: vaucerTotal },
