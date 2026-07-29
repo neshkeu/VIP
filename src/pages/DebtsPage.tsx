@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Plus, ChevronDown, ChevronUp, Loader2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { DriverCombobox } from "@/components/DriverCombobox";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
@@ -187,17 +188,14 @@ const DebtsPage = () => {
             <DialogHeader><DialogTitle>Evidentiraj dugovanje</DialogTitle><DialogDescription>Unesi podatke o dugu vozača</DialogDescription></DialogHeader>
             <div className="grid gap-3 py-3">
               <div className="grid gap-1.5"><Label>Vozač</Label>
-                <Select value={driverId} onValueChange={setDriverId}>
-                  <SelectTrigger><SelectValue/></SelectTrigger>
-                  <SelectContent>
-                    {drivers
-                      .filter(d => d.role === "operativni" && d.status === "active")
-                      .sort((a, b) => a.full_name.localeCompare(b.full_name))
-                      .map(d => (
-                        <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <DriverCombobox
+                  value={driverId === "none" ? "" : driverId}
+                  onChange={setDriverId}
+                  options={drivers
+                    .filter(d => d.role === "operativni" && d.status === "active")
+                    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                    .map(d => ({ value: d.id, label: d.full_name }))}
+                />
               </div>
               <div className="grid gap-1.5"><Label>Tip</Label>
                 <Select value={type} onValueChange={setType}>

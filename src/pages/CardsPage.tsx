@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Loader2, CheckCircle2, Clock, CreditCard, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
+import { DriverCombobox } from "@/components/DriverCombobox";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -79,30 +80,22 @@ const CardsPage = () => {
             <div className="grid gap-3 py-3">
               <div className="grid gap-1.5">
                 <Label>Vozač</Label>
-                <Select
-                  value={driverId}
-                  onValueChange={v => {
+                <DriverCombobox
+                  value={driverId === "none" ? "" : driverId}
+                  onChange={v => {
                     setDriverId(v);
                     const d = drivers.find(dr => dr.id === v);
                     const veh = vehicles.find(ve => ve.id === d?.vehicle_id);
                     if (veh) setVehicleId(veh.id);
                   }}
-                >
-                  <SelectTrigger><SelectValue placeholder="Izaberi" /></SelectTrigger>
-                  <SelectContent>
-                    {drivers
-                      .filter(d => d.role === "operativni" && d.status === "active")
-                      .sort((a, b) => a.full_name.localeCompare(b.full_name))
-                      .map(d => {
-                        const veh = vehicles.find(v => v.id === d.vehicle_id);
-                        return (
-                          <SelectItem key={d.id} value={d.id}>
-                            {d.full_name}{veh ? ` — ${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : " — bez vozila"}
-                          </SelectItem>
-                        );
-                      })}
-                  </SelectContent>
-                </Select>
+                  options={drivers
+                    .filter(d => d.role === "operativni" && d.status === "active")
+                    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                    .map(d => {
+                      const veh = vehicles.find(v => v.id === d.vehicle_id);
+                      return { value: d.id, label: d.full_name, sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : "bez vozila" };
+                    })}
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">

@@ -10,22 +10,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, CheckCircle2, Clock, Pencil, Trash2 } from "lucide-react";
+import { Plus, Loader2, CheckCircle2, Clock, Pencil, Trash2, Percent } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { TrendingUp } from "lucide-react";
+import { DriverCombobox, type ComboOption } from "@/components/DriverCombobox";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
 
-// ─── 3% ZA PRETHODNI MJESEC ─────────────────────────────────
-function ThreePercentTab() {
+// ─── 3% ODBITAK PRETHODNI MJESEC (dialog) ──────────────────
+function ThreePercentDialog() {
   const { drivers, vehicles, displayName } = useApp();
   const today = new Date();
   const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const [ym, setYm] = useState(`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`);
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
+
+  const [open, setOpen]   = useState(false);
+  const [ym, setYm]       = useState(`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`);
+  const [driverId, setDriverId] = useState("");
+  const [amount, setAmount]     = useState("");
+  const [items, setItems] = useState<{ driverId: string; name: string; amount: number }[]>([]);
   const [saving, setSaving] = useState(false);
 
   const ops = drivers
@@ -34,88 +39,100 @@ function ThreePercentTab() {
 
   const [y, m] = ym.split("-").map(Number);
   const monthLabel = `${MONTHS_SR[m-1]} ${y}`;
-  const entered = ops.filter(d => Number(amounts[d.id]) > 0);
-  const total = entered.reduce((s, d) => s + Number(amounts[d.id]), 0);
+  const total = items.reduce((s, i) => s + i.amount, 0);
+
+  const options: ComboOption[] = ops.map(d => {
+    const veh = vehicles.find(v => v.id === d.vehicle_id);
+    return { value: d.id, label: d.full_name, sublabel: veh ? veh.taxi_license_number : "bez vozila" };
+  });
+
+  const addItem = () => {
+    if (!driverId || !(Number(amount) > 0)) { toast.error("Izaberi vozača i iznos"); return; }
+    const d = drivers.find(x => x.id === driverId);
+    if (!d) return;
+    setItems(prev => {
+      const without = prev.filter(i => i.driverId !== driverId);
+      return [...without, { driverId, name: d.full_name, amount: Number(amount) }];
+    });
+    setDriverId(""); setAmount("");
+  };
 
   const saveAll = async () => {
-    if (entered.length === 0) { toast.error("Unesi bar jedan iznos"); return; }
+    if (items.length === 0) { toast.error("Dodaj bar jednu stavku"); return; }
     setSaving(true);
     try {
       const dateStr = `${ym}-01`;
-      for (const d of entered) {
-        const amt = Number(amounts[d.id]);
-        // 3% provizija je ODBITAK — vozač to duguje (skida se u kasi)
+      for (const it of items) {
         await supabase.from("driver_debts").insert({
-          driver_id: d.id,
-          type: "ostalo",
-          amount: amt,
-          paid_amount: 0,
-          status: "open",
-          date: dateStr,
-          description: `3% provizija — ${monthLabel}`,
-          created_by: displayName,
+          driver_id: it.driverId, type: "ostalo", amount: it.amount,
+          paid_amount: 0, status: "open", date: dateStr,
+          description: `3% provizija — ${monthLabel}`, created_by: displayName,
         });
       }
-      toast.success(`Uneseno ${entered.length} stavki (dugovanja) za ${monthLabel}`);
-      setAmounts({});
+      toast.success(`Uneseno ${items.length} stavki (dugovanja) za ${monthLabel}`);
+      setItems([]); setOpen(false);
     } catch (e) {
       toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
     } finally { setSaving(false); }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-medium">3% za prethodni mjesec</p>
-          <p className="text-xs text-muted-foreground">Unesi 3% odbitak po vozačima — kreira se kao dugovanje (skida se u kasi)</p>
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setItems([]); setDriverId(""); setAmount(""); } }}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Percent className="mr-2 h-4 w-4" />3% odbitak</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>3% odbitak — prethodni mjesec</DialogTitle>
+          <DialogDescription>Kucaj ime, unesi iznos, dodaj. Kreira se kao dugovanje (skida se u kasi).</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid gap-1.5">
+            <Label>Mjesec</Label>
+            <Input type="month" value={ym} onChange={e => setYm(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-[1fr,auto] gap-2 items-end">
+            <div className="grid gap-1.5">
+              <Label>Vozač</Label>
+              <DriverCombobox value={driverId} onChange={setDriverId} options={options} />
+            </div>
+          </div>
+          <div className="grid grid-cols-[1fr,auto] gap-2 items-end">
+            <div className="grid gap-1.5">
+              <Label>3% odbitak (RSD)</Label>
+              <Input type="number" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") addItem(); }} />
+            </div>
+            <Button variant="secondary" onClick={addItem}><Plus className="h-4 w-4" /></Button>
+          </div>
+
+          {items.length > 0 && (
+            <div className="rounded-lg border divide-y max-h-52 overflow-y-auto">
+              {items.map(it => (
+                <div key={it.driverId} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span>{it.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-red-600">{fmt(it.amount)}</span>
+                    <button onClick={() => setItems(prev => prev.filter(i => i.driverId !== it.driverId))}
+                      className="text-muted-foreground hover:text-destructive">✕</button>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center justify-between px-3 py-2 text-sm font-bold bg-muted/30">
+                <span>Ukupno ({items.length})</span>
+                <span>{fmt(total)}</span>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <Input type="month" value={ym} onChange={e => setYm(e.target.value)} className="w-40 h-9" />
-          <Button disabled={entered.length === 0 || saving} onClick={saveAll}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj ({entered.length})
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Otkazi</Button>
+          <Button disabled={items.length === 0 || saving} onClick={saveAll}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj ({items.length})
           </Button>
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0 overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Vozač</TableHead>
-                <TableHead>Vozilo</TableHead>
-                <TableHead className="w-48">3% odbitak (RSD)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ops.map(d => {
-                const veh = vehicles.find(v => v.id === d.vehicle_id);
-                return (
-                  <TableRow key={d.id}>
-                    <TableCell className="font-medium text-sm">{d.full_name}</TableCell>
-                    <TableCell>
-                      {veh ? <Badge variant="secondary" className="font-mono text-xs">{veh.taxi_license_number}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number" placeholder="0" className="h-8 max-w-[160px]"
-                        value={amounts[d.id] ?? ""}
-                        onChange={e => setAmounts(prev => ({ ...prev, [d.id]: e.target.value }))} />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {total > 0 && (
-        <div className="flex justify-end text-sm">
-          <span className="font-semibold">Ukupno: {fmt(total)} · {entered.length} vozača</span>
-        </div>
-      )}
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -162,26 +179,13 @@ const YandexPage = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-display font-bold">Yandex</h1>
-        <p className="text-muted-foreground text-sm">Sedmični izvodi i 3% za prethodni mjesec</p>
-      </div>
-
-      <Tabs defaultValue="izvodi">
-        <TabsList>
-          <TabsTrigger value="izvodi">Yandex izvodi</TabsTrigger>
-          <TabsTrigger value="tri">3% za prethodni mjesec</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="tri" className="mt-4">
-          <ThreePercentTab />
-        </TabsContent>
-
-        <TabsContent value="izvodi" className="mt-4 space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm text-muted-foreground">Sedmični izvodi — odbitak 10%</p>
+          <h1 className="text-2xl font-display font-bold">Yandex</h1>
+          <p className="text-muted-foreground text-sm">Sedmični izvodi — odbitak 10%</p>
         </div>
+        <div className="flex items-center gap-2">
+          <ThreePercentDialog />
         <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) reset(); }}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi izvod</Button></DialogTrigger>
           <DialogContent className="max-w-md">
@@ -189,22 +193,17 @@ const YandexPage = () => {
             <div className="grid gap-3 py-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5"><Label>Vozač</Label>
-                  <Select value={driverId} onValueChange={v => { setDriverId(v); const d = drivers.find(dr => dr.id === v); const veh = vehicles.find(ve => ve.id === d?.vehicle_id); if (veh) setVehicleId(veh.id); }}>
-                    <SelectTrigger><SelectValue placeholder="Izaberi"/></SelectTrigger>
-                    <SelectContent>
-                      {drivers
-                        .filter(d => d.role === "operativni" && d.status === "active")
-                        .sort((a, b) => a.full_name.localeCompare(b.full_name))
-                        .map(d => {
-                          const veh = vehicles.find(v => v.id === d.vehicle_id);
-                          return (
-                            <SelectItem key={d.id} value={d.id}>
-                              {d.full_name}{veh ? ` — ${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : " — bez vozila"}
-                            </SelectItem>
-                          );
-                        })}
-                    </SelectContent>
-                  </Select>
+                  <DriverCombobox
+                    value={driverId === "none" ? "" : driverId}
+                    onChange={v => { setDriverId(v); const d = drivers.find(dr => dr.id === v); const veh = vehicles.find(ve => ve.id === d?.vehicle_id); if (veh) setVehicleId(veh.id); }}
+                    options={drivers
+                      .filter(d => d.role === "operativni" && d.status === "active")
+                      .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                      .map(d => {
+                        const veh = vehicles.find(v => v.id === d.vehicle_id);
+                        return { value: d.id, label: d.full_name, sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : "bez vozila" };
+                      })}
+                  />
                 </div>
                 <div className="grid gap-1.5"><Label>Vozilo</Label>
                   <Select value={vehicleId} onValueChange={setVehicleId}>
@@ -247,6 +246,7 @@ const YandexPage = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -408,8 +408,6 @@ const YandexPage = () => {
           ))}
         </Tabs>
       )}
-        </TabsContent>
-      </Tabs>
     </div>
   );
 };

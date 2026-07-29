@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Loader2, Search, Trash2, Gavel, Car, User } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
+import { DriverCombobox } from "@/components/DriverCombobox";
 import { motion } from "framer-motion";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
@@ -92,22 +93,17 @@ const KaznePage = () => {
                 </div>
                 <div className="grid gap-1.5">
                   <Label>Vozač koji je vozio</Label>
-                  <Select value={driverId} onValueChange={setDriverId}>
-                    <SelectTrigger><SelectValue placeholder="Izaberi vozača" /></SelectTrigger>
-                    <SelectContent>
-                      {drivers
-                        .filter(d => d.role === "operativni")
-                        .sort((a, b) => a.full_name.localeCompare(b.full_name))
-                        .map(d => {
-                          const veh = vehicles.find(v => v.id === d.vehicle_id);
-                          return (
-                            <SelectItem key={d.id} value={d.id}>
-                              {d.full_name}{veh ? ` (${veh.taxi_license_number})` : ""}
-                            </SelectItem>
-                          );
-                        })}
-                    </SelectContent>
-                  </Select>
+                  <DriverCombobox
+                    value={driverId === "none" ? "" : driverId}
+                    onChange={setDriverId}
+                    options={drivers
+                      .filter(d => d.role === "operativni")
+                      .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                      .map(d => {
+                        const veh = vehicles.find(v => v.id === d.vehicle_id);
+                        return { value: d.id, label: d.full_name, sublabel: veh ? veh.taxi_license_number : undefined };
+                      })}
+                  />
                   <p className="text-xs text-muted-foreground">Predložen trenutni vozač vozila — promeni ako je na datum prekršaja vozio neko drugi</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
