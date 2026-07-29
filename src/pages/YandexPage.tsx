@@ -16,6 +16,111 @@ import { TrendingUp } from "lucide-react";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
+const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
+
+// ─── 3% ZA PRETHODNI MJESEC ─────────────────────────────────
+function ThreePercentTab() {
+  const { drivers, vehicles, addYandex } = useApp();
+  const today = new Date();
+  const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const [ym, setYm] = useState(`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const ops = drivers
+    .filter(d => d.role === "operativni" && d.status === "active")
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  const [y, m] = ym.split("-").map(Number);
+  const monthLabel = `${MONTHS_SR[m-1]} ${y}`;
+  const entered = ops.filter(d => Number(amounts[d.id]) > 0);
+  const total = entered.reduce((s, d) => s + Number(amounts[d.id]), 0);
+
+  const saveAll = async () => {
+    if (entered.length === 0) { toast.error("Unesi bar jedan iznos"); return; }
+    setSaving(true);
+    try {
+      const dateStr = `${ym}-01`;
+      for (const d of entered) {
+        const amt = Number(amounts[d.id]);
+        await addYandex({
+          driver_id: d.id,
+          vehicle_id: d.vehicle_id ?? null,
+          gross_amount: amt,
+          deduction_pct: 0,
+          deduction_amount: 0,
+          net_amount: amt,
+          date: dateStr,
+          period_from: dateStr,
+          period_to: dateStr,
+          paid_out: false,
+          received_by: "",
+          notes: `3% provizija — ${monthLabel}`,
+        });
+      }
+      toast.success(`Uneseno ${entered.length} stavki za ${monthLabel}`);
+      setAmounts({});
+    } catch (e) {
+      toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium">3% za prethodni mjesec</p>
+          <p className="text-xs text-muted-foreground">Unesi provizije po vozačima za izabrani mjesec</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input type="month" value={ym} onChange={e => setYm(e.target.value)} className="w-40 h-9" />
+          <Button disabled={entered.length === 0 || saving} onClick={saveAll}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj ({entered.length})
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Vozač</TableHead>
+                <TableHead>Vozilo</TableHead>
+                <TableHead className="w-48">Provizija (RSD)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {ops.map(d => {
+                const veh = vehicles.find(v => v.id === d.vehicle_id);
+                return (
+                  <TableRow key={d.id}>
+                    <TableCell className="font-medium text-sm">{d.full_name}</TableCell>
+                    <TableCell>
+                      {veh ? <Badge variant="secondary" className="font-mono text-xs">{veh.taxi_license_number}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <Input type="number" placeholder="0" className="h-8 max-w-[160px]"
+                        value={amounts[d.id] ?? ""}
+                        onChange={e => setAmounts(prev => ({ ...prev, [d.id]: e.target.value }))} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {total > 0 && (
+        <div className="flex justify-end text-sm">
+          <span className="font-semibold">Ukupno: {fmt(total)} · {entered.length} vozača</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const YandexPage = () => {
   const { drivers, vehicles, displayName } = useApp();
   const { yandexReports: reports, addYandex: addReport, markYandexPaid: markPaidOut, updateYandex, deleteYandex, loading } = useApp();
@@ -59,10 +164,25 @@ const YandexPage = () => {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-display font-bold">Yandex</h1>
+        <p className="text-muted-foreground text-sm">Sedmični izvodi i 3% za prethodni mjesec</p>
+      </div>
+
+      <Tabs defaultValue="izvodi">
+        <TabsList>
+          <TabsTrigger value="izvodi">Yandex izvodi</TabsTrigger>
+          <TabsTrigger value="tri">3% za prethodni mjesec</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tri" className="mt-4">
+          <ThreePercentTab />
+        </TabsContent>
+
+        <TabsContent value="izvodi" className="mt-4 space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold">Yandex izvodi</h1>
-          <p className="text-muted-foreground text-sm">Sedmični izvodi — odbitak 10%</p>
+          <p className="text-sm text-muted-foreground">Sedmični izvodi — odbitak 10%</p>
         </div>
         <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) reset(); }}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novi izvod</Button></DialogTrigger>
@@ -290,6 +410,8 @@ const YandexPage = () => {
           ))}
         </Tabs>
       )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
