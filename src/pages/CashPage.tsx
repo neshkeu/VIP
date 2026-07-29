@@ -721,11 +721,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                                   {sel && <Check className="h-3 w-3 text-white"/>}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-medium">{r.period_from} — {r.period_to}</p>
-                                  <p className="text-xs text-muted-foreground">Bruto: {fmt(r.gross_amount)} · Neto: {fmt(r.net_amount)}</p>
+                                  <p className="text-sm font-medium">{r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {r.notes?.startsWith("3% odbitak")
+                                      ? `Odbitak: ${fmt(r.deduction_amount)}`
+                                      : `Bruto: ${fmt(r.gross_amount)} · Neto: ${fmt(r.net_amount)}`}
+                                  </p>
                                 </div>
                               </div>
-                              <span className="text-sm font-bold text-orange-600">{fmt(Number(yandexAmounts[r.id]) || r.net_amount)}</span>
+                              <span className={`text-sm font-bold ${r.net_amount < 0 ? "text-red-500" : "text-orange-600"}`}>{fmt(Number(yandexAmounts[r.id]) || r.net_amount)}</span>
                             </div>
                             {sel && (
                               <div className="flex items-center gap-2">
