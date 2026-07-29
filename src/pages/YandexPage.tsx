@@ -1,4 +1,5 @@
 import { useApp } from "@/context/AppContext";
+import { supabase } from "@/lib/supabase";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust",
 
 // ─── 3% ZA PRETHODNI MJESEC ─────────────────────────────────
 function ThreePercentTab() {
-  const { drivers, vehicles, addYandex } = useApp();
+  const { drivers, vehicles, displayName } = useApp();
   const today = new Date();
   const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const [ym, setYm] = useState(`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,"0")}`);
@@ -43,22 +44,19 @@ function ThreePercentTab() {
       const dateStr = `${ym}-01`;
       for (const d of entered) {
         const amt = Number(amounts[d.id]);
-        await addYandex({
+        // 3% provizija je ODBITAK — vozač to duguje (skida se u kasi)
+        await supabase.from("driver_debts").insert({
           driver_id: d.id,
-          vehicle_id: d.vehicle_id ?? null,
-          gross_amount: amt,
-          deduction_pct: 0,
-          deduction_amount: 0,
-          net_amount: amt,
+          type: "ostalo",
+          amount: amt,
+          paid_amount: 0,
+          status: "open",
           date: dateStr,
-          period_from: dateStr,
-          period_to: dateStr,
-          paid_out: false,
-          received_by: "",
-          notes: `3% provizija — ${monthLabel}`,
+          description: `3% provizija — ${monthLabel}`,
+          created_by: displayName,
         });
       }
-      toast.success(`Uneseno ${entered.length} stavki za ${monthLabel}`);
+      toast.success(`Uneseno ${entered.length} stavki (dugovanja) za ${monthLabel}`);
       setAmounts({});
     } catch (e) {
       toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
@@ -70,7 +68,7 @@ function ThreePercentTab() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium">3% za prethodni mjesec</p>
-          <p className="text-xs text-muted-foreground">Unesi provizije po vozačima za izabrani mjesec</p>
+          <p className="text-xs text-muted-foreground">Unesi 3% odbitak po vozačima — kreira se kao dugovanje (skida se u kasi)</p>
         </div>
         <div className="flex items-center gap-2">
           <Input type="month" value={ym} onChange={e => setYm(e.target.value)} className="w-40 h-9" />
@@ -87,7 +85,7 @@ function ThreePercentTab() {
               <TableRow>
                 <TableHead>Vozač</TableHead>
                 <TableHead>Vozilo</TableHead>
-                <TableHead className="w-48">Provizija (RSD)</TableHead>
+                <TableHead className="w-48">3% odbitak (RSD)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
