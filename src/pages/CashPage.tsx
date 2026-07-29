@@ -61,13 +61,13 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   komunalni:"Komunalni",doprinosi:"Doprinosi",dugovanje:"Uplata dugovanja",
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
   kartica:"Kartica isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
-  likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",
+  likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasu",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
   komunalni:"text-green-700",doprinosi:"text-green-700",dugovanje:"text-blue-700",
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",
-  vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",
+  vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
@@ -1240,6 +1240,60 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   );
 }
 
+// ─── DEPOZIT U KASU (likvidnost) ─────────────────────────────
+function KasaDepozitDialog({ onAdd, currentUser, defaultDate }: {
+  onAdd: (e: any) => Promise<void>; currentUser: string; defaultDate: string;
+}) {
+  const [open, setOpen]     = useState(false);
+  const [amount, setAmount] = useState("");
+  const [date, setDate]     = useState(defaultDate);
+  const [note, setNote]     = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (open) setDate(defaultDate); }, [open, defaultDate]);
+
+  const save = async () => {
+    if (!(Number(amount) > 0)) { toast.error("Unesi iznos"); return; }
+    setSaving(true);
+    try {
+      await onAdd({
+        type: "kasa_depozit", direction: "in", driver_id: null,
+        amount: Number(amount), date,
+        description: note || "Depozit u kasu", received_by: currentUser, notes: "",
+      });
+      toast.success(`Depozit u kasu: ${fmt(Number(amount))}`);
+      setOpen(false); setAmount(""); setNote("");
+    } catch (e: any) {
+      toast.error("Greška: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Plus className="mr-2 h-4 w-4"/>Depozit u kasu</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Depozit u kasu</DialogTitle>
+          <DialogDescription>Ubaci novac u kasu (likvidnost) za isplate</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" placeholder="0" value={amount} onChange={e=>setAmount(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") save(); }}/></div>
+          <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label>Napomena</Label><Input placeholder="npr. iz sefa, od gazde..." value={note} onChange={e=>setNote(e.target.value)}/></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
+          <Button disabled={!(Number(amount)>0)||saving} onClick={save}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── GLAVNA STRANICA ─────────────────────────────────────────
 const CashPage = () => {
   const today = new Date();
@@ -1266,6 +1320,7 @@ const CashPage = () => {
         <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
+          <KasaDepozitDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
           <ObracunVozacDialog onAdd={addEntry} currentUser={displayName} obracunDate={currentObracun}/>
         </div>
       </div>
