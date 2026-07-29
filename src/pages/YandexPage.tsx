@@ -27,7 +27,6 @@ const YandexPage = () => {
   const [vehicleId, setVehicleId]   = useState("none");
   const [gross, setGross]           = useState("");
   const [deductPct, setDeductPct]   = useState("10");
-  const [extraPct, setExtraPct]     = useState("0");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo]     = useState("");
   const [date, setDate]             = useState(new Date().toISOString().split("T")[0]);
@@ -47,10 +46,10 @@ const YandexPage = () => {
   const [editDate, setEditDate]       = useState("");
   const [editNotes, setEditNotes]     = useState("");
 
-  const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setExtraPct("0"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
+  const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
 
   const grossNum    = Number(gross) || 0;
-  const totalPct    = Number(deductPct) + Number(extraPct);
+  const totalPct    = Number(deductPct);
   const deductNum   = grossNum * (totalPct / 100);
   const netNum      = grossNum - deductNum;
 
@@ -99,11 +98,6 @@ const YandexPage = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5"><Label>Bruto iznos (RSD)</Label><Input type="number" placeholder="5000" value={gross} onChange={e => setGross(e.target.value)}/></div>
                 <div className="grid gap-1.5"><Label>Odbitak %</Label><Input type="number" placeholder="10" value={deductPct} onChange={e => setDeductPct(e.target.value)}/></div>
-                <div className="grid gap-1.5">
-                  <Label>Dodatni odbitak % <span className="text-xs text-muted-foreground">(opciono, npr. 3%)</span></Label>
-                  <Input type="number" placeholder="0" value={extraPct} onChange={e => setExtraPct(e.target.value)}/>
-                  {Number(extraPct) > 0 && <p className="text-xs text-muted-foreground">Ukupni odbitak: {totalPct}%</p>}
-                </div>
               </div>
               {grossNum > 0 && (
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
