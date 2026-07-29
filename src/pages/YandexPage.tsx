@@ -1,5 +1,4 @@
 import { useApp } from "@/context/AppContext";
-import { supabase } from "@/lib/supabase";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,7 @@ const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust",
 
 // ─── 3% ODBITAK PRETHODNI MJESEC (dialog) ──────────────────
 function ThreePercentDialog() {
-  const { drivers, vehicles, displayName } = useApp();
+  const { drivers, vehicles, displayName, addYandex } = useApp();
   const today = new Date();
   const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
 
@@ -49,13 +48,25 @@ function ThreePercentDialog() {
     if (!driverId || !(Number(amount) > 0)) { toast.error("Izaberi vozača i iznos"); return; }
     setSaving(true);
     try {
-      await supabase.from("driver_debts").insert({
-        driver_id: driverId, type: "ostalo", amount: Number(amount),
-        paid_amount: 0, status: "open", date: `${ym}-01`,
-        description: `3% provizija — ${monthLabel}`, created_by: displayName,
+      const d = drivers.find(x => x.id === driverId);
+      const amt = Number(amount);
+      const dateStr = `${ym}-01`;
+      // Vodi se kroz Yandex evidenciju (ne kroz dugovanja)
+      await addYandex({
+        driver_id: driverId,
+        vehicle_id: d?.vehicle_id ?? null,
+        gross_amount: amt,
+        deduction_pct: 0,
+        deduction_amount: 0,
+        net_amount: amt,
+        date: dateStr,
+        period_from: dateStr,
+        period_to: dateStr,
+        paid_out: false,
+        received_by: "",
+        notes: `3% odbitak — ${monthLabel}`,
       });
-      const name = drivers.find(d => d.id === driverId)?.full_name ?? "";
-      toast.success(`${name}: ${fmt(Number(amount))} — dodato`);
+      toast.success(`${d?.full_name ?? ""}: ${fmt(amt)} — dodato u Yandex`);
       setSavedCount(c => c + 1);
       setDriverId(""); setAmount("");
     } catch (e) {
@@ -71,7 +82,7 @@ function ThreePercentDialog() {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>3% odbitak — prethodni mjesec</DialogTitle>
-          <DialogDescription>Kucaj ime, unesi iznos, sačuvaj. Kreira se kao dugovanje (skida se u kasi).</DialogDescription>
+          <DialogDescription>Kucaj ime, unesi iznos, sačuvaj. Vodi se kroz Yandex evidenciju (lista ispod).</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 py-2">
           <div className="grid gap-1.5">
@@ -325,8 +336,15 @@ const YandexPage = () => {
                       const driver = drivers.find(d => d.id === r.driver_id);
                       return (
                         <TableRow key={r.id}>
-                          <TableCell className="font-medium">{driver?.full_name ?? "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{r.period_from} — {r.period_to}</TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {driver?.full_name ?? "—"}
+                              {r.notes?.startsWith("3% odbitak") && <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">3%</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}
+                          </TableCell>
                           <TableCell>{fmt(r.gross_amount)}</TableCell>
                           <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
                           <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>
