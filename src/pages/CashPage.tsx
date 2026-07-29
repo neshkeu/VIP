@@ -1049,9 +1049,10 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   }, {});
   const driverGroups = Object.entries(byDriver).map(([driverId, ents])=>{
     const driver = driverId!=="none" ? drivers.find((d:any)=>d.id===driverId) : null;
-    const inSum  = (ents as any[]).filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
-    const outSum = (ents as any[]).filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
-    return { driverId, driver, ents: ents as any[], inSum, outSum, saldo: inSum-outSum };
+    const inSum  = (ents as any[]).filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);   // vozač PLAĆA firmi (renta, članarina...)
+    const outSum = (ents as any[]).filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);  // vozač PRIMA (yandex, kartice...)
+    // Iz perspektive vozača: prima ono što izlazi iz kase, plaća ono što ulazi
+    return { driverId, driver, ents: ents as any[], inSum, outSum, saldo: outSum-inSum };
   }).sort((a,b)=>(a.driver?.full_name??"—").localeCompare(b.driver?.full_name??"—"));
 
   const printDriver=(g:typeof driverGroups[0])=>{
@@ -1066,7 +1067,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
       </head><body><h2>VIP PLUS TAXI</h2><div class="sub">${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
       <div><strong>${g.driver?.full_name??"—"}</strong></div>
       <table><tr><th>Tip</th><th>Opis</th><th style="text-align:right">Iznos</th></tr>${rows}
-      <tr class="total"><td colspan="2">${g.saldo>=0?"Vozač prima":"Vozač duguje"}</td><td style="text-align:right">${fmt(Math.abs(g.saldo))}</td></tr></table>
+      <tr class="total"><td colspan="2">${g.saldo>=0?"Vozač prima":"Vozač plaća"}</td><td style="text-align:right">${fmt(Math.abs(g.saldo))}</td></tr></table>
       <div class="foot">${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}</div>
       </body></html>`);
     w.document.close();w.print();
@@ -1132,8 +1133,8 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                             <Badge variant="secondary" className="text-xs">{g.ents.length} {g.ents.length===1?"stavka":"stavke"}</Badge>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className={`font-bold text-sm ${g.saldo>=0?"text-green-600":"text-red-500"}`}>
-                              {g.saldo>=0?"prima ":"duguje "}{fmt(Math.abs(g.saldo))}
+                            <span className={`font-bold text-sm ${g.saldo>=0?"text-orange-600":"text-green-600"}`}>
+                              {g.saldo>=0?"prima ":"plaća "}{fmt(Math.abs(g.saldo))}
                             </span>
                             <button onClick={(e)=>{e.stopPropagation();printDriver(g);}}
                               className="text-xs text-primary hover:underline" title="Štampaj za ovog vozača">🖨</button>
