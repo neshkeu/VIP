@@ -51,14 +51,14 @@ function ThreePercentDialog() {
       const d = drivers.find(x => x.id === driverId);
       const amt = Number(amount);
       const dateStr = `${ym}-01`;
-      // Vodi se kroz Yandex evidenciju (ne kroz dugovanja)
+      // Vodi se kroz Yandex evidenciju kao ODBITAK — vozač to duguje (neto negativno)
       await addYandex({
         driver_id: driverId,
         vehicle_id: d?.vehicle_id ?? null,
-        gross_amount: amt,
+        gross_amount: 0,
         deduction_pct: 0,
-        deduction_amount: 0,
-        net_amount: amt,
+        deduction_amount: amt,
+        net_amount: -amt,
         date: dateStr,
         period_from: dateStr,
         period_to: dateStr,
@@ -152,7 +152,8 @@ const YandexPage = () => {
 
   const unpaid = reports.filter(r => !r.paid_out);
   const paid   = reports.filter(r => r.paid_out);
-  const totalNet = unpaid.reduce((s,r) => s + r.net_amount, 0);
+  // Za isplatu = samo pozitivni neto (pravi izvodi, ne 3% odbici)
+  const totalNet = unpaid.reduce((s,r) => s + Math.max(r.net_amount, 0), 0);
 
   return (
     <div className="space-y-6">
@@ -345,9 +346,19 @@ const YandexPage = () => {
                           <TableCell className="text-xs text-muted-foreground">
                             {r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}
                           </TableCell>
-                          <TableCell>{fmt(r.gross_amount)}</TableCell>
-                          <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
-                          <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>
+                          {r.notes?.startsWith("3% odbitak") ? (
+                            <>
+                              <TableCell className="text-muted-foreground">—</TableCell>
+                              <TableCell className="font-bold text-red-500">−{fmt(r.deduction_amount)}</TableCell>
+                              <TableCell className="font-bold text-red-500">duguje {fmt(Math.abs(r.net_amount))}</TableCell>
+                            </>
+                          ) : (
+                            <>
+                              <TableCell>{fmt(r.gross_amount)}</TableCell>
+                              <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
+                              <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>
+                            </>
+                          )}
                           <TableCell>
                             {r.paid_out
                               ? <Badge variant="default" className="text-xs">Isplaćeno — {r.received_by}</Badge>
