@@ -961,11 +961,44 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const [stornoOpen,setStornoOpen]=useState(false);
   const [stornoReason,setStornoReason]=useState("");
   const [saving,setSaving]=useState(false);
+  const [openDriverId,setOpenDriverId]=useState<string|null>(null);
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
   const confirmedBy=obracun?.getConfirmedBy(date)??"";
   const stornoLogs =obracun?.getStornoLogs(date)??[];
+
+  // Grupiši unose po vozaču
+  const byDriver = entries.reduce((acc:Record<string,any[]>, e:any)=>{
+    const key = e.driver_id ?? "none";
+    if(!acc[key]) acc[key]=[];
+    acc[key].push(e);
+    return acc;
+  }, {});
+  const driverGroups = Object.entries(byDriver).map(([driverId, ents])=>{
+    const driver = driverId!=="none" ? drivers.find((d:any)=>d.id===driverId) : null;
+    const inSum  = (ents as any[]).filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
+    const outSum = (ents as any[]).filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
+    return { driverId, driver, ents: ents as any[], inSum, outSum, saldo: inSum-outSum };
+  }).sort((a,b)=>(a.driver?.full_name??"—").localeCompare(b.driver?.full_name??"—"));
+
+  const printDriver=(g:typeof driverGroups[0])=>{
+    const w=window.open("","_blank","width=400,height=600");
+    if(!w)return;
+    const rows=g.ents.map(e=>`<tr><td>${CASH_TYPE_LABELS[e.type]??e.type}</td><td>${e.description}</td><td style="text-align:right;color:${e.direction==="in"?"#080":"#c00"}">${e.direction==="in"?"+":"−"}${fmt(e.amount)}</td></tr>`).join("");
+    w.document.write(`<html><head><title>${g.driver?.full_name??"Obračun"} — ${fmtDate(date)}</title>
+      <style>body{font-family:monospace;font-size:12px;padding:16px;max-width:380px}h2{text-align:center;margin:0}
+      .sub{text-align:center;color:#666;font-size:11px;margin-bottom:10px}table{width:100%;border-collapse:collapse}
+      td{padding:2px 0;border-bottom:1px solid #eee}th{text-align:left;border-bottom:1px solid #000;font-size:11px}
+      .total{font-weight:bold;border-top:2px solid #000;font-size:13px}.foot{text-align:center;color:#999;font-size:10px;margin-top:14px}</style>
+      </head><body><h2>VIP PLUS TAXI</h2><div class="sub">${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
+      <div><strong>${g.driver?.full_name??"—"}</strong></div>
+      <table><tr><th>Tip</th><th>Opis</th><th style="text-align:right">Iznos</th></tr>${rows}
+      <tr class="total"><td colspan="2">${g.saldo>=0?"Vozač prima":"Vozač duguje"}</td><td style="text-align:right">${fmt(Math.abs(g.saldo))}</td></tr></table>
+      <div class="foot">${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}</div>
+      </body></html>`);
+    w.document.close();w.print();
+  };
 
   const printObracun=()=>{
     const w=window.open("","_blank","width=420,height=640");
@@ -1014,23 +1047,49 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
             <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} className="overflow-hidden">
               <Separator/>
               {entries.length===0?<p className="text-center text-muted-foreground text-sm py-4">Nema unosa</p>:(
-                <Table>
-                  <TableHeader><TableRow><TableHead>Tip</TableHead><TableHead>Vozač</TableHead><TableHead>Opis</TableHead><TableHead>Iznos</TableHead><TableHead>Evidentirao</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {entries.map(e=>{
-                      const driver=e.driver_id?drivers.find((d:any)=>d.id===e.driver_id):null;
-                      return(
-                        <TableRow key={e.id}>
-                          <TableCell><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
-                          <TableCell className="text-sm font-medium">{driver?.full_name??<span className="text-muted-foreground text-xs">—</span>}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{e.description}</TableCell>
-                          <TableCell><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{e.received_by}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="divide-y">
+                  {driverGroups.map(g=>{
+                    const isOpen = openDriverId===g.driverId;
+                    return (
+                      <div key={g.driverId}>
+                        <div className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 cursor-pointer"
+                          onClick={()=>setOpenDriverId(isOpen?null:g.driverId)}>
+                          <div className="flex items-center gap-2">
+                            {isOpen?<ChevronUp className="h-4 w-4 text-muted-foreground"/>:<ChevronDown className="h-4 w-4 text-muted-foreground"/>}
+                            <span className="font-medium text-sm">{g.driver?.full_name ?? "— (bez vozača)"}</span>
+                            <Badge variant="secondary" className="text-xs">{g.ents.length} {g.ents.length===1?"stavka":"stavke"}</Badge>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className={`font-bold text-sm ${g.saldo>=0?"text-green-600":"text-red-500"}`}>
+                              {g.saldo>=0?"prima ":"duguje "}{fmt(Math.abs(g.saldo))}
+                            </span>
+                            <button onClick={(e)=>{e.stopPropagation();printDriver(g);}}
+                              className="text-xs text-primary hover:underline" title="Štampaj za ovog vozača">🖨</button>
+                          </div>
+                        </div>
+                        <AnimatePresence>
+                          {isOpen && (
+                            <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} className="overflow-hidden">
+                              <div className="bg-muted/10 px-4 pb-2">
+                                <Table>
+                                  <TableBody>
+                                    {g.ents.map(e=>(
+                                      <TableRow key={e.id}>
+                                        <TableCell className="py-1.5"><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
+                                        <TableCell className="py-1.5 text-xs text-muted-foreground">{e.description}</TableCell>
+                                        <TableCell className="py-1.5 text-right"><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
               <div className="p-3 border-t flex items-center justify-between gap-3 flex-wrap">
                 {!confirmed?(
