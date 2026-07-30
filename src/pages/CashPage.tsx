@@ -199,6 +199,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [depositEnabled, setDepositEnabled]     = useState(false);
   const [depositAmt, setDepositAmt]             = useState("");
 
+  // KEŠ UPLATA — vozač donosi gotovinu za rentu/članarinu (ne dira Yandex)
+  const [keshEnabled, setKeshEnabled]           = useState(false);
+  const [keshAmt, setKeshAmt]                   = useState("");
+
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
   const membership = useMembership(driverId);
@@ -248,9 +252,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const cardNet    = cardSelected.reduce((s,r) => s + (Number(cardAmounts[r.id]) || r.net_amount), 0);
   const vaucerTotal   = vaucerEnabled   ? (Number(vaucerCount)   || 0) * (Number(vaucerAmt)   || 0) : 0;
   const vaucerMbTotal = vaucerMbEnabled ? (Number(vaucerMbCount) || 0) * (Number(vaucerMbAmt) || 0) : 0;
+  const keshTotal     = keshEnabled ? (Number(keshAmt) || 0) : 0;
 
   // AUTO LOGIKA — izračunaj rente i clanarine iz prihoda
-  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal + vaucerMbTotal;
+  const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal + vaucerMbTotal + keshTotal;
   const weeklyAmt = driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0;
 
   // Automatski postavi period rente i clanarine kad se promijene prihodi
@@ -349,6 +354,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("400");
     setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
     setDepositEnabled(false); setDepositAmt("");
+    setKeshEnabled(false); setKeshAmt("");
   };
 
   const reset = () => {
@@ -694,6 +700,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 )}
 
                 <Separator/>
+                <p className="text-xs font-bold text-blue-700 uppercase">Izvori (pokrivaju obaveze)</p>
+
+                {/* KEŠ UPLATA — vozač donosi gotovinu */}
+                <CheckRow label="💵 Keš uplata (vozač donosi)" enabled={keshEnabled} onToggle={() => setKeshEnabled(!keshEnabled)}
+                  amount={keshTotal}
+                  sublabel="Za vozače koji ne diraju Yandex — donose gotovinu za rentu/članarinu">
+                  <Input type="number" placeholder="0" value={keshAmt} onChange={e=>setKeshAmt(e.target.value)}/>
+                </CheckRow>
+
+                <Separator/>
                 <p className="text-xs font-bold text-orange-700 uppercase">Prima vozač</p>
 
                 {/* PDV GORIVA */}
@@ -860,6 +876,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                     ...yandexOdbici.map(r => ({ label: r.notes || "3% odbitak", amount: Math.abs(Number(yandexAmounts[r.id]) || r.net_amount) })),
                   ].filter(Boolean) as { label: string; amount: number }[];
                   const primaStavke = [
+                    keshEnabled && keshTotal > 0 && { label: "💵 Keš uplata (doneo)", amount: keshTotal },
                     yandexRedovniNet > 0 && { label: "Yandex", amount: yandexRedovniNet },
                     cardNet > 0 && { label: "Kartice / POS", amount: cardNet },
                     pdvEnabled && pdvTotal > 0 && { label: "PDV goriva", amount: pdvTotal },
@@ -998,6 +1015,7 @@ ${posEnabled && posTotal > 0 ? `  POS naknada: ${fmt(posTotal)}` : ""}
 ${debtTotal > 0 ? `  Dugovanja: ${fmt(debtTotal)}` : ""}
 
 PRIMA:
+${keshEnabled && keshTotal > 0 ? `  Keš uplata (doneo): ${fmt(keshTotal)}` : ""}
 ${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
 ${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri (naši): ${fmt(vaucerTotal)}` : ""}
 ${vaucerMbEnabled && vaucerMbTotal > 0 ? `  Vaučeri (MB): ${fmt(vaucerMbTotal)}` : ""}
