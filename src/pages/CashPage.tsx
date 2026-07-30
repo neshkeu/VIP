@@ -254,65 +254,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const vaucerMbTotal = vaucerMbEnabled ? (Number(vaucerMbCount) || 0) * (Number(vaucerMbAmt) || 0) : 0;
   const keshTotal     = keshEnabled ? (Number(keshAmt) || 0) : 0;
 
-  // AUTO LOGIKA — izračunaj rente i clanarine iz prihoda
   const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal + vaucerMbTotal + keshTotal;
   const weeklyAmt = driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0;
-
-  // Automatski postavi period rente i clanarine kad se promijene prihodi
-  useEffect(() => {
-    if (!driver || !lastPaidDate || totalPrihodi === 0) return;
-
-    // Oduzmi dugovanja i POS
-    let budzet = totalPrihodi - debtTotal - posTotal;
-    if (budzet <= 0) return;
-
-    // Koliko cijelih dana rente može pokriti
-    const maxDana = Math.floor(budzet / driver.daily_rate);
-    if (maxDana === 0) return;
-
-    // Postavi period od dana poslije posljednje uplate
-    const startDate = new Date(lastPaidDate + "T00:00:00");
-    startDate.setDate(startDate.getDate() + 1);
-    // Preskoci nedjelje
-    let workDayCount = 0;
-    const endDate = new Date(startDate);
-    while (workDayCount < maxDana) {
-      if (endDate.getDay() !== 0) workDayCount++;
-      if (workDayCount < maxDana) endDate.setDate(endDate.getDate() + 1);
-    }
-
-    const fromStr = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,"0")}-${String(startDate.getDate()).padStart(2,"0")}`;
-    const toStr   = `${endDate.getFullYear()}-${String(endDate.getMonth()+1).padStart(2,"0")}-${String(endDate.getDate()).padStart(2,"0")}`;
-
-    setRentaFrom(fromStr);
-    setRentaTo(toStr);
-    setRentaEnabled(true);
-
-    // Ostatak za clanarine
-    const rentaCost = maxDana * driver.daily_rate;
-    const ostatak = budzet - rentaCost;
-    const maxSedmica = weeklyAmt > 0 ? Math.floor(ostatak / weeklyAmt) : 0;
-
-    if (maxSedmica >= 1) {
-      // Postavi period clanarine od dana poslije posljednje clanarine ili od startDate
-      const clanStart = lastClanDate
-        ? new Date(lastClanDate + "T00:00:00")
-        : new Date(startDate);
-      if (lastClanDate) clanStart.setDate(clanStart.getDate() + 1);
-      // Nađi naredni ponedjeljak
-      while (clanStart.getDay() !== 1) clanStart.setDate(clanStart.getDate() + 1);
-      const clanEnd = new Date(clanStart);
-      clanEnd.setDate(clanStart.getDate() + (maxSedmica * 7) - 1);
-
-      const cfrom = `${clanStart.getFullYear()}-${String(clanStart.getMonth()+1).padStart(2,"0")}-${String(clanStart.getDate()).padStart(2,"0")}`;
-      const cto   = `${clanEnd.getFullYear()}-${String(clanEnd.getMonth()+1).padStart(2,"0")}-${String(clanEnd.getDate()).padStart(2,"0")}`;
-      setClanFrom(cfrom);
-      setClanTo(cto);
-      setClanEnabled(true);
-    } else {
-      setClanEnabled(false);
-    }
-  }, [totalPrihodi, lastPaidDate, lastClanDate, driver?.id]);
+  // Napomena: automatsko postavljanje perioda rente/članarine je uklonjeno —
+  // sada korisnik dobija PREDLOG ("možeš još N dana") i sam bira (vidi fillRentaDays).
 
   // Izračuni za rente i clanarine (ručno ili auto)
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
@@ -338,6 +283,27 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // SALDO
   const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal;
   const saldo        = totalPrihodi - totalDuguje;
+
+  // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
+  const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
+  const maxRentaDays = driver && driver.daily_rate > 0 ? Math.max(0, Math.floor(availableForRenta / driver.daily_rate)) : 0;
+
+  // Popuni N radnih dana rente počev od dana posle poslednje plaćene rente
+  const fillRentaDays = (n: number) => {
+    if (!driver || n <= 0) return;
+    const start = lastPaidDate ? new Date(lastPaidDate + "T00:00:00") : new Date();
+    if (lastPaidDate) start.setDate(start.getDate() + 1);
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    let count = 0;
+    const end = new Date(start);
+    while (count < n) {
+      if (end.getDay() !== 0) count++;      // preskoči nedelju
+      if (count < n) end.setDate(end.getDate() + 1);
+    }
+    setRentaFrom(iso(start));
+    setRentaTo(iso(end));
+    setRentaEnabled(true);
+  };
 
   // Koliko dana rente/sedmica clanarine pokriva pozitivni saldo
   const saldioDana    = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
@@ -564,6 +530,17 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
                   amount={rentaTotal}
                   sublabel={workDays > 0 ? `${workDays} dana × ${fmt(driver.daily_rate)}${bonusSunday?" + nedjelja 🎉":""}` : undefined}>
+                  {/* PREDLOG na osnovu raspoloživog novca */}
+                  {maxRentaDays > 0 && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-2 flex items-center justify-between gap-2">
+                      <span className="text-xs text-blue-700">
+                        💡 Sa raspoloživim novcem ({fmt(Math.max(availableForRenta,0))}) možeš <strong>{maxRentaDays}</strong> {maxRentaDays===1?"dan":"dana"} rente
+                      </span>
+                      <Button size="sm" variant="outline" className="h-7 text-xs whitespace-nowrap" onClick={() => fillRentaDays(maxRentaDays)}>
+                        Popuni {maxRentaDays}
+                      </Button>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={rentaFrom} onChange={e=>setRentaFrom(e.target.value)}/></div>
                     <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={rentaTo} onChange={e=>setRentaTo(e.target.value)}/></div>
