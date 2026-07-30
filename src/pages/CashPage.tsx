@@ -203,6 +203,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [keshEnabled, setKeshEnabled]           = useState(false);
   const [keshAmt, setKeshAmt]                   = useState("");
 
+  // Ručni izbor broja dana/sedmica za popunjavanje
+  const [rentaDaysPick, setRentaDaysPick]       = useState("");
+  const [clanWeeksPick, setClanWeeksPick]       = useState("");
+
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
   const membership = useMembership(driverId);
@@ -305,6 +309,24 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setRentaEnabled(true);
   };
 
+  // PREDLOG za članarinu — koliko sedmica pokriva ostatak novca (posle rente)
+  const availableForClan = totalPrihodi - rentaTotal - posTotal - debtTotal;
+  const maxClanWeeks = weeklyAmt > 0 ? Math.max(0, Math.floor(availableForClan / weeklyAmt)) : 0;
+
+  // Popuni N sedmica članarine počev od naredne sedmice posle poslednje
+  const fillClanWeeks = (n: number) => {
+    if (!driver || n <= 0) return;
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const start = lastClanDate ? new Date(lastClanDate + "T00:00:00") : new Date();
+    if (lastClanDate) start.setDate(start.getDate() + 1);
+    while (start.getDay() !== 1) start.setDate(start.getDate() + 1); // naredni ponedeljak
+    const end = new Date(start);
+    end.setDate(start.getDate() + (n * 7) - 1);
+    setClanFrom(iso(start));
+    setClanTo(iso(end));
+    setClanEnabled(true);
+  };
+
   // Koliko dana rente/sedmica clanarine pokriva pozitivni saldo
   const saldioDana    = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
   const saldioSedmica = driver && saldo > 0 && weeklyAmt > 0 ? Math.floor(saldo / weeklyAmt) : 0;
@@ -321,6 +343,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
     setDepositEnabled(false); setDepositAmt("");
     setKeshEnabled(false); setKeshAmt("");
+    setRentaDaysPick(""); setClanWeeksPick("");
   };
 
   const reset = () => {
@@ -541,6 +564,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       </Button>
                     </div>
                   )}
+                  {/* Ručni izbor broja dana */}
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs whitespace-nowrap">Broj dana:</Label>
+                    <Input type="number" className="h-7 w-20 text-sm" placeholder="npr. 5" value={rentaDaysPick} onChange={e=>setRentaDaysPick(e.target.value)}
+                      onKeyDown={e=>{ if(e.key==="Enter" && Number(rentaDaysPick)>0){ fillRentaDays(Number(rentaDaysPick)); } }}/>
+                    <Button size="sm" variant="secondary" className="h-7 text-xs" disabled={!(Number(rentaDaysPick)>0)} onClick={()=>fillRentaDays(Number(rentaDaysPick))}>
+                      Popuni
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={rentaFrom} onChange={e=>setRentaFrom(e.target.value)}/></div>
                     <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={rentaTo} onChange={e=>setRentaTo(e.target.value)}/></div>
@@ -612,6 +644,35 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 <CheckRow label="Članarina" enabled={clanEnabled} onToggle={() => setClanEnabled(!clanEnabled)}
                   amount={clanTotal}
                   sublabel={clanWeeks > 0 ? `${clanWeeks} sedmice × ${fmt(Number(clanAmt))}` : undefined}>
+                  {/* PREDLOG za članarinu + brzi izbor */}
+                  {maxClanWeeks > 0 && (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-2 space-y-1.5">
+                      <span className="text-xs text-blue-700">
+                        💡 Ostatak novca pokriva <strong>{maxClanWeeks}</strong> {maxClanWeeks===1?"članarinu":"članarine"}
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {[1,2,3,4].filter(n => n <= Math.max(maxClanWeeks,4)).map(n => (
+                          <Button key={n} size="sm" variant="outline" className="h-7 text-xs" onClick={()=>fillClanWeeks(n)}>
+                            {n} {n===1?"članarina":"članarine"}
+                          </Button>
+                        ))}
+                        {maxClanWeeks > 4 && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={()=>fillClanWeeks(maxClanWeeks)}>
+                            Popuni {maxClanWeeks}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* Ručni izbor broja sedmica */}
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs whitespace-nowrap">Broj sedmica:</Label>
+                    <Input type="number" className="h-7 w-20 text-sm" placeholder="npr. 2" value={clanWeeksPick} onChange={e=>setClanWeeksPick(e.target.value)}
+                      onKeyDown={e=>{ if(e.key==="Enter" && Number(clanWeeksPick)>0){ fillClanWeeks(Number(clanWeeksPick)); } }}/>
+                    <Button size="sm" variant="secondary" className="h-7 text-xs" disabled={!(Number(clanWeeksPick)>0)} onClick={()=>fillClanWeeks(Number(clanWeeksPick))}>
+                      Popuni
+                    </Button>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="grid gap-1"><Label className="text-xs">Od</Label><Input type="date" value={clanFrom} onChange={e=>setClanFrom(e.target.value)}/></div>
                     <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={clanTo} onChange={e=>setClanTo(e.target.value)}/></div>
