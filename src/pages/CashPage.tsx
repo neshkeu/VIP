@@ -703,9 +703,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 <p className="text-xs font-bold text-blue-700 uppercase">Izvori (pokrivaju obaveze)</p>
 
                 {/* KEŠ UPLATA — vozač donosi gotovinu */}
-                <CheckRow label="💵 Keš uplata (vozač donosi)" enabled={keshEnabled} onToggle={() => setKeshEnabled(!keshEnabled)}
-                  amount={keshTotal}
-                  sublabel="Za vozače koji ne diraju Yandex — donose gotovinu za rentu/članarinu">
+                <CheckRow label="💵 Keš uplata" enabled={keshEnabled} onToggle={() => setKeshEnabled(!keshEnabled)}
+                  amount={keshTotal}>
                   <Input type="number" placeholder="0" value={keshAmt} onChange={e=>setKeshAmt(e.target.value)}/>
                 </CheckRow>
 
@@ -868,23 +867,25 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   const yandexRedovni = yandexSelected.filter(r => !r.notes?.startsWith("3% odbitak"));
                   const yandexRedovniNet = yandexRedovni.reduce((s, r) => s + (Number(yandexAmounts[r.id]) || r.net_amount), 0);
 
-                  const dugujeStavke = [
+                  // OBAVEZE — šta vozač mora da plati
+                  const obaveze = [
                     rentaEnabled && rentaTotal > 0 && { label: `Renta (${workDays} dana × ${fmt(driver.daily_rate)})`, amount: rentaTotal },
                     clanEnabled && clanTotal > 0 && { label: `Članarina (${clanWeeks} sed.)`, amount: clanTotal },
                     posEnabled && posTotal > 0 && { label: "POS naknada", amount: posTotal },
                     debtTotal > 0 && { label: "Uplata dugovanja", amount: debtTotal },
                     ...yandexOdbici.map(r => ({ label: r.notes || "3% odbitak", amount: Math.abs(Number(yandexAmounts[r.id]) || r.net_amount) })),
                   ].filter(Boolean) as { label: string; amount: number }[];
-                  const primaStavke = [
-                    keshEnabled && keshTotal > 0 && { label: "💵 Keš uplata (doneo)", amount: keshTotal },
+                  // SREDSTVA — čime se pokrivaju obaveze (keš + zarada)
+                  const sredstva = [
+                    keshEnabled && keshTotal > 0 && { label: "💵 Keš uplata", amount: keshTotal },
                     yandexRedovniNet > 0 && { label: "Yandex", amount: yandexRedovniNet },
                     cardNet > 0 && { label: "Kartice / POS", amount: cardNet },
                     pdvEnabled && pdvTotal > 0 && { label: "PDV goriva", amount: pdvTotal },
                     vaucerEnabled && vaucerTotal > 0 && { label: `Vaučeri (naši) ${vaucerCount}×${fmt(Number(vaucerAmt))}`, amount: vaucerTotal },
                     vaucerMbEnabled && vaucerMbTotal > 0 && { label: `Vaučeri (MB) ${vaucerMbCount}×${fmt(Number(vaucerMbAmt))}`, amount: vaucerMbTotal },
                   ].filter(Boolean) as { label: string; amount: number }[];
-                  const sumDuguje = dugujeStavke.reduce((s, x) => s + x.amount, 0);
-                  const sumPrima  = primaStavke.reduce((s, x) => s + x.amount, 0);
+                  const sumObaveze = obaveze.reduce((s, x) => s + x.amount, 0);
+                  const sumSredstva = sredstva.reduce((s, x) => s + x.amount, 0);
 
                   const printReceipt = () => {
                     const w = window.open("", "_blank", "width=400,height=600");
@@ -908,13 +909,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       <div><strong>${driver.full_name}</strong></div>
                       <div class="sub" style="text-align:left">${driver.driver_type === "renta" ? "Renta" : "Vlastito vozilo"}</div>
                       <table>
-                        <tr><td class="hdr" colspan="2">Duguje vozač</td></tr>
-                        ${rows(dugujeStavke) || '<tr><td colspan="2" style="color:#999">—</td></tr>'}
-                        <tr><td><strong>Ukupno duguje</strong></td><td style="text-align:right"><strong>${fmt(sumDuguje)}</strong></td></tr>
-                        <tr><td class="hdr" colspan="2">Prima vozač</td></tr>
-                        ${rows(primaStavke) || '<tr><td colspan="2" style="color:#999">—</td></tr>'}
-                        <tr><td><strong>Ukupno prima</strong></td><td style="text-align:right"><strong>${fmt(sumPrima)}</strong></td></tr>
-                        <tr class="total"><td>${saldo >= 0 ? "VOZAČ PRIMA" : "VOZAČ DUGUJE"}</td><td style="text-align:right">${fmt(Math.abs(saldo))}</td></tr>
+                        <tr><td class="hdr" colspan="2">Obaveze</td></tr>
+                        ${rows(obaveze) || '<tr><td colspan="2" style="color:#999">—</td></tr>'}
+                        <tr><td><strong>Ukupno obaveze</strong></td><td style="text-align:right"><strong>${fmt(sumObaveze)}</strong></td></tr>
+                        <tr><td class="hdr" colspan="2">Sredstva (keš + zarada)</td></tr>
+                        ${rows(sredstva) || '<tr><td colspan="2" style="color:#999">—</td></tr>'}
+                        <tr><td><strong>Ukupno sredstva</strong></td><td style="text-align:right"><strong>${fmt(sumSredstva)}</strong></td></tr>
+                        <tr class="total"><td>${saldo > 0 ? "ZA ISPLATU VOZAČU" : saldo === 0 ? "IZMIRENO" : "VOZAČ DUGUJE JOŠ"}</td><td style="text-align:right">${fmt(Math.abs(saldo))}</td></tr>
                       </table>
                       ${saldo < 0 ? `<div class="sub" style="text-align:left;color:#c00">Ostatak ${fmt(Math.abs(saldo))} se prenosi kao dugovanje</div>` : ""}
                       <div class="foot">Evidentirao: ${currentUser} · ${new Date().toLocaleString("sr-RS")}</div>
@@ -933,40 +934,40 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                         </button>
                       </div>
 
-                      {dugujeStavke.length > 0 && (
+                      {obaveze.length > 0 && (
                         <div className="space-y-1">
-                          <p className="text-xs font-semibold text-green-700 uppercase border-b pb-1">Duguje vozač</p>
-                          {dugujeStavke.map((x, i) => (
+                          <p className="text-xs font-semibold text-red-700 uppercase border-b pb-1">Obaveze</p>
+                          {obaveze.map((x, i) => (
                             <div key={i} className="flex justify-between text-sm">
                               <span className="text-muted-foreground">{x.label}</span>
-                              <span className="text-green-600 font-medium">+{fmt(x.amount)}</span>
+                              <span className="text-red-600 font-medium">{fmt(x.amount)}</span>
                             </div>
                           ))}
                           <div className="flex justify-between text-xs font-semibold pt-0.5">
-                            <span>Ukupno duguje</span><span>{fmt(sumDuguje)}</span>
+                            <span>Ukupno obaveze</span><span>{fmt(sumObaveze)}</span>
                           </div>
                         </div>
                       )}
 
-                      {primaStavke.length > 0 && (
+                      {sredstva.length > 0 && (
                         <div className="space-y-1">
-                          <p className="text-xs font-semibold text-orange-700 uppercase border-b pb-1">Prima vozač</p>
-                          {primaStavke.map((x, i) => (
+                          <p className="text-xs font-semibold text-green-700 uppercase border-b pb-1">Sredstva (keš + zarada)</p>
+                          {sredstva.map((x, i) => (
                             <div key={i} className="flex justify-between text-sm">
                               <span className="text-muted-foreground">{x.label}</span>
-                              <span className="text-orange-600 font-medium">−{fmt(x.amount)}</span>
+                              <span className="text-green-600 font-medium">{fmt(x.amount)}</span>
                             </div>
                           ))}
                           <div className="flex justify-between text-xs font-semibold pt-0.5">
-                            <span>Ukupno prima</span><span>{fmt(sumPrima)}</span>
+                            <span>Ukupno sredstva</span><span>{fmt(sumSredstva)}</span>
                           </div>
                         </div>
                       )}
 
                       <Separator/>
-                      <div className="flex justify-between text-base font-bold">
-                        <span>{saldo >= 0 ? "Vozač prima:" : "Vozač duguje:"}</span>
-                        <span className={saldo >= 0 ? "text-orange-600" : "text-green-600"}>{fmt(Math.abs(saldo))}</span>
+                      <div className={`flex justify-between text-base font-bold rounded-md px-2 py-1.5 ${saldo > 0 ? "bg-orange-50 text-orange-700" : saldo === 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                        <span>{saldo > 0 ? "Za isplatu vozaču:" : saldo === 0 ? "Izmireno:" : "Vozač duguje još:"}</span>
+                        <span>{fmt(Math.abs(saldo))}</span>
                       </div>
                       {depositEnabled && Number(depositAmt) > 0 && (
                         <>
