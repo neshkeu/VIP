@@ -232,14 +232,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [rentaDaysPick, setRentaDaysPick]       = useState("");
   const [clanWeeksPick, setClanWeeksPick]       = useState("");
 
-  // IZVOR PLAĆANJA po obavezi (A): keš / yandex / kartica
-  const [rentaSrc, setRentaSrc]   = useState<Izvor>("yandex");
-  const [clanSrc, setClanSrc]     = useState<Izvor>("yandex");
-  const [posSrc, setPosSrc]       = useState<Izvor>("yandex");
-  const [debtSrc, setDebtSrc]     = useState<Record<string, Izvor>>({});
-  // Isplata preostalog: koliko od svakog izvora ide vozaču u keš (ostatak ostaje na saldu)
-  const [yandexPayout, setYandexPayout] = useState("");
-  const [karticaPayout, setKarticaPayout] = useState("");
+  // RASPODELA PO IZVORIMA — koliko uzimam iz svakog (slobodna kombinacija)
+  const [yanTake, setYanTake] = useState("");
+  const [karTake, setKarTake] = useState("");
 
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
@@ -294,7 +289,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const cardNet    = cardSelected.reduce((s,r) => s + cRemain(r), 0);
   const vaucerTotal   = vaucerEnabled   ? (Number(vaucerCount)   || 0) * (Number(vaucerAmt)   || 0) : 0;
   const vaucerMbTotal = vaucerMbEnabled ? (Number(vaucerMbCount) || 0) * (Number(vaucerMbAmt) || 0) : 0;
-  const keshTotal     = keshEnabled ? (Number(keshAmt) || 0) : 0;
+  const keshTotal     = Number(keshAmt) || 0;
 
   const totalPrihodi = yandexNet + cardNet + pdvTotal + vaucerTotal + vaucerMbTotal + keshTotal;
   const weeklyAmt = driver ? (driver.driver_type === "renta" ? driver.weekly_membership : driver.weekly_membership_own) : 0;
@@ -326,49 +321,29 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal;
   const saldo        = totalPrihodi - totalDuguje;
 
-  // ─── TOK NOVCA PO IZVORIMA (varijanta A) ──────────────────────
-  // Koliko od svake obaveze plaća (delimično dugovanje)
-  const debtWillPay = (d: typeof openDebts[number]) => {
-    const remaining = d.amount - d.paid_amount;
-    const custom = Number(debtAmounts[d.id]);
-    return custom > 0 && custom <= remaining ? custom : remaining;
-  };
-  // Yandex: razdvoj redovne (izvor novca) od 3% odbitaka (to je obaveza, ne izvor)
-  const yandexOdbiciList = yandexSelected.filter(r => r.notes?.startsWith("3% odbitak"));
+  // ─── RASPODELA PO IZVORIMA (slobodna kombinacija) ─────────────
+  // 3% odbitak (negativni yandex izvod) je obaveza koja "jede" yandex
+  const yandexOdbiciList  = yandexSelected.filter(r => r.notes?.startsWith("3% odbitak"));
   const yandexRedovniList = yandexSelected.filter(r => !r.notes?.startsWith("3% odbitak"));
-  const yandexRedovniSum = yandexRedovniList.reduce((s, r) => s + yRemain(r), 0);
-  const yandexOdbiciSum  = yandexOdbiciList.reduce((s, r) => s + Math.abs(r.net_amount), 0);
+  const yandexRedovniSum  = yandexRedovniList.reduce((s, r) => s + yRemain(r), 0);
+  const yandexOdbiciSum   = yandexOdbiciList.reduce((s, r) => s + Math.abs(r.net_amount), 0);
 
-  // Lista obaveza sa izabranim izvorom
-  const obligList: { key: string; label: string; amount: number; src: Izvor }[] = [
-    rentaEnabled && rentaTotal > 0 ? { key: "renta", label: "Renta", amount: rentaTotal, src: rentaSrc } : null,
-    clanEnabled && clanTotal > 0   ? { key: "clan",  label: "Članarina", amount: clanTotal, src: clanSrc } : null,
-    posEnabled && posTotal > 0     ? { key: "pos",   label: "POS naknada", amount: posTotal, src: posSrc } : null,
-    ...selectedDebtsList.map(d => ({ key: d.id, label: `Dug: ${d.description}`, amount: debtWillPay(d), src: debtSrc[d.id] ?? "yandex" as Izvor })),
-  ].filter(Boolean) as { key: string; label: string; amount: number; src: Izvor }[];
+  // OBAVEZE — šta vozač duguje (renta + članarina + POS + dug)
+  const obligTotal = rentaTotal + clanTotal + posTotal + debtTotal;
 
-  const usedFrom = (izvor: Izvor) => obligList.filter(o => o.src === izvor).reduce((s, o) => s + o.amount, 0);
-  // 3% odbitak se uvek pokriva iz yandexa (to je odbitak sa yandexa)
-  const usedKes     = usedFrom("kes");
-  const usedYandex  = usedFrom("yandex") + yandexOdbiciSum;
-  const usedKartica = usedFrom("kartica");
+  // DOSTUPNO po izvoru
+  const kesTake  = Number(keshAmt) || 0;                              // koliko keša vozač doneo
+  const yanAvail = Math.max(0, yandexRedovniSum - yandexOdbiciSum);   // yandex umanjen za 3% odbitak
+  const karAvail = cardNet;
+  const yanTakeNum = Math.max(0, Math.min(Number(yanTake) || 0, yanAvail));
+  const karTakeNum = Math.max(0, Math.min(Number(karTake) || 0, karAvail));
 
-  const availKes     = keshTotal;
-  const availYandex  = yandexRedovniSum;
-  const availKartica = cardNet;
-
-  const remKes     = availKes - usedKes;
-  const remYandex  = availYandex - usedYandex;
-  const remKartica = availKartica - usedKartica;
-
-  // Isplata preostalog u keš (ostatak ostaje na saldu tj. izvod ostaje neisplaćen)
-  const yandexPayoutNum  = Math.max(0, Math.min(Number(yandexPayout)  || 0, Math.max(remYandex, 0)));
-  const karticaPayoutNum = Math.max(0, Math.min(Number(karticaPayout) || 0, Math.max(remKartica, 0)));
-  // Keš višak (vozač doneo više nego što keš-obaveze traže) uvek ide vozaču nazad
-  const kesBack = Math.max(remKes, 0);
-  const isplataVozacu = yandexPayoutNum + karticaPayoutNum + kesBack;
-  // Manjak: neka obaveza nema pokriće u svom izvoru
-  const manjak = Math.max(0, -remKes) + Math.max(0, -remYandex) + Math.max(0, -remKartica);
+  const takenTotal = kesTake + yanTakeNum + karTakeNum;   // koliko ukupno "stavljeno na sto"
+  const surplus    = takenTotal - obligTotal;             // >0 isplata vozaču, <0 manjak → dug
+  const isplataVozacu = Math.max(surplus, 0);
+  const manjak     = Math.max(-surplus, 0);
+  const yanStay    = yanAvail - yanTakeNum;               // ostaje na yandex saldu
+  const karStay    = karAvail - karTakeNum;               // ostaje na kartica saldu
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
   const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
@@ -426,8 +401,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setDepositEnabled(false); setDepositAmt("");
     setKeshEnabled(false); setKeshAmt("");
     setRentaDaysPick(""); setClanWeeksPick("");
-    setRentaSrc("yandex"); setClanSrc("yandex"); setPosSrc("yandex"); setDebtSrc({});
-    setYandexPayout(""); setKarticaPayout("");
+    setYanTake(""); setKarTake("");
   };
 
   const reset = () => {
@@ -513,48 +487,45 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
 
-      // 7. Yandex — potroši izvode (obaveze iz yandexa + 3% odbici + isplata u keš)
-      //    Ostatak ("sačuvaj na saldo") ostaje neisplaćen za sledeći put.
-      let poolYandex = usedFrom("yandex") + yandexOdbiciSum + yandexPayoutNum;
+      // 7. Yandex — potroši izvode za: uzeti iznos (yanTakeNum) + 3% odbitak.
+      //    Ostatak ostaje na saldu (izvod neisplaćen) za sledeći put.
+      let poolYandex = yanTakeNum + yandexOdbiciSum;
       for (const r of yandexRedovniList) {
         if (poolYandex <= 0.01) break;
-        const eff = Number(yandexAmounts[r.id]) || r.net_amount;
+        const eff = yRemain(r);
         const already = r.paid_amount || 0;
-        const room = Math.max(eff - already, 0);
+        const room = Math.max(eff, 0);
         const take = Math.min(poolYandex, room);
         if (take <= 0) continue;
         poolYandex -= take;
         const newPaid = already + take;
-        await updateYandex(r.id, { paid_amount: newPaid, paid_out: newPaid >= eff - 0.01, received_by: currentUser });
+        await updateYandex(r.id, { paid_amount: newPaid, paid_out: newPaid >= r.net_amount - 0.01, received_by: currentUser });
       }
       // 3% odbici — evidentiraj kao izmirene (odbitak sa yandexa, nije keš izlaz)
       for (const r of yandexOdbiciList) await yandexPaidOut(r.id, currentUser);
-      // Realni keš izlaz iz yandexa = obaveze iz yandexa + isplata (odbitak NIJE keš)
-      const cashOutYandex = usedFrom("yandex") + yandexPayoutNum;
-      if (cashOutYandex > 0) {
-        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:cashOutYandex, date:saveDate,
-          description:`Yandex — pokriva obaveze ${fmt(usedFrom("yandex"))}${yandexPayoutNum>0?` + isplata ${fmt(yandexPayoutNum)}`:""}`, received_by:currentUser, notes:"" });
-        stavke.push({ type:"yandex", direction:"out", amount:cashOutYandex, description:"Yandex isplata" });
+      // Realni izlaz iz yandexa (novac koji radi na obračunu) = yanTakeNum
+      if (yanTakeNum > 0) {
+        await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:yanTakeNum, date:saveDate,
+          description:`Yandex — uzeto ${fmt(yanTakeNum)}${yanStay>0?` (ostaje ${fmt(yanStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
+        stavke.push({ type:"yandex", direction:"out", amount:yanTakeNum, description:"Yandex — uzeto" });
       }
 
-      // 8. Kartice — isto: potroši izvode do (obaveze iz kartica + isplata)
-      let poolKartica = usedFrom("kartica") + karticaPayoutNum;
+      // 8. Kartice — potroši izvode za karTakeNum, ostatak na saldu
+      let poolKartica = karTakeNum;
       for (const r of cardSelected) {
         if (poolKartica <= 0.01) break;
-        const eff = Number(cardAmounts[r.id]) || r.net_amount;
+        const eff = cRemain(r);
         const already = r.paid_amount || 0;
-        const room = Math.max(eff - already, 0);
-        const take = Math.min(poolKartica, room);
+        const take = Math.min(poolKartica, Math.max(eff, 0));
         if (take <= 0) continue;
         poolKartica -= take;
         const newPaid = already + take;
-        await updateCard(r.id, { paid_amount: newPaid, paid_out: newPaid >= eff - 0.01, received_by: currentUser });
+        await updateCard(r.id, { paid_amount: newPaid, paid_out: newPaid >= r.net_amount - 0.01, received_by: currentUser });
       }
-      const cashOutKartica = usedFrom("kartica") + karticaPayoutNum;
-      if (cashOutKartica > 0) {
-        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:cashOutKartica, date:saveDate,
-          description:`Kartica — pokriva obaveze ${fmt(usedFrom("kartica"))}${karticaPayoutNum>0?` + isplata ${fmt(karticaPayoutNum)}`:""}`, received_by:currentUser, notes:"" });
-        stavke.push({ type:"kartica", direction:"out", amount:cashOutKartica, description:"Kartica isplata" });
+      if (karTakeNum > 0) {
+        await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karTakeNum, date:saveDate,
+          description:`Kartica — uzeto ${fmt(karTakeNum)}${karStay>0?` (ostaje ${fmt(karStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
+        stavke.push({ type:"kartica", direction:"out", amount:karTakeNum, description:"Kartica — uzeto" });
       }
 
       // 8b. Depozit — prebaci deo isplate na račun vozača
@@ -664,7 +635,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
                   amount={rentaTotal}
                   sublabel={workDays > 0 ? `${workDays} dana × ${fmt(driver.daily_rate)}${bonusSunday?" + nedjelja 🎉":""}` : undefined}>
-                  <div className="flex justify-end"><SrcToggle value={rentaSrc} onChange={setRentaSrc}/></div>
                   {/* PREDLOG na osnovu raspoloživog novca */}
                   {maxRentaDays > 0 && (
                     <div className="rounded-md bg-blue-50 border border-blue-200 p-2 flex items-center justify-between gap-2">
@@ -756,7 +726,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 <CheckRow label="Članarina" enabled={clanEnabled} onToggle={() => setClanEnabled(!clanEnabled)}
                   amount={clanTotal}
                   sublabel={clanWeeks > 0 ? `${clanWeeks} sedmice × ${fmt(Number(clanAmt))}` : undefined}>
-                  <div className="flex justify-end"><SrcToggle value={clanSrc} onChange={setClanSrc}/></div>
                   {/* PREDLOG za članarinu + brzi izbor */}
                   {maxClanWeeks > 0 && (
                     <div className="rounded-md bg-blue-50 border border-blue-200 p-2 space-y-1.5">
@@ -797,7 +766,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 {driver.driver_type === "renta" && (
                   <CheckRow label="POS naknada" enabled={posEnabled} onToggle={() => setPosEnabled(!posEnabled)} amount={posTotal}>
                     <Input type="number" value={posAmt} onChange={e=>setPosAmt(e.target.value)}/>
-                    <div className="flex justify-end"><SrcToggle value={posSrc} onChange={setPosSrc}/></div>
                   </CheckRow>
                 )}
 
@@ -846,11 +814,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                               <span className="text-xs text-muted-foreground whitespace-nowrap">max {fmt(remaining)}</span>
                             </div>
                           )}
-                          {sel && (
-                            <div className="flex justify-end">
-                              <SrcToggle value={debtSrc[debt.id] ?? "yandex"} onChange={v => setDebtSrc(prev => ({...prev, [debt.id]: v}))}/>
-                            </div>
-                          )}
                           {sel && willPay > 0 && willPay < remaining && (
                             <p className="text-xs text-amber-600">↳ Ostaje {fmt(remaining - willPay)} — dug ostaje otvoren</p>
                           )}
@@ -861,16 +824,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 )}
 
                 <Separator/>
-                <p className="text-xs font-bold text-blue-700 uppercase">Izvori (pokrivaju obaveze)</p>
-
-                {/* KEŠ UPLATA — vozač donosi gotovinu */}
-                <CheckRow label="💵 Keš uplata" enabled={keshEnabled} onToggle={() => setKeshEnabled(!keshEnabled)}
-                  amount={keshTotal}>
-                  <Input type="number" placeholder="0" value={keshAmt} onChange={e=>setKeshAmt(e.target.value)}/>
-                </CheckRow>
-
-                <Separator/>
-                <p className="text-xs font-bold text-orange-700 uppercase">Zarada (auto) + dodatne isplate</p>
+                <p className="text-xs font-bold text-orange-700 uppercase">Dodatne isplate vozaču</p>
 
                 {/* PDV GORIVA */}
                 <CheckRow label="PDV goriva" enabled={pdvEnabled} onToggle={() => setPdvEnabled(!pdvEnabled)}
@@ -902,53 +856,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   </div>
                 </CheckRow>
 
-                {/* YANDEX — kompaktan pregled (auto-uključeno) */}
-                {driverYandex.length > 0 && (
-                  <details className="rounded-lg border p-2 bg-orange-50/20 border-orange-200">
-                    <summary className="text-xs cursor-pointer flex items-center justify-between">
-                      <span className="font-semibold text-orange-800">
-                        Yandex — dostupno {fmt(yandexRedovniSum)}
-                        {yandexOdbiciList.length > 0 && <span className="text-red-600 ml-1">(+ 3% odbitak {fmt(yandexOdbiciSum)})</span>}
-                      </span>
-                      <span className="text-muted-foreground">{driverYandex.length} {driverYandex.length===1?"izvod":"izvoda"}</span>
-                    </summary>
-                    <div className="mt-2 space-y-1">
-                      {driverYandex.map(r => (
-                        <div key={r.id} className="flex justify-between text-xs px-1">
-                          <span className="text-muted-foreground">
-                            {r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}
-                            {(r.paid_amount||0) > 0 && <span className="text-blue-600 ml-1">· na saldu {fmt(yRemain(r))}</span>}
-                          </span>
-                          <span className={r.net_amount < 0 ? "text-red-600 font-medium" : "text-orange-700 font-medium"}>
-                            {r.net_amount < 0 ? "−" : ""}{fmt(Math.abs(r.net_amount < 0 ? r.net_amount : yRemain(r)))}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-
-                {/* KARTICE — kompaktan pregled (auto-uključeno) */}
-                {driverCards.length > 0 && (
-                  <details className="rounded-lg border p-2 bg-orange-50/20 border-orange-200">
-                    <summary className="text-xs cursor-pointer flex items-center justify-between">
-                      <span className="font-semibold text-orange-800">Kartice — dostupno {fmt(cardNet)}</span>
-                      <span className="text-muted-foreground">{driverCards.length} {driverCards.length===1?"kartica":"kartica"}</span>
-                    </summary>
-                    <div className="mt-2 space-y-1">
-                      {driverCards.map(r => (
-                        <div key={r.id} className="flex justify-between text-xs px-1">
-                          <span className="text-muted-foreground">
-                            {r.card_type.toUpperCase()} · {r.date}
-                            {(r.paid_amount||0) > 0 && <span className="text-blue-600 ml-1">· na saldu {fmt(cRemain(r))}</span>}
-                          </span>
-                          <span className="text-orange-700 font-medium">{fmt(cRemain(r))}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
-
                 {/* DEPOZIT — prebaci deo isplate na račun vozača */}
                 <Separator/>
                 <div className="rounded-lg border p-3 space-y-2 bg-blue-50/30 border-blue-200">
@@ -962,7 +869,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   {depositEnabled && (
                     <div className="space-y-1">
                       <Label className="text-xs">Iznos za depozit (RSD)</Label>
-                      <Input type="number" placeholder={saldo > 0 ? String(saldo) : "0"} value={depositAmt} onChange={e=>setDepositAmt(e.target.value)}/>
+                      <Input type="number" placeholder={isplataVozacu > 0 ? String(isplataVozacu) : "0"} value={depositAmt} onChange={e=>setDepositAmt(e.target.value)}/>
                       <p className="text-xs text-muted-foreground">
                         Umesto keša — ostaje na računu vozača (npr. za novo vozilo). Novo stanje: {fmt(balanceFor(driverId) + (Number(depositAmt) || 0))}
                       </p>
@@ -992,123 +899,103 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   />
                 </div>
 
-                {/* TOK NOVCA PO IZVORIMA (varijanta A) */}
+                {/* ODAKLE UZIMAM — slobodna raspodela + rezultat */}
                 {(() => {
-                  const coveredBy = (izvor: Izvor) => {
-                    const base = obligList.filter(o => o.src === izvor);
-                    if (izvor === "yandex")
-                      return [...base, ...yandexOdbiciList.map(r => ({
-                        key: r.id, label: r.notes || "3% odbitak",
-                        amount: Math.abs(Number(yandexAmounts[r.id]) || r.net_amount), src: "yandex" as Izvor,
-                      }))];
-                    return base;
-                  };
-                  const izvori: {
-                    izvor: Izvor; avail: number; used: number; rem: number;
-                    payoutVal?: string; setPayout?: (v: string) => void; payoutNum?: number;
-                  }[] = [
-                    { izvor: "kes",     avail: availKes,     used: usedKes,     rem: remKes },
-                    { izvor: "yandex",  avail: availYandex,  used: usedYandex,  rem: remYandex,  payoutVal: yandexPayout,  setPayout: setYandexPayout,  payoutNum: yandexPayoutNum },
-                    { izvor: "kartica", avail: availKartica, used: usedKartica, rem: remKartica, payoutVal: karticaPayout, setPayout: setKarticaPayout, payoutNum: karticaPayoutNum },
-                  ];
-                  const aktivni = izvori.filter(s => s.avail > 0 || s.used > 0);
-                  // Dodatne isplate vozaču koje nisu izvor za obaveze (refundacija/vaučeri)
-                  const dodatneIsplate = [
-                    pdvEnabled && pdvTotal > 0 ? { label: "PDV goriva", amount: pdvTotal } : null,
-                    vaucerEnabled && vaucerTotal > 0 ? { label: `Vaučeri (naši) ${vaucerCount}×${fmt(Number(vaucerAmt))}`, amount: vaucerTotal } : null,
-                    vaucerMbEnabled && vaucerMbTotal > 0 ? { label: `Vaučeri (MB) ${vaucerMbCount}×${fmt(Number(vaucerMbAmt))}`, amount: vaucerMbTotal } : null,
-                  ].filter(Boolean) as { label: string; amount: number }[];
-                  const sumDodatne = dodatneIsplate.reduce((s, x) => s + x.amount, 0);
-                  const ukupnoUKes = isplataVozacu + sumDodatne;
-                  const uKesPosleDepozita = Math.max(ukupnoUKes - (depositEnabled ? Number(depositAmt) || 0 : 0), 0);
+                  const sumDodatne = pdvTotal + vaucerTotal + vaucerMbTotal;
+                  const depozit = depositEnabled ? Number(depositAmt) || 0 : 0;
+                  const uKes = Math.max(isplataVozacu + sumDodatne - depozit, 0);
+                  const coverPct = obligTotal > 0 ? Math.min(100, takenTotal / obligTotal * 100) : 100;
 
                   return (
                     <div className="rounded-lg border p-4 space-y-3 sticky top-4">
-                      <p className="text-xs font-bold uppercase">Tok novca po izvorima</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase">Odakle uzimam</p>
+                        <span className="text-xs text-muted-foreground">Duguje: <strong className="text-red-600">{fmt(obligTotal)}</strong></span>
+                      </div>
 
-                      {aktivni.length === 0 && (
-                        <p className="text-xs text-muted-foreground">Izaberi obaveze i izvore (keš / yandex / kartica)</p>
-                      )}
+                      {/* KEŠ */}
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-500"/>Keš (vozač doneo)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
+                          <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={keshAmt} onChange={e=>setKeshAmt(e.target.value)}/>
+                        </div>
+                      </div>
 
-                      {aktivni.map(s => {
-                        const covered = coveredBy(s.izvor);
-                        const meta = IZVOR_META[s.izvor];
-                        const canPayout = (s.izvor === "yandex" || s.izvor === "kartica") && s.rem > 0;
-                        const naSaldu = canPayout ? Math.max(s.rem - (s.payoutNum || 0), 0) : 0;
-                        return (
-                          <div key={s.izvor} className="rounded-lg border p-3 space-y-1.5 bg-muted/20">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-semibold">{meta.label}</span>
-                              <span className="text-xs text-muted-foreground">Dostupno: <strong className="text-foreground">{fmt(s.avail)}</strong></span>
-                            </div>
-                            {covered.length > 0 && (
-                              <div className="space-y-0.5 pl-1 border-l-2 border-red-200">
-                                {covered.map(o => (
-                                  <div key={o.key} className="flex justify-between text-xs">
-                                    <span className="text-muted-foreground">− {o.label}</span>
-                                    <span className="text-red-600">{fmt(o.amount)}</span>
-                                  </div>
-                                ))}
-                                <div className="flex justify-between text-xs font-medium">
-                                  <span>Pokriva obaveze</span><span className="text-red-600">−{fmt(s.used)}</span>
-                                </div>
-                              </div>
-                            )}
-                            <div className={`flex justify-between text-sm font-bold ${s.rem < 0 ? "text-red-600" : "text-green-700"}`}>
-                              <span>{s.rem < 0 ? "Nedostaje" : "Preostalo"}</span>
-                              <span>{fmt(Math.abs(s.rem))}</span>
-                            </div>
-                            {canPayout && (
-                              <div className="rounded-md bg-background border p-2 space-y-1.5">
-                                <div className="flex items-center gap-2">
-                                  <Label className="text-xs whitespace-nowrap">Isplati u keš:</Label>
-                                  <Input type="number" className="h-7 text-sm" placeholder="0"
-                                    value={s.payoutVal} onChange={e => s.setPayout!(e.target.value)}/>
-                                </div>
-                                <div className="flex gap-1">
-                                  <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={() => s.setPayout!(String(s.rem))}>
-                                    Isplati sve ({fmt(s.rem)})
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={() => s.setPayout!("0")}>
-                                    Sačuvaj na saldo
-                                  </Button>
-                                </div>
-                                {naSaldu > 0 && (
-                                  <p className="text-xs text-blue-600">↳ {fmt(naSaldu)} ostaje na saldu ({meta.short}) za sledeći put</p>
-                                )}
-                              </div>
-                            )}
+                      {/* YANDEX */}
+                      {yanAvail > 0 && (
+                        <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500"/>Yandex</span>
+                            <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(yanAvail)}</strong>{yandexOdbiciSum>0 && <span className="text-red-600"> (−3% {fmt(yandexOdbiciSum)})</span>}</span>
                           </div>
-                        );
-                      })}
-
-                      {dodatneIsplate.length > 0 && (
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-semibold text-orange-700 uppercase border-b pb-1">Dodatne isplate</p>
-                          {dodatneIsplate.map((x, i) => (
-                            <div key={i} className="flex justify-between text-xs">
-                              <span className="text-muted-foreground">{x.label}</span>
-                              <span className="text-orange-600 font-medium">+{fmt(x.amount)}</span>
-                            </div>
-                          ))}
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
+                            <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanTake} onChange={e=>setYanTake(e.target.value)}/>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(obligTotal - kesTake - karTakeNum,0), yanAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(yanAvail))}>Sve ({fmt(yanAvail)})</Button>
+                          </div>
+                          <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(yanStay,0))}</strong></p>
                         </div>
                       )}
+
+                      {/* KARTICA */}
+                      {karAvail > 0 && (
+                        <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500"/>Kartica</span>
+                            <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(karAvail)}</strong></span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
+                            <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karTake} onChange={e=>setKarTake(e.target.value)}/>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum,0), karAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(karAvail))}>Sve ({fmt(karAvail)})</Button>
+                          </div>
+                          <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(karStay,0))}</strong></p>
+                        </div>
+                      )}
+
+                      {/* REZULTAT */}
+                      <Separator/>
+                      <div className="h-2 rounded bg-muted overflow-hidden">
+                        <div className={`h-full rounded transition-all ${manjak>0?"bg-red-500":surplus>0?"bg-orange-500":"bg-green-500"}`} style={{width:`${coverPct}%`}}/>
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Uzeto: <strong className="text-foreground">{fmt(takenTotal)}</strong></span>
+                        <span>− Obaveze: {fmt(obligTotal)}</span>
+                      </div>
+
+                      <div className={`flex justify-between items-center text-base font-bold rounded-md px-3 py-2 ${manjak>0?"bg-red-50 text-red-700":surplus>0?"bg-orange-50 text-orange-700":"bg-green-50 text-green-700"}`}>
+                        <span>{manjak>0?"Nedostaje → dug:":surplus>0?"Za isplatu vozaču:":"Izmireno:"}</span>
+                        <span>{fmt(manjak>0?manjak:isplataVozacu)}</span>
+                      </div>
+
+                      {sumDodatne > 0 && (
+                        <div className="space-y-0.5">
+                          {pdvTotal>0 && <div className="flex justify-between text-xs"><span className="text-muted-foreground">+ PDV goriva</span><span className="text-orange-600 font-medium">{fmt(pdvTotal)}</span></div>}
+                          {vaucerTotal>0 && <div className="flex justify-between text-xs"><span className="text-muted-foreground">+ Vaučeri (naši)</span><span className="text-orange-600 font-medium">{fmt(vaucerTotal)}</span></div>}
+                          {vaucerMbTotal>0 && <div className="flex justify-between text-xs"><span className="text-muted-foreground">+ Vaučeri (MB)</span><span className="text-orange-600 font-medium">{fmt(vaucerMbTotal)}</span></div>}
+                        </div>
+                      )}
+
+                      {depozit > 0 && (
+                        <div className="flex justify-between text-xs text-blue-700"><span>💰 Na depozit</span><span>−{fmt(depozit)}</span></div>
+                      )}
+
+                      <div className="flex justify-between items-center text-sm font-bold border-t pt-2">
+                        <span>Ukupno u keš vozaču:</span>
+                        <span className="text-orange-600">{fmt(uKes)}</span>
+                      </div>
 
                       {manjak > 0 && (
-                        <div className="rounded-md bg-red-50 border border-red-200 p-2 text-xs text-red-700">
-                          ⚠ Nedostaje pokriće {fmt(manjak)} — izabrani izvor nema dovoljno. Prebaci obavezu na drugi izvor ili dodaj keš.
-                        </div>
-                      )}
-
-                      <Separator/>
-                      <div className="flex justify-between text-base font-bold rounded-md px-2 py-1.5 bg-orange-50 text-orange-700">
-                        <span>U keš vozaču:</span>
-                        <span>{fmt(uKesPosleDepozita)}</span>
-                      </div>
-                      {depositEnabled && Number(depositAmt) > 0 && (
-                        <div className="flex justify-between text-sm text-blue-700">
-                          <span>💰 Na depozit:</span><span>+{fmt(Number(depositAmt))}</span>
-                        </div>
+                        <p className="text-xs text-amber-600">Uzmi više iz nekog izvora ili se {fmt(manjak)} prenosi kao dugovanje.</p>
                       )}
                     </div>
                   );
@@ -1130,23 +1017,24 @@ Vozač: ${driver.full_name}
 Datum: ${obracunDate || today}
 Evidentirao: ${currentUser}
 
-DUGUJE:
+DUGUJE (obaveze): ${fmt(obligTotal)}
 ${rentaEnabled && rentaTotal > 0 ? `  Renta (${workDays} dana): ${fmt(rentaTotal)}` : ""}
 ${clanEnabled && clanTotal > 0 ? `  Članarina (${clanWeeks} sed.): ${fmt(clanTotal)}` : ""}
 ${posEnabled && posTotal > 0 ? `  POS naknada: ${fmt(posTotal)}` : ""}
 ${debtTotal > 0 ? `  Dugovanja: ${fmt(debtTotal)}` : ""}
 
-PRIMA:
-${keshEnabled && keshTotal > 0 ? `  Keš uplata (doneo): ${fmt(keshTotal)}` : ""}
+UZETO IZ IZVORA: ${fmt(takenTotal)}
+${kesTake > 0 ? `  Keš (doneo): ${fmt(kesTake)}` : ""}
+${yanTakeNum > 0 ? `  Yandex: ${fmt(yanTakeNum)} (ostaje ${fmt(Math.max(yanStay,0))} na saldu)` : ""}
+${karTakeNum > 0 ? `  Kartica: ${fmt(karTakeNum)} (ostaje ${fmt(Math.max(karStay,0))} na saldu)` : ""}
+
+DODATNE ISPLATE:
 ${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
 ${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri (naši): ${fmt(vaucerTotal)}` : ""}
 ${vaucerMbEnabled && vaucerMbTotal > 0 ? `  Vaučeri (MB): ${fmt(vaucerMbTotal)}` : ""}
-${yandexNet > 0 ? `  Yandex: ${fmt(yandexNet)}` : ""}
-${cardNet > 0 ? `  Kartice: ${fmt(cardNet)}` : ""}
 
 ==========================
-SALDO: ${saldo >= 0 ? `Prima ${fmt(saldo)}` : `Duguje ${fmt(Math.abs(saldo))}`}
-${saldo < 0 ? `(prenos na sledeći obračun)` : ""}
+${manjak > 0 ? `NEDOSTAJE (dug): ${fmt(manjak)}` : `ZA ISPLATU VOZAČU: ${fmt(isplataVozacu + pdvTotal + vaucerTotal + vaucerMbTotal)}`}
                 `.trim();
                 const blob = new Blob([content], { type: "text/plain" });
                 const url = URL.createObjectURL(blob);
