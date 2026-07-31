@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Loader2, CheckCircle2, Clock, Pencil, Trash2, Percent } from "lucide-react";
+import { Plus, Loader2, CheckCircle2, Clock, Pencil, Trash2, Percent, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { TrendingUp } from "lucide-react";
@@ -110,6 +110,105 @@ function ThreePercentDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── UNPAID GROUPED BY DRIVER ───────────────────────────────
+function YandexUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
+  unpaid: any[]; drivers: any[];
+  onPay: (id: string) => void;
+  onEdit: (r: any) => void;
+  onDelete: (r: any) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const byDriver: Record<string, any[]> = {};
+  for (const r of unpaid) {
+    const k = r.driver_id ?? "none";
+    (byDriver[k] ||= []).push(r);
+  }
+  const groups = Object.entries(byDriver)
+    .map(([driverId, ents]) => {
+      const driver = drivers.find(d => d.id === driverId);
+      // Raspoloživo = suma pozitivnih neto − suma 3% odbitaka
+      const pos = ents.filter(e => (e.net_amount ?? 0) > 0).reduce((s, e) => s + (e.net_amount - (e.paid_amount || 0)), 0);
+      const neg = ents.filter(e => (e.net_amount ?? 0) < 0).reduce((s, e) => s + Math.abs(e.net_amount), 0);
+      const available = pos - neg;
+      return { driverId, driver, ents, available, count: ents.length };
+    })
+    .sort((a, b) => (a.driver?.full_name ?? "—").localeCompare(b.driver?.full_name ?? "—"));
+
+  if (groups.length === 0)
+    return <Card><CardContent className="py-10 text-center text-muted-foreground">Nema neisplaćenih izvoda</CardContent></Card>;
+
+  return (
+    <div className="space-y-2">
+      {groups.map(g => {
+        const isOpen = expanded[g.driverId] ?? false;
+        return (
+          <Card key={g.driverId} className="overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 cursor-pointer border-l-4 border-l-orange-400"
+              onClick={() => setExpanded(prev => ({...prev, [g.driverId]: !isOpen}))}>
+              <div className="flex items-center gap-2">
+                {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
+                <span className="font-semibold text-sm">{g.driver?.full_name ?? "— (bez vozača)"}</span>
+                <Badge variant="secondary" className="text-xs">{g.count} {g.count === 1 ? "izvod" : "izvoda"}</Badge>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Raspoloživo</p>
+                <p className={`font-bold text-sm ${g.available >= 0 ? "text-orange-600" : "text-red-600"}`}>{fmt(g.available)}</p>
+              </div>
+            </div>
+            {isOpen && (
+              <div className="border-t">
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead>Period / Napomena</TableHead>
+                    <TableHead>Bruto</TableHead>
+                    <TableHead>Odbitak</TableHead>
+                    <TableHead>Neto</TableHead>
+                    <TableHead className="text-right">Akcije</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {g.ents.map(r => {
+                      const isDeduction = r.notes?.startsWith("3% odbitak");
+                      return (
+                        <TableRow key={r.id}>
+                          <TableCell className="text-xs">
+                            {isDeduction
+                              ? <div className="flex items-center gap-2"><Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">3%</Badge>{r.notes}</div>
+                              : <span className="text-muted-foreground">{r.period_from} — {r.period_to}</span>}
+                          </TableCell>
+                          {isDeduction ? (
+                            <>
+                              <TableCell className="text-muted-foreground">—</TableCell>
+                              <TableCell className="font-bold text-red-500">−{fmt(r.deduction_amount)}</TableCell>
+                              <TableCell className="font-bold text-red-500">−{fmt(Math.abs(r.net_amount))}</TableCell>
+                            </>
+                          ) : (
+                            <>
+                              <TableCell>{fmt(r.gross_amount)}</TableCell>
+                              <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
+                              <TableCell className="font-bold text-green-600">{fmt(r.net_amount - (r.paid_amount || 0))}{(r.paid_amount || 0) > 0 && <span className="text-[10px] text-blue-600 ml-1">(delimično)</span>}</TableCell>
+                            </>
+                          )}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onPay(r.id)}>Isplati</Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi" onClick={() => onEdit(r)}><Pencil className="h-4 w-4"/></Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4"/></Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+    </div>
   );
 }
 
@@ -325,82 +424,55 @@ const YandexPage = () => {
             <TabsTrigger value="unpaid">Za isplatu <Badge variant="destructive" className="ml-2 text-xs">{unpaid.length}</Badge></TabsTrigger>
             <TabsTrigger value="paid">Isplaćeno</TabsTrigger>
           </TabsList>
-          {["unpaid", "paid"].map(tab => (
-            <TabsContent key={tab} value={tab} className="mt-4">
-              <Card><CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Vozač</TableHead><TableHead>Period</TableHead><TableHead>Bruto</TableHead><TableHead>Odbitak</TableHead><TableHead>Neto vozaču</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Akcije</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {(tab === "unpaid" ? unpaid : paid).length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
-                    ) : (tab === "unpaid" ? unpaid : paid).map(r => {
-                      const driver = drivers.find(d => d.id === r.driver_id);
-                      return (
-                        <TableRow key={r.id}>
-                          <TableCell className="font-medium">
-                            <div className="flex items-center gap-2">
-                              {driver?.full_name ?? "—"}
-                              {r.notes?.startsWith("3% odbitak") && <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">3%</Badge>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}
-                          </TableCell>
-                          {r.notes?.startsWith("3% odbitak") ? (
-                            <>
-                              <TableCell className="text-muted-foreground">—</TableCell>
-                              <TableCell className="font-bold text-red-500">−{fmt(r.deduction_amount)}</TableCell>
-                              <TableCell className="font-bold text-red-500">duguje {fmt(Math.abs(r.net_amount))}</TableCell>
-                            </>
-                          ) : (
-                            <>
-                              <TableCell>{fmt(r.gross_amount)}</TableCell>
-                              <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
-                              <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>
-                            </>
-                          )}
-                          <TableCell>
-                            {r.paid_out
-                              ? <Badge variant="default" className="text-xs">Isplaćeno — {r.received_by}</Badge>
-                              : <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPayId(r.id); setPayOpen(true); }}>Isplati</Button>
-                            }
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-0.5">
-                              <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi"
-                                onClick={() => {
-                                  setEditId(r.id);
-                                  setEditGross(String(r.gross_amount));
-                                  setEditPct(String(r.deduction_pct));
-                                  setEditFrom(r.period_from);
-                                  setEditTo(r.period_to);
-                                  setEditDate(r.date);
-                                  setEditNotes(r.notes ?? "");
-                                }}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši"
-                                onClick={async () => {
-                                  if (!confirm(`Obrisati Yandex izvod od ${fmt(r.gross_amount)} (${r.period_from} — ${r.period_to})?`)) return;
-                                  try {
-                                    await deleteYandex(r.id);
-                                    toast.success("Obrisano");
-                                  } catch (e) {
-                                    toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
-                                  }
-                                }}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent></Card>
-            </TabsContent>
-          ))}
+
+          {/* NEISPLAĆENO — grupisano po vozaču */}
+          <TabsContent value="unpaid" className="mt-4">
+            <YandexUnpaidGrouped
+              unpaid={unpaid}
+              drivers={drivers}
+              onPay={(id) => { setPayId(id); setPayOpen(true); }}
+              onEdit={(r) => {
+                setEditId(r.id);
+                setEditGross(String(r.gross_amount));
+                setEditPct(String(r.deduction_pct));
+                setEditFrom(r.period_from);
+                setEditTo(r.period_to);
+                setEditDate(r.date);
+                setEditNotes(r.notes ?? "");
+              }}
+              onDelete={async (r) => {
+                if (!confirm(`Obrisati Yandex izvod od ${fmt(r.gross_amount)} (${r.period_from} — ${r.period_to})?`)) return;
+                try { await deleteYandex(r.id); toast.success("Obrisano"); }
+                catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+              }}
+            />
+          </TabsContent>
+
+          {/* ISPLAĆENO — flat tabela (istorija) */}
+          <TabsContent value="paid" className="mt-4">
+            <Card><CardContent className="p-0">
+              <Table>
+                <TableHeader><TableRow><TableHead>Vozač</TableHead><TableHead>Period</TableHead><TableHead>Bruto</TableHead><TableHead>Odbitak</TableHead><TableHead>Neto vozaču</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {paid.length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
+                  ) : paid.map(r => {
+                    const driver = drivers.find(d => d.id === r.driver_id);
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{driver?.full_name ?? "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}</TableCell>
+                        <TableCell>{fmt(r.gross_amount)}</TableCell>
+                        <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
+                        <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>
+                        <TableCell><Badge variant="default" className="text-xs">Isplaćeno — {r.received_by}</Badge></TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent></Card>
+          </TabsContent>
         </Tabs>
       )}
     </div>

@@ -297,25 +297,21 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // sada korisnik dobija PREDLOG ("možeš još N dana") i sam bira (vidi fillRentaDays).
 
   // Izračuni za rente i clanarine (ručno ili auto)
+  // Nedelja je otključana — ide u obračun kao svaki drugi dan (ako nije markirana "nije radio").
+  // Svaki dan: 1 (radni), 0.5 (pola), 0 (nije_radio/servis/praznik).
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
-  const workDays    = rentaDates.filter(d => {
-    const dow = new Date(d+"T00:00:00").getDay();
-    if (dow === 0) return false;                    // nedelja
-    if (cal.getOffStatus(driverId, d)) return false; // off-day
-    return true;
-  }).length;
-  const rentaTotal  = driver ? workDays * driver.daily_rate : 0;
-  const clanWeeks  = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
-  const clanTotal  = clanEnabled ? clanWeeks * (Number(clanAmt) || 0) : 0;
+  const workDays    = rentaDates.reduce((sum, d) => {
+    const off = cal.getOffStatus(driverId, d);
+    if (off === "pola") return sum + 0.5;
+    if (off) return sum; // nije_radio, servis, praznik
+    return sum + 1;
+  }, 0);
+  const rentaTotal  = driver ? Math.round(workDays * driver.daily_rate) : 0;
+  const clanWeeks   = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
+  const clanTotal   = clanEnabled ? Math.round(clanWeeks * (Number(clanAmt) || 0)) : 0;
 
-  // Bonus nedjelja
-  const lastDateObj = rentaTo ? new Date(rentaTo+"T00:00:00") : null;
-  const lastDow = lastDateObj?.getDay() ?? -1;
-  const daysToSun = lastDow > 0 ? 7 - lastDow : 0;
-  const bonusSunday = daysToSun > 0 && workDays >= 6 ? (() => {
-    const sun = new Date(lastDateObj!); sun.setDate(sun.getDate()+daysToSun);
-    return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,"0")}-${String(sun.getDate()).padStart(2,"0")}`;
-  })() : null;
+  // Bonus nedjelja se ukida — nedelja je sada normalan dan koji korisnik ručno markira "nije_radio" ako je vozač ne plaća.
+  const bonusSunday: string | null = null;
 
   // SALDO
   const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal;
@@ -349,18 +345,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
   const maxRentaDays = driver && driver.daily_rate > 0 ? Math.max(0, Math.floor(availableForRenta / driver.daily_rate)) : 0;
 
-  // Popuni N radnih dana rente počev od dana posle poslednje plaćene rente
+  // Popuni N dana rente počev od dana posle poslednje plaćene rente.
+  // Nedelja je otključana i računa se kao svaki drugi dan (korisnik markira "nije radio" ako je vozač ne plaća).
   const fillRentaDays = (n: number) => {
     if (!driver || n <= 0) return;
     const start = lastPaidDate ? new Date(lastPaidDate + "T00:00:00") : new Date();
     if (lastPaidDate) start.setDate(start.getDate() + 1);
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    let count = 0;
     const end = new Date(start);
-    while (count < n) {
-      if (end.getDay() !== 0) count++;      // preskoči nedelju
-      if (count < n) end.setDate(end.getDate() + 1);
-    }
+    end.setDate(start.getDate() + n - 1);
     setRentaFrom(iso(start));
     setRentaTo(iso(end));
     setRentaEnabled(true);
@@ -374,9 +367,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const fillClanWeeks = (n: number) => {
     if (!driver || n <= 0) return;
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    const start = lastClanDate ? new Date(lastClanDate + "T00:00:00") : new Date();
-    if (lastClanDate) start.setDate(start.getDate() + 1);
-    while (start.getDay() !== 1) start.setDate(start.getDate() + 1); // naredni ponedeljak
+    // Sidro: ako je korisnik izabrao datum "Od" (clanFrom) i nije današnji, koristi njega;
+    // inače kreni od naredne sedmice posle poslednje plaćene, inače od danas.
+    const userAnchored = clanFrom && clanFrom !== today;
+    let start: Date;
+    if (userAnchored) {
+      start = new Date(clanFrom + "T00:00:00");
+    } else {
+      start = lastClanDate ? new Date(lastClanDate + "T00:00:00") : new Date();
+      if (lastClanDate) start.setDate(start.getDate() + 1);
+    }
+    // Ako je start negde usred nedelje, pomeri se na ponedeljak TE nedelje (backward)
+    while (start.getDay() !== 1) start.setDate(start.getDate() - 1);
     const end = new Date(start);
     end.setDate(start.getDate() + (n * 7) - 1);
     setClanFrom(iso(start));
@@ -421,16 +423,17 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       const saveDate = obracunDate || today;
       const stavke: any[] = [];
 
-      // 1. Renta
+      // 1. Renta — svaki dan doprinosi 1.0 (radni), 0.5 (pola) ili 0 (off)
       if (rentaEnabled && workDays > 0) {
         await onAdd({ type:"renta", direction:"in", driver_id:driverId, amount:rentaTotal, date:saveDate,
-          description:`Renta ${rentaFrom} — ${rentaTo} (${workDays} dana)`, received_by:currentUser, notes:"" });
+          description:`Renta ${rentaFrom} — ${rentaTo} (${workDays} ${workDays===1?"dan":"dana"})`, received_by:currentUser, notes:"" });
         for (const d of rentaDates) {
-          if (new Date(d+"T00:00:00").getDay() === 0) continue;
-          await cal.saveAmount(driverId, d, "renta", driver.daily_rate, currentUser);
+          const off = cal.getOffStatus(driverId, d);
+          if (off === "nije_radio" || off === "servis" || off === "praznik") continue;
+          const amt = off === "pola" ? Math.round(driver.daily_rate / 2) : driver.daily_rate;
+          await cal.saveAmount(driverId, d, "renta", amt, currentUser);
           await cal.saveStatus(driverId, d, "izmireno", currentUser);
         }
-        if (bonusSunday) await cal.saveStatus(driverId, bonusSunday, "izmireno", currentUser);
       }
 
       // 2. Članarina
@@ -634,7 +637,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 {/* RENTA */}
                 <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
                   amount={rentaTotal}
-                  sublabel={workDays > 0 ? `${workDays} dana × ${fmt(driver.daily_rate)}${bonusSunday?" + nedjelja 🎉":""}` : undefined}>
+                  sublabel={workDays > 0 ? `${workDays} ${workDays===1?"dan":"dana"} × ${fmt(driver.daily_rate)}` : undefined}>
                   {/* PREDLOG na osnovu raspoloživog novca */}
                   {maxRentaDays > 0 && (
                     <div className="rounded-md bg-blue-50 border border-blue-200 p-2 flex items-center justify-between gap-2">
@@ -661,29 +664,31 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   </div>
                   {rentaDates.length > 0 && (
                     <>
-                      <p className="text-xs text-muted-foreground mt-1">Klik na dan da označiš razlog (nije radio / servis / praznik)</p>
+                      <p className="text-xs text-muted-foreground mt-1">Klik na dan da označiš: pola rente / nije radio / servis / praznik</p>
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {[...rentaDates, ...(bonusSunday?[bonusSunday]:[])].map(date => {
+                        {rentaDates.map(date => {
                           const dow = new Date(date+"T00:00:00").getDay();
                           const isSun = dow === 0;
                           const existing = cal.getStatus(driverId, date);
                           const off = cal.getOffStatus(driverId, date);
-                          const canEdit = !isSun && existing !== "izmireno";
-                          const setOff = (v: "nije_radio"|"servis"|"praznik"|null) => {
+                          const canEdit = existing !== "izmireno";
+                          const setOff = (v: "nije_radio"|"servis"|"praznik"|"pola"|null) => {
                             cal.saveOffStatus(driverId, date, v).catch(e => toast.error("Greška: " + e.message));
                           };
                           const label = off === "nije_radio" ? "Nije radio"
                                       : off === "servis" ? "Servis"
-                                      : off === "praznik" ? "Praznik" : "";
+                                      : off === "praznik" ? "Praznik"
+                                      : off === "pola" ? "½ rente" : "";
                           const cls = off === "nije_radio" ? "bg-red-100 text-red-700 border border-red-300 line-through"
                                     : off === "servis" ? "bg-amber-100 text-amber-700 border border-amber-300 line-through"
                                     : off === "praznik" ? "bg-purple-100 text-purple-700 border border-purple-300 line-through"
-                                    : isSun && date === bonusSunday ? "bg-green-100 text-green-700 border border-green-300"
+                                    : off === "pola" ? "bg-blue-100 text-blue-700 border border-blue-300"
                                     : existing === "izmireno" ? "bg-gray-100 text-gray-400 line-through"
+                                    : isSun ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
                                     : "bg-primary/10 text-primary hover:bg-primary/20";
                           const pillContent = (
                             <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors ${cls} ${canEdit ? "cursor-pointer" : "cursor-default"}`}>
-                              {date.slice(8)}. {DAYS_SR[dow]}{isSun?" 🎉":""}
+                              {date.slice(8)}. {DAYS_SR[dow]}
                               {label && <span className="text-[10px] opacity-70">· {label}</span>}
                             </span>
                           );
@@ -699,11 +704,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                                 </div>
                                 <button type="button" onClick={() => setOff(null)}
                                   className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${!off ? "bg-primary/10" : ""}`}>
-                                  <Sun className="h-3.5 w-3.5 text-primary" />Radni dan {!off && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                  <Sun className="h-3.5 w-3.5 text-primary" />Cela renta {!off && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                </button>
+                                <button type="button" onClick={() => setOff("pola")}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "pola" ? "bg-blue-50" : ""}`}>
+                                  <span className="h-3.5 w-3.5 flex items-center justify-center text-xs text-blue-600 font-bold">½</span>Pola rente {off === "pola" && <Check className="h-3.5 w-3.5 ml-auto" />}
                                 </button>
                                 <button type="button" onClick={() => setOff("nije_radio")}
                                   className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "nije_radio" ? "bg-red-50" : ""}`}>
-                                  <X className="h-3.5 w-3.5 text-red-600" />Nije radio {off === "nije_radio" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                  <X className="h-3.5 w-3.5 text-red-600" />Nije radio (ne plaća) {off === "nije_radio" && <Check className="h-3.5 w-3.5 ml-auto" />}
                                 </button>
                                 <button type="button" onClick={() => setOff("servis")}
                                   className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "servis" ? "bg-amber-50" : ""}`}>
@@ -760,6 +769,21 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                     <div className="grid gap-1"><Label className="text-xs">Do</Label><Input type="date" value={clanTo} onChange={e=>setClanTo(e.target.value)}/></div>
                   </div>
                   <div className="grid gap-1"><Label className="text-xs">Iznos/sedmici</Label><Input type="number" value={clanAmt} onChange={e=>setClanAmt(e.target.value)}/></div>
+                  {/* Interaktivni kalendar članarine — klik na sedmicu bira taj period */}
+                  <div className="mt-2 rounded-md border p-2 bg-muted/20">
+                    <ClanarinaKalendar
+                      driverId={driverId}
+                      weeklyAmt={driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own}
+                      selectedFrom={clanFrom}
+                      selectedTo={clanTo}
+                      onPickMonday={(monday) => {
+                        const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                        const sunday = new Date(monday + "T00:00:00"); sunday.setDate(sunday.getDate()+6);
+                        setClanFrom(monday);
+                        setClanTo(iso(sunday));
+                      }}
+                    />
+                  </div>
                 </CheckRow>
 
                 {/* POS */}
@@ -889,14 +913,6 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">›</button>
                   </div>
                   <KalendarPregled driverId={driverId} cal={cal} year={calYear} month={calMonth}/>
-                </div>
-
-                {/* Kalendar članarina */}
-                <div className="rounded-lg border p-3 space-y-2">
-                  <ClanarinaKalendar
-                    driverId={driverId}
-                    weeklyAmt={driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own}
-                  />
                 </div>
 
                 {/* ODAKLE UZIMAM — slobodna raspodela + rezultat */}

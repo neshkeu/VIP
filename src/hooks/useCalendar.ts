@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-export type OffStatus = "nije_radio" | "servis" | "praznik" | null;
+export type OffStatus = "nije_radio" | "servis" | "praznik" | "pola" | null;
 
 export interface CalendarEntry {
   id: string; driver_id: string; date: string;
