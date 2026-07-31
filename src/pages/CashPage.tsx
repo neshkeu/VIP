@@ -448,7 +448,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       // 1. Renta — svaki dan doprinosi 1.0 (radni), 0.5 (pola) ili 0 (off)
       if (rentaEnabled && workDays > 0) {
         await onAdd({ type:"renta", direction:"in", driver_id:driverId, amount:rentaTotal, date:saveDate,
-          description:`Renta ${rentaFrom} — ${rentaTo} (${workDays} ${workDays===1?"dan":"dana"})`, received_by:currentUser, notes:"" });
+          description:`Renta ${fmtD(rentaFrom)} — ${fmtD(rentaTo)} (${workDays} ${workDays===1?"dan":"dana"})`, received_by:currentUser, notes:"" });
         for (const d of rentaDates) {
           const off = cal.getOffStatus(driverId, d);
           if (off === "nije_radio" || off === "servis" || off === "praznik") continue;
@@ -461,7 +461,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       // 2. Članarina
       if (clanEnabled && clanTotal > 0) {
         await onAdd({ type:"clanarina", direction:"in", driver_id:driverId, amount:clanTotal, date:saveDate,
-          description:`Članarina ${clanFrom} — ${clanTo} (${clanWeeks} sed.)`, received_by:currentUser, notes:"" });
+          description:`Članarina ${fmtD(clanFrom)} — ${fmtD(clanTo)} (${clanWeeks} sed.)`, received_by:currentUser, notes:"" });
         await membership.addEntry({ driver_id:driverId, date_from:clanFrom, date_to:clanTo, amount:clanTotal, evidenced_by:currentUser });
       }
 
@@ -575,7 +575,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         const dep = Number(depositAmt);
         await addDeposit({
           driver_id: driverId, amount: dep, date: saveDate,
-          description: `Uplata na depozit iz obračuna ${saveDate}`, created_by: currentUser,
+          description: `Uplata na depozit iz obračuna ${fmtD(saveDate)}`, created_by: currentUser,
         });
         // Novac ostaje u firmi (vozač ne uzima keš) → dolazi kao ulaz u kasu
         await onAdd({ type:"depozit", direction:"in", driver_id:driverId, amount:dep, date:saveDate,
@@ -597,7 +597,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await supabase.from("driver_debts").insert({
           driver_id: driverId, type:"ostalo", amount: Math.round(manjak), paid_amount:0,
           date: saveDate, status:"open",
-          description: `Nepokrivena obaveza sa obračuna ${saveDate}`,
+          description: `Nepokrivena obaveza sa obračuna ${fmtD(saveDate)}`,
           created_by: currentUser
         });
         toast.success(`Obračun završen — nepokriveno ${fmt(Math.round(manjak))} prebačeno u dug`);
