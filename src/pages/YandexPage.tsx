@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { TrendingUp } from "lucide-react";
 import { DriverCombobox, type ComboOption } from "@/components/DriverCombobox";
+import { fmtD, fmtRange } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -176,7 +177,7 @@ function YandexUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
                           <TableCell className="text-xs">
                             {isDeduction
                               ? <div className="flex items-center gap-2"><Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">3%</Badge>{r.notes}</div>
-                              : <span className="text-muted-foreground">{r.period_from} — {r.period_to}</span>}
+                              : <span className="text-muted-foreground">{fmtRange(r.period_from, r.period_to)}</span>}
                           </TableCell>
                           {isDeduction ? (
                             <>
@@ -441,7 +442,7 @@ const YandexPage = () => {
                 setEditNotes(r.notes ?? "");
               }}
               onDelete={async (r) => {
-                if (!confirm(`Obrisati Yandex izvod od ${fmt(r.gross_amount)} (${r.period_from} — ${r.period_to})?`)) return;
+                if (!confirm(`Obrisati Yandex izvod od ${fmt(r.gross_amount)} (${fmtRange(r.period_from, r.period_to)})?`)) return;
                 try { await deleteYandex(r.id); toast.success("Obrisano"); }
                 catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
               }}
@@ -461,7 +462,7 @@ const YandexPage = () => {
                     return (
                       <TableRow key={r.id}>
                         <TableCell className="font-medium">{driver?.full_name ?? "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.notes?.startsWith("3% odbitak") ? r.notes : `${r.period_from} — ${r.period_to}`}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.notes?.startsWith("3% odbitak") ? r.notes : fmtRange(r.period_from, r.period_to)}</TableCell>
                         <TableCell>{fmt(r.gross_amount)}</TableCell>
                         <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
                         <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>

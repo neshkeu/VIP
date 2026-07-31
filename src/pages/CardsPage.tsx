@@ -13,6 +13,7 @@ import { Plus, Loader2, CheckCircle2, Clock, CreditCard, Pencil, Trash2, Chevron
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
+import { fmtD } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -77,7 +78,7 @@ function CardsUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
                             ? <Badge variant="outline" className="text-xs">{r.card_type}</Badge>
                             : <span className="text-muted-foreground text-xs">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.date}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{fmtD(r.date)}</TableCell>
                         <TableCell>{fmt(r.gross_amount)}</TableCell>
                         <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
                         <TableCell className="font-bold text-green-600">{fmt(r.net_amount - (r.paid_amount || 0))}{(r.paid_amount || 0) > 0 && <span className="text-[10px] text-blue-600 ml-1">(delimično)</span>}</TableCell>
@@ -380,7 +381,7 @@ const CardsPage = () => {
                 setEditNotes(r.notes ?? "");
               }}
               onDelete={async (r) => {
-                if (!confirm(`Obrisati izvod od ${fmt(r.gross_amount)} (${r.date})?`)) return;
+                if (!confirm(`Obrisati izvod od ${fmt(r.gross_amount)} (${fmtD(r.date)})?`)) return;
                 try { await deleteCard(r.id); toast.success("Obrisano"); }
                 catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
               }}
@@ -416,7 +417,7 @@ const CardsPage = () => {
                                   ? <Badge variant="outline" className="text-xs">{r.card_type}</Badge>
                                   : <span className="text-muted-foreground text-xs">—</span>}
                               </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{r.date}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{fmtD(r.date)}</TableCell>
                               <TableCell>{fmt(r.gross_amount)}</TableCell>
                               <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
                               <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>

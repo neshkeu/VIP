@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Calendar, Car, User } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { fmtD } from "@/lib/date";
 
 type Item = {
   id: string;
@@ -19,10 +20,7 @@ function daysBetween(dateStr: string | null | undefined): number | null {
   return Math.floor((d - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-function fmtDate(d: string) {
-  try { return new Date(d).toLocaleDateString("sr-RS"); }
-  catch { return d; }
-}
+function fmtDate(d: string) { return fmtD(d); }
 
 const WARN_DAYS = 30;
 

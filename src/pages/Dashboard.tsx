@@ -7,6 +7,7 @@ import { useVehicles } from "@/hooks/useVehicles";
 import { useCash } from "@/hooks/useCash";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { motion } from "framer-motion";
+import { fmtD } from "@/lib/date";
 
 const today = new Date();
 const filterMonth = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
@@ -103,7 +104,7 @@ const Dashboard = () => {
                   <div key={e.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
                     <div>
                       <p className="text-sm font-medium">{e.description || e.type}</p>
-                      <p className="text-xs text-muted-foreground">{e.date} · {e.received_by}</p>
+                      <p className="text-xs text-muted-foreground">{fmtD(e.date)} · {e.received_by}</p>
                     </div>
                     <span className={`font-bold text-sm ${e.direction === "in" ? "text-green-600" : "text-red-500"}`}>
                       {e.direction === "in" ? "+" : "−"}{fmt(e.amount)}
