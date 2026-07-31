@@ -5,14 +5,10 @@ import { DocumentAttachment } from "./DocumentAttachment";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Car, FileText, User, Building2, Calendar, Hash } from "lucide-react";
+import { fmtD } from "@/lib/date";
 
 function fmtDate(d: string | null | undefined) {
-  if (!d) return "—";
-  try {
-    return new Date(d).toLocaleDateString("sr-RS");
-  } catch {
-    return d;
-  }
+  return d ? fmtD(d) : "—";
 }
 
 function isExpiringSoon(date: string | null | undefined) {

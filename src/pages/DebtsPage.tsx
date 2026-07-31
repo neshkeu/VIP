@@ -16,6 +16,7 @@ import { DriverCombobox } from "@/components/DriverCombobox";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
+import { fmtD } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -62,7 +63,7 @@ function DebtCard({ debt }: { debt: any }) {
                 <Badge variant={statusCfg.variant} className="text-xs">{statusCfg.label}</Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">{debt.description}</p>
-              <p className="text-xs text-muted-foreground">{debt.date} · kreirao: {debt.created_by}</p>
+              <p className="text-xs text-muted-foreground">{fmtD(debt.date)} · kreirao: {debt.created_by}</p>
             </div>
             <div className="text-right flex-shrink-0">
               <p className="font-bold text-base">{fmt(debt.amount)}</p>
@@ -144,7 +145,7 @@ function DebtCard({ debt }: { debt: any }) {
                       <span className="text-muted-foreground text-xs">primio/la <strong>{p.received_by}</strong></span>
                       {p.notes && <span className="text-muted-foreground text-xs">· {p.notes}</span>}
                     </div>
-                    <span className="text-xs text-muted-foreground">{p.date}</span>
+                    <span className="text-xs text-muted-foreground">{fmtD(p.date)}</span>
                   </div>
                 ))}
               </div>

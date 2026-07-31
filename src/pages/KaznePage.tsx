@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
 import { motion } from "framer-motion";
+import { fmtD } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -195,7 +196,7 @@ const KaznePage = () => {
                           </div>
                         ) : <span className="text-muted-foreground text-xs">—</span>}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{p.violation_date || "—"}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{p.violation_date ? fmtD(p.violation_date) : "—"}</TableCell>
                       <TableCell className="text-sm">{p.description || "—"}</TableCell>
                       <TableCell className="font-bold text-red-600">{fmt(p.amount)}</TableCell>
                       <TableCell>

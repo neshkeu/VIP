@@ -26,13 +26,14 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
+import { fmtD, fmtRange } from "@/lib/date";
 
 const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
 const DAYS_SR   = ["Ned","Pon","Uto","Sri","Čet","Pet","Sub"];
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 function fmtDate(d: string) {
   const dt = new Date(d + "T00:00:00");
-  return `${DAYS_SR[dt.getDay()]}, ${dt.getDate()}. ${MONTHS_SR[dt.getMonth()]}`;
+  return `${DAYS_SR[dt.getDay()]}, ${fmtD(d)}`;
 }
 function isObracunDay(date: string) {
   const dow = new Date(date + "T00:00:00").getDay();
@@ -842,7 +843,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                               <div>
                                 <p className="text-sm font-medium">{debt.description}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {debt.type} · {debt.date}
+                                  {debt.type} · {fmtD(debt.date)}
                                   {debt.paid_amount > 0 && ` · plaćeno ${fmt(debt.paid_amount)} od ${fmt(debt.amount)}`}
                                 </p>
                               </div>
@@ -1051,7 +1052,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 VIP TAXI — Obračun vozača
 ==========================
 Vozač: ${driver.full_name}
-Datum: ${obracunDate || today}
+Datum: ${fmtD(obracunDate || today)}
 Evidentirao: ${currentUser}
 
 DUGUJE (obaveze): ${fmt(obligTotal)}
