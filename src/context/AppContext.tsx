@@ -22,12 +22,19 @@ export interface CardReport {
   paid_out: boolean; paid_amount?: number; payment_basis?: string | null;
   received_by: string; notes: string; created_at: string;
 }
+export interface NeoplantaRide {
+  id: string; driver_id: string; vehicle_id: string | null;
+  date: string; route: string; amount: number;
+  paid_out: boolean; paid_amount?: number; payment_basis?: string | null;
+  received_by: string; notes: string; evidenced_by: string; created_at: string;
+}
 
 interface AppContextType {
   drivers: Driver[];
   vehicles: Vehicle[];
   yandexReports: YandexReport[];
   cardReports: CardReport[];
+  neoplantaRides: NeoplantaRide[];
   displayName: string;
   user: User | null;
   loading: boolean;
@@ -44,6 +51,9 @@ interface AppContextType {
   deleteCard: (id: string) => Promise<void>;
   updateYandex: (id: string, updates: Partial<YandexReport>) => Promise<YandexReport>;
   deleteYandex: (id: string) => Promise<void>;
+  addNeoplanta: (r: Omit<NeoplantaRide, "id" | "created_at">) => Promise<NeoplantaRide>;
+  updateNeoplanta: (id: string, updates: Partial<NeoplantaRide>) => Promise<NeoplantaRide>;
+  deleteNeoplanta: (id: string) => Promise<void>;
   logout: () => Promise<void>;
   refetchDrivers: () => Promise<void>;
   refetchAll: () => Promise<void>;
@@ -56,6 +66,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [yandexReports, setYandex] = useState<YandexReport[]>([]);
   const [cardReports, setCards] = useState<CardReport[]>([]);
+  const [neoplantaRides, setNeoplanta] = useState<NeoplantaRide[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -75,21 +86,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const [userRes, dRes, vRes, yRes, cRes] = await Promise.all([
+      const [userRes, dRes, vRes, yRes, cRes, nRes] = await Promise.all([
         supabase.auth.getUser(),
         supabase.from("drivers").select("*").order("full_name"),
         supabase.from("vehicles").select("*").order("brand"),
         supabase.from("yandex_reports").select("*").order("date", { ascending: false }),
         supabase.from("card_reports").select("*").order("date", { ascending: false }),
+        supabase.from("neoplanta_rides").select("*").order("date", { ascending: false }),
       ]);
 
-      const firstErr = [dRes.error, vRes.error, yRes.error, cRes.error].find(Boolean);
+      const firstErr = [dRes.error, vRes.error, yRes.error, cRes.error, nRes.error].find(Boolean);
       if (firstErr) throw firstErr;
 
       setDrivers(dRes.data ?? []);
       setVehicles(vRes.data ?? []);
       setYandex(yRes.data ?? []);
       setCards(cRes.data ?? []);
+      setNeoplanta(nRes.data ?? []);
 
       if (userRes.data.user) {
         setUser(userRes.data.user);
@@ -186,6 +199,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) { toast.error("Greška: " + error.message); throw error; }
     setYandex(prev => prev.filter(r => r.id !== id));
   }
+  async function addNeoplanta(ride: Omit<NeoplantaRide, "id" | "created_at">) {
+    const { data, error } = await supabase.from("neoplanta_rides").insert(ride).select().single();
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setNeoplanta(prev => [data, ...prev]);
+    return data;
+  }
+  async function updateNeoplanta(id: string, updates: Partial<NeoplantaRide>) {
+    const { data, error } = await supabase.from("neoplanta_rides").update(updates).eq("id", id).select().single();
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setNeoplanta(prev => prev.map(r => r.id === id ? data : r));
+    return data;
+  }
+  async function deleteNeoplanta(id: string) {
+    const { error } = await supabase.from("neoplanta_rides").delete().eq("id", id);
+    if (error) { toast.error("Greška: " + error.message); throw error; }
+    setNeoplanta(prev => prev.filter(r => r.id !== id));
+  }
   async function logout() {
     localStorage.removeItem("vip_pin_ok");
     localStorage.removeItem("vip_pin_ok_at");
@@ -199,10 +229,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      drivers, vehicles, yandexReports, cardReports, displayName, user, loading, error,
+      drivers, vehicles, yandexReports, cardReports, neoplantaRides, displayName, user, loading, error,
       addDriver, updateDriver, addVehicle, updateVehicle,
       addYandex, markYandexPaid, updateYandex, deleteYandex,
       addCard, markCardPaid, updateCard, deleteCard,
+      addNeoplanta, updateNeoplanta, deleteNeoplanta,
       logout, refetchDrivers, refetchAll: loadAll,
     }}>
       {children}

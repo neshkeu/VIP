@@ -69,13 +69,13 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   renta:"Renta",clanarina:"Članarina",pos_naknada:"POS naknada",
   komunalni:"Komunalni",doprinosi:"Doprinosi",dugovanje:"Uplata dugovanja",
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
-  kartica:"Kartica isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
+  kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
   likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasu",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
   komunalni:"text-green-700",doprinosi:"text-green-700",dugovanje:"text-blue-700",
-  likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",
+  likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",neoplanta:"text-emerald-700",
   vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
 };
 
@@ -175,7 +175,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
 }) {
   const { drivers, vehicles } = useApp();
-  const { yandexReports, cardReports, updateYandex, updateCard } = useApp();
+  const { yandexReports, cardReports, neoplantaRides, updateYandex, updateCard, updateNeoplanta } = useApp();
   const today = new Date().toISOString().split("T")[0];
   const curMonthStr = today.slice(0,7);
 
@@ -236,6 +236,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // RASPODELA PO IZVORIMA — koliko uzimam iz svakog (slobodna kombinacija)
   const [yanTake, setYanTake] = useState("");
   const [karTake, setKarTake] = useState("");
+  const [neoTake, setNeoTake] = useState("");
 
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
@@ -299,6 +300,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const driverCards = cardReports.filter(r => r.driver_id === driverId && !r.paid_out);
   const cardSelected = driverCards;
   const cardNet    = cardSelected.reduce((s,r) => s + cRemain(r), 0);
+  const nRemain = (r: typeof neoplantaRides[number]) => r.amount - (r.paid_amount || 0);
+  const driverNeoplanta = neoplantaRides.filter(r => r.driver_id === driverId && !r.paid_out);
+  const neoplantaSelected = driverNeoplanta;
+  const neoplantaNet = neoplantaSelected.reduce((s,r) => s + nRemain(r), 0);
   const vaucerTotal   = vaucerEnabled   ? (Number(vaucerCount)   || 0) * (Number(vaucerAmt)   || 0) : 0;
   const vaucerMbTotal = vaucerMbEnabled ? (Number(vaucerMbCount) || 0) * (Number(vaucerMbAmt) || 0) : 0;
   const keshTotal     = Number(keshAmt) || 0;
@@ -343,15 +348,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const kesTake  = Number(keshAmt) || 0;                              // koliko keša vozač doneo
   const yanAvail = Math.max(0, yandexRedovniSum - yandexOdbiciSum);   // yandex umanjen za 3% odbitak
   const karAvail = cardNet;
+  const neoAvail = neoplantaNet;
   const yanTakeNum = Math.max(0, Math.min(Number(yanTake) || 0, yanAvail));
   const karTakeNum = Math.max(0, Math.min(Number(karTake) || 0, karAvail));
+  const neoTakeNum = Math.max(0, Math.min(Number(neoTake) || 0, neoAvail));
 
-  const takenTotal = kesTake + yanTakeNum + karTakeNum;   // koliko ukupno "stavljeno na sto"
+  const takenTotal = kesTake + yanTakeNum + karTakeNum + neoTakeNum;   // koliko ukupno "stavljeno na sto"
   const surplus    = takenTotal - obligTotal;             // >0 isplata vozaču, <0 manjak → dug
   const isplataVozacu = Math.max(surplus, 0);
   const manjak     = Math.max(-surplus, 0);
   const yanStay    = yanAvail - yanTakeNum;               // ostaje na yandex saldu
   const karStay    = karAvail - karTakeNum;               // ostaje na kartica saldu
+  const neoStay    = neoAvail - neoTakeNum;               // ostaje na neoplanta saldu
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
   const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
@@ -425,7 +433,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setDepositEnabled(false); setDepositAmt("");
     setKeshEnabled(false); setKeshAmt("");
     setRentaDaysPick(""); setClanWeeksPick("");
-    setYanTake(""); setKarTake("");
+    setYanTake(""); setKarTake(""); setNeoTake("");
   };
 
   const reset = () => {
@@ -568,6 +576,26 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karTakeNum, date:saveDate,
           description:`Kartica — uzeto ${fmt(karTakeNum)}${karStay>0?` (ostaje ${fmt(karStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
         stavke.push({ type:"kartica", direction:"out", amount:karTakeNum, description:"Kartica — uzeto" });
+      }
+
+      // 8c. Neoplanta — FIFO (starije prvo) za neoTakeNum, ostatak na saldu
+      let poolNeo = neoTakeNum;
+      const neoFifo = [...neoplantaSelected].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+      for (const r of neoFifo) {
+        if (poolNeo <= 0.01) break;
+        const eff = nRemain(r);
+        const already = r.paid_amount || 0;
+        const take = Math.min(poolNeo, Math.max(eff, 0));
+        if (take <= 0) continue;
+        poolNeo -= take;
+        const newPaid = already + take;
+        const fully = newPaid >= r.amount - 0.01;
+        await updateNeoplanta(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
+      }
+      if (neoTakeNum > 0) {
+        await onAdd({ type:"neoplanta", direction:"out", driver_id:driverId, amount:neoTakeNum, date:saveDate,
+          description:`Neoplanta — uzeto ${fmt(neoTakeNum)}${neoStay>0?` (ostaje ${fmt(neoStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
+        stavke.push({ type:"neoplanta", direction:"out", amount:neoTakeNum, description:"Neoplanta — uzeto" });
       }
 
       // 8b. Depozit — prebaci deo isplate na račun vozača
@@ -991,7 +1019,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanTake} onChange={e=>setYanTake(e.target.value)}/>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(obligTotal - kesTake - karTakeNum,0), yanAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(obligTotal - kesTake - karTakeNum - neoTakeNum,0), yanAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(yanAvail))}>Sve ({fmt(yanAvail)})</Button>
                           </div>
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(yanStay,0))}</strong></p>
@@ -1010,10 +1038,29 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karTake} onChange={e=>setKarTake(e.target.value)}/>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum,0), karAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - neoTakeNum,0), karAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(karAvail))}>Sve ({fmt(karAvail)})</Button>
                           </div>
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(karStay,0))}</strong></p>
+                        </div>
+                      )}
+
+                      {/* NEOPLANTA */}
+                      {neoAvail > 0 && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Neoplanta</span>
+                            <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(neoAvail)}</strong></span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
+                            <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoTake} onChange={e=>setNeoTake(e.target.value)}/>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - karTakeNum,0), neoAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(neoAvail))}>Sve ({fmt(neoAvail)})</Button>
+                          </div>
+                          <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(neoStay,0))}</strong></p>
                         </div>
                       )}
 
@@ -1082,6 +1129,7 @@ UZETO IZ IZVORA: ${fmt(takenTotal)}
 ${kesTake > 0 ? `  Keš (doneo): ${fmt(kesTake)}` : ""}
 ${yanTakeNum > 0 ? `  Yandex: ${fmt(yanTakeNum)} (ostaje ${fmt(Math.max(yanStay,0))} na saldu)` : ""}
 ${karTakeNum > 0 ? `  Kartica: ${fmt(karTakeNum)} (ostaje ${fmt(Math.max(karStay,0))} na saldu)` : ""}
+${neoTakeNum > 0 ? `  Neoplanta: ${fmt(neoTakeNum)} (ostaje ${fmt(Math.max(neoStay,0))} na saldu)` : ""}
 
 DODATNE ISPLATE:
 ${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
