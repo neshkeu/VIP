@@ -130,11 +130,13 @@ function YandexUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
   const groups = Object.entries(byDriver)
     .map(([driverId, ents]) => {
       const driver = drivers.find(d => d.id === driverId);
-      // Raspoloživo = suma pozitivnih neto − suma 3% odbitaka
-      const pos = ents.filter(e => (e.net_amount ?? 0) > 0).reduce((s, e) => s + (e.net_amount - (e.paid_amount || 0)), 0);
-      const neg = ents.filter(e => (e.net_amount ?? 0) < 0).reduce((s, e) => s + Math.abs(e.net_amount), 0);
+      // Skidanje ide FIFO — starije prvo. Sortiraj eksplicitno po period_from ASC.
+      const sortedEnts = [...ents].sort((a, b) => (a.period_from ?? a.date).localeCompare(b.period_from ?? b.date));
+      // Raspoloživo = suma pozitivnih neto (minus već isplaćeno) − suma 3% odbitaka
+      const pos = sortedEnts.filter(e => (e.net_amount ?? 0) > 0).reduce((s, e) => s + (e.net_amount - (e.paid_amount || 0)), 0);
+      const neg = sortedEnts.filter(e => (e.net_amount ?? 0) < 0).reduce((s, e) => s + Math.abs(e.net_amount), 0);
       const available = pos - neg;
-      return { driverId, driver, ents, available, count: ents.length };
+      return { driverId, driver, ents: sortedEnts, available, count: sortedEnts.length };
     })
     .sort((a, b) => (a.driver?.full_name ?? "—").localeCompare(b.driver?.full_name ?? "—"));
 
@@ -167,11 +169,14 @@ function YandexUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
                     <TableHead>Bruto</TableHead>
                     <TableHead>Odbitak</TableHead>
                     <TableHead>Neto</TableHead>
+                    <TableHead>Raspoloživo</TableHead>
                     <TableHead className="text-right">Akcije</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {g.ents.map(r => {
                       const isDeduction = r.notes?.startsWith("3% odbitak");
+                      const paid = r.paid_amount || 0;
+                      const remaining = r.net_amount - paid;
                       return (
                         <TableRow key={r.id}>
                           <TableCell className="text-xs">
@@ -184,12 +189,17 @@ function YandexUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
                               <TableCell className="text-muted-foreground">—</TableCell>
                               <TableCell className="font-bold text-red-500">−{fmt(r.deduction_amount)}</TableCell>
                               <TableCell className="font-bold text-red-500">−{fmt(Math.abs(r.net_amount))}</TableCell>
+                              <TableCell className="font-bold text-red-500">−{fmt(Math.abs(r.net_amount))}</TableCell>
                             </>
                           ) : (
                             <>
                               <TableCell>{fmt(r.gross_amount)}</TableCell>
                               <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
-                              <TableCell className="font-bold text-green-600">{fmt(r.net_amount - (r.paid_amount || 0))}{(r.paid_amount || 0) > 0 && <span className="text-[10px] text-blue-600 ml-1">(delimično)</span>}</TableCell>
+                              <TableCell className="font-bold text-muted-foreground">{fmt(r.net_amount)}</TableCell>
+                              <TableCell className={`font-bold ${remaining <= 0 ? "text-gray-400" : "text-green-600"}`}>
+                                {fmt(remaining)}
+                                {paid > 0 && <span className="text-[10px] text-blue-600 ml-1">(isplaćeno {fmt(paid)})</span>}
+                              </TableCell>
                             </>
                           )}
                           <TableCell className="text-right">
@@ -233,6 +243,7 @@ const YandexPage = () => {
   const [payId, setPayId]   = useState("");
   const [payBy, setPayBy]   = useState("");
   const [payOpen, setPayOpen] = useState(false);
+  const [payAmt, setPayAmt] = useState("");
 
   // Edit state
   const [editId, setEditId]           = useState<string | null>(null);
@@ -400,22 +411,56 @@ const YandexPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Isplati dialog */}
-      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+      {/* Isplati dialog — podržava delimičnu isplatu (parcijalno u keš) */}
+      <Dialog open={payOpen} onOpenChange={v => { setPayOpen(v); if (!v) { setPayBy(""); setPayAmt(""); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Isplati vozaču</DialogTitle></DialogHeader>
-          <div className="py-3"><Label>Ko isplaćuje</Label><Input className="mt-2" placeholder="Nemanja, Milica..." value={payBy} onChange={e => setPayBy(e.target.value)}/></div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
-            <Button disabled={!payBy || saving} onClick={async () => {
-              setSaving(true);
-              try { await markPaidOut(payId, payBy); toast.success("Isplaćeno — " + payBy); setPayOpen(false); setPayBy(""); }
-              catch(e: any) { toast.error("Greška: " + e.message); }
-              finally { setSaving(false); }
-            }}>
-              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Isplati
-            </Button>
-          </DialogFooter>
+          {(() => {
+            const r = reports.find(x => x.id === payId);
+            const paidPrev = r?.paid_amount || 0;
+            const remaining = r ? r.net_amount - paidPrev : 0;
+            const amtNum = Number(payAmt) || 0;
+            const isFull = amtNum >= remaining - 0.01;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Isplati vozaču</DialogTitle>
+                  {r && <DialogDescription>Raspoloživo: <strong>{fmt(remaining)}</strong>{paidPrev > 0 && <span className="text-blue-600"> (već isplaćeno {fmt(paidPrev)} od {fmt(r.net_amount)})</span>}</DialogDescription>}
+                </DialogHeader>
+                <div className="py-3 space-y-3">
+                  <div className="grid gap-1.5">
+                    <Label>Iznos u keš (RSD)</Label>
+                    <Input type="number" placeholder={String(remaining)} value={payAmt} onChange={e => setPayAmt(e.target.value)}/>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => setPayAmt(String(remaining))}>Isplati sve ({fmt(remaining)})</Button>
+                    </div>
+                    {amtNum > remaining && <p className="text-xs text-amber-600">Iznos je veći od raspoloživog — biće ograničeno na {fmt(remaining)}</p>}
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>Ko isplaćuje</Label>
+                    <Input placeholder="Nemanja, Milica..." value={payBy} onChange={e => setPayBy(e.target.value)}/>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
+                  <Button disabled={!payBy || amtNum <= 0 || saving} onClick={async () => {
+                    if (!r) return;
+                    setSaving(true);
+                    try {
+                      const take = Math.min(amtNum, remaining);
+                      const newPaid = paidPrev + take;
+                      const fully = newPaid >= r.net_amount - 0.01;
+                      await updateYandex(r.id, { paid_amount: newPaid, paid_out: fully, received_by: payBy });
+                      toast.success(fully ? `Isplaćeno u celosti (${fmt(take)}) — ${payBy}` : `Delimična isplata ${fmt(take)} — ${payBy}`);
+                      setPayOpen(false); setPayBy(""); setPayAmt("");
+                    } catch (e: any) { toast.error("Greška: " + e.message); }
+                    finally { setSaving(false); }
+                  }}>
+                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}{isFull ? "Isplati u celosti" : "Isplati delimično"}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -431,7 +476,11 @@ const YandexPage = () => {
             <YandexUnpaidGrouped
               unpaid={unpaid}
               drivers={drivers}
-              onPay={(id) => { setPayId(id); setPayOpen(true); }}
+              onPay={(id) => {
+                const r = reports.find(x => x.id === id);
+                const rem = r ? r.net_amount - (r.paid_amount || 0) : 0;
+                setPayId(id); setPayAmt(String(rem)); setPayBy(displayName || ""); setPayOpen(true);
+              }}
               onEdit={(r) => {
                 setEditId(r.id);
                 setEditGross(String(r.gross_amount));
