@@ -33,7 +33,12 @@ interface MembershipEntry {
   id: string; driver_id: string; date_from: string; date_to: string; amount: number;
 }
 
-export function ClanarinaKalendar({ driverId, weeklyAmt }: { driverId: string; weeklyAmt: number }) {
+export function ClanarinaKalendar({ driverId, weeklyAmt, onPickMonday, selectedFrom, selectedTo }: {
+  driverId: string; weeklyAmt: number;
+  onPickMonday?: (mondayIso: string) => void;
+  selectedFrom?: string;
+  selectedTo?: string;
+}) {
   const today = new Date();
   const [year, setYear]   = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth()+1);
@@ -83,24 +88,32 @@ export function ClanarinaKalendar({ driverId, weeklyAmt }: { driverId: string; w
           const sunday = getWeekEnd(monday);
           const paid = isWeekPaid(monday);
           const partial = isWeekPartial(monday);
+          const isSelected = selectedFrom && selectedTo && selectedFrom <= monday && monday <= selectedTo;
+          const isClickable = !!onPickMonday && !paid;
           return (
-            <div key={monday} className={`rounded-lg border px-3 py-2 flex items-center justify-between ${
-              paid    ? "bg-green-50 border-green-300" :
-              partial ? "bg-amber-50 border-amber-300" :
-              "bg-gray-50 border-gray-200"
-            }`}>
+            <div key={monday}
+              onClick={() => { if (isClickable) onPickMonday!(monday); }}
+              className={`rounded-lg border px-3 py-2 flex items-center justify-between transition-colors ${
+                isSelected ? "bg-primary/10 border-primary" :
+                paid    ? "bg-green-50 border-green-300" :
+                partial ? "bg-amber-50 border-amber-300" :
+                "bg-gray-50 border-gray-200"
+              } ${isClickable ? "cursor-pointer hover:border-primary" : "cursor-default"}`}>
               <div className="flex items-center gap-2">
-                <div className={`h-4 w-4 rounded-full flex-shrink-0 ${paid?"bg-green-500":partial?"bg-amber-400":"bg-gray-200"}`}/>
+                <div className={`h-4 w-4 rounded-full flex-shrink-0 ${isSelected?"bg-primary":paid?"bg-green-500":partial?"bg-amber-400":"bg-gray-200"}`}/>
                 <span className="text-xs font-medium">{i+1}. sedmica</span>
                 <span className="text-xs text-muted-foreground">{fmtShort(monday)} — {fmtShort(sunday)}</span>
               </div>
-              <span className={`text-xs font-semibold ${paid?"text-green-600":partial?"text-amber-600":"text-gray-400"}`}>
-                {paid ? `✓ ${fmt(weeklyAmt)}` : partial ? "djelimično" : "nije plaćeno"}
+              <span className={`text-xs font-semibold ${isSelected?"text-primary":paid?"text-green-600":partial?"text-amber-600":"text-gray-400"}`}>
+                {isSelected ? "izabrano" : paid ? `✓ ${fmt(weeklyAmt)}` : partial ? "djelimično" : "nije plaćeno"}
               </span>
             </div>
           );
         })}
       </div>
+      {onPickMonday && (
+        <p className="text-[11px] text-muted-foreground italic">Klik na neplaćenu sedmicu → izabere se u obračun.</p>
+      )}
 
       <div className="flex gap-3 text-xs">
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500 inline-block"/>Plaćeno</span>
