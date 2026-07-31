@@ -18,9 +18,8 @@ import { fmtD } from "@/lib/date";
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 // ─── UNPAID GROUPED BY DRIVER ───────────────────────────────
-function CardsUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
+function CardsUnpaidGrouped({ unpaid, drivers, onEdit, onDelete }: {
   unpaid: any[]; drivers: any[];
-  onPay: (id: string) => void;
   onEdit: (r: any) => void;
   onDelete: (r: any) => Promise<void>;
 }) {
@@ -94,7 +93,6 @@ function CardsUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-0.5">
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onPay(r.id)}>Isplati</Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi" onClick={() => onEdit(r)}><Pencil className="h-4 w-4"/></Button>
                               <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4"/></Button>
                             </div>
@@ -115,7 +113,7 @@ function CardsUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
 
 const CardsPage = () => {
   const { drivers, vehicles, displayName } = useApp();
-  const { cardReports: reports, addCard: addReport, markCardPaid: markPaidOut, updateCard, deleteCard, loading } = useApp();
+  const { cardReports: reports, addCard: addReport, updateCard, deleteCard, loading } = useApp();
 
   const PAYMENT_METHODS = [
     { value: "kartica",    label: "Kartica" },
@@ -134,10 +132,7 @@ const CardsPage = () => {
   const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes]         = useState("");
   const [saving, setSaving]       = useState(false);
-  const [payId, setPayId]         = useState("");
-  const [payBy, setPayBy]         = useState("");
-  const [payOpen, setPayOpen]     = useState(false);
-  const [payAmt, setPayAmt]       = useState("");
+
 
   // Edit state
   const [editId, setEditId]       = useState<string | null>(null);
@@ -339,58 +334,6 @@ const CardsPage = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={payOpen} onOpenChange={v => { setPayOpen(v); if (!v) { setPayBy(""); setPayAmt(""); } }}>
-        <DialogContent className="max-w-sm">
-          {(() => {
-            const r = reports.find(x => x.id === payId);
-            const paidPrev = r?.paid_amount || 0;
-            const remaining = r ? r.net_amount - paidPrev : 0;
-            const amtNum = Number(payAmt) || 0;
-            const isFull = amtNum >= remaining - 0.01;
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle>Isplati vozaču</DialogTitle>
-                  {r && <DialogDescription>Raspoloživo: <strong>{fmt(remaining)}</strong>{paidPrev > 0 && <span className="text-blue-600"> (već isplaćeno {fmt(paidPrev)} od {fmt(r.net_amount)})</span>}</DialogDescription>}
-                </DialogHeader>
-                <div className="py-3 space-y-3">
-                  <div className="grid gap-1.5">
-                    <Label>Iznos u keš (RSD)</Label>
-                    <Input type="number" placeholder={String(remaining)} value={payAmt} onChange={e => setPayAmt(e.target.value)}/>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => setPayAmt(String(remaining))}>Isplati sve ({fmt(remaining)})</Button>
-                    </div>
-                    {amtNum > remaining && <p className="text-xs text-amber-600">Iznos je veći od raspoloživog — biće ograničeno na {fmt(remaining)}</p>}
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label>Ko isplaćuje</Label>
-                    <Input placeholder={displayName || "Nemanja, Milica..."} value={payBy} onChange={e => setPayBy(e.target.value)}/>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
-                  <Button disabled={!payBy || amtNum <= 0 || saving} onClick={async () => {
-                    if (!r) return;
-                    setSaving(true);
-                    try {
-                      const take = Math.min(amtNum, remaining);
-                      const newPaid = paidPrev + take;
-                      const fully = newPaid >= r.net_amount - 0.01;
-                      await updateCard(r.id, { paid_amount: newPaid, paid_out: fully, received_by: payBy });
-                      toast.success(fully ? `Isplaćeno u celosti (${fmt(take)}) — ${payBy}` : `Delimična isplata ${fmt(take)} — ${payBy}`);
-                      setPayOpen(false); setPayBy(""); setPayAmt("");
-                    } catch (e: any) { toast.error("Greška: " + e.message); }
-                    finally { setSaving(false); }
-                  }}>
-                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}{isFull ? "Isplati u celosti" : "Isplati delimično"}
-                  </Button>
-                </DialogFooter>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
@@ -405,11 +348,6 @@ const CardsPage = () => {
             <CardsUnpaidGrouped
               unpaid={unpaid}
               drivers={drivers}
-              onPay={(id) => {
-                const r = reports.find(x => x.id === id);
-                const rem = r ? r.net_amount - (r.paid_amount || 0) : 0;
-                setPayId(id); setPayAmt(String(rem)); setPayBy(displayName || ""); setPayOpen(true);
-              }}
               onEdit={(r) => {
                 setEditId(r.id);
                 setEditGross(String(r.gross_amount));
@@ -438,14 +376,20 @@ const CardsPage = () => {
                       <TableHead>Iznos</TableHead>
                       <TableHead>Provizija</TableHead>
                       <TableHead>Za uplatu</TableHead>
+                      <TableHead>Osnov</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paid.length === 0
-                      ? <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
+                      ? <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema podataka</TableCell></TableRow>
                       : paid.map(r => {
                           const driver = drivers.find(d => d.id === r.driver_id);
+                          const basis = r.payment_basis;
+                          const basisStyle = basis === "u kešu" ? "bg-orange-50 text-orange-700 border-orange-200"
+                                           : basis === "kroz obračun" ? "bg-blue-50 text-blue-700 border-blue-200"
+                                           : basis === "kombinovano" ? "bg-purple-50 text-purple-700 border-purple-200"
+                                           : "bg-gray-50 text-gray-500 border-gray-200";
                           return (
                             <TableRow key={r.id}>
                               <TableCell className="font-medium">{driver?.full_name ?? "—"}</TableCell>
@@ -458,6 +402,7 @@ const CardsPage = () => {
                               <TableCell>{fmt(r.gross_amount)}</TableCell>
                               <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
                               <TableCell className="font-bold text-green-600">{fmt(r.net_amount)}</TableCell>
+                              <TableCell><Badge variant="outline" className={`text-xs ${basisStyle}`}>{basis ?? "—"}</Badge></TableCell>
                               <TableCell><Badge variant="default" className="text-xs">Isplaćeno — {r.received_by}</Badge></TableCell>
                             </TableRow>
                           );

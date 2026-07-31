@@ -11,14 +11,16 @@ export interface YandexReport {
   id: string; driver_id: string; vehicle_id: string | null;
   gross_amount: number; deduction_pct: number; deduction_amount: number; net_amount: number;
   date: string; period_from: string; period_to: string;
-  paid_out: boolean; paid_amount?: number; received_by: string; notes: string; created_at: string;
+  paid_out: boolean; paid_amount?: number; payment_basis?: string | null;
+  received_by: string; notes: string; created_at: string;
 }
 export interface CardReport {
   id: string; driver_id: string; vehicle_id: string | null;
   card_type: string; gross_amount: number; deduction_pct: number;
   deduction_amount: number; net_amount: number;
   date: string; period_from: string; period_to: string;
-  paid_out: boolean; paid_amount?: number; received_by: string; notes: string; created_at: string;
+  paid_out: boolean; paid_amount?: number; payment_basis?: string | null;
+  received_by: string; notes: string; created_at: string;
 }
 
 interface AppContextType {
