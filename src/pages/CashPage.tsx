@@ -251,7 +251,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     if (driverId === "none") { setLastPaidDate(null); setLastClanDate(null); return; }
     supabase.from("calendar_entries").select("date").eq("driver_id", driverId).eq("status","izmireno")
       .order("date", { ascending: false }).limit(1)
-      .then(({ data }) => setLastPaidDate(data?.[0]?.date ?? null));
+      .then(({ data }) => {
+        const last = data?.[0]?.date ?? null;
+        setLastPaidDate(last);
+        // Auto-postavi "Od" na dan posle poslednje plaćene rente
+        if (last) {
+          const nxt = new Date(last + "T00:00:00");
+          nxt.setDate(nxt.getDate() + 1);
+          const iso = `${nxt.getFullYear()}-${String(nxt.getMonth()+1).padStart(2,"0")}-${String(nxt.getDate()).padStart(2,"0")}`;
+          setRentaFrom(iso);
+          setRentaTo(iso);
+        }
+      });
     supabase.from("membership_entries").select("date_to").eq("driver_id", driverId)
       .order("date_to", { ascending: false }).limit(1)
       .then(({ data }) => setLastClanDate(data?.[0]?.date_to ?? null));
@@ -345,13 +356,23 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
   const maxRentaDays = driver && driver.daily_rate > 0 ? Math.max(0, Math.floor(availableForRenta / driver.daily_rate)) : 0;
 
-  // Popuni N dana rente počev od dana posle poslednje plaćene rente.
-  // Nedelja je otključana i računa se kao svaki drugi dan (korisnik markira "nije radio" ako je vozač ne plaća).
+  // Popuni N dana rente. Sidro:
+  //  - Ako je korisnik izabrao "Od" (rentaFrom nije danas), koristi to.
+  //  - Inače kreni od dana posle poslednje plaćene rente.
+  //  - Inače od danas.
+  // Nedelja je otključana i računa se kao svaki drugi dan.
   const fillRentaDays = (n: number) => {
     if (!driver || n <= 0) return;
-    const start = lastPaidDate ? new Date(lastPaidDate + "T00:00:00") : new Date();
-    if (lastPaidDate) start.setDate(start.getDate() + 1);
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    let start: Date;
+    if (rentaFrom && rentaFrom !== today) {
+      start = new Date(rentaFrom + "T00:00:00");
+    } else if (lastPaidDate) {
+      start = new Date(lastPaidDate + "T00:00:00");
+      start.setDate(start.getDate() + 1);
+    } else {
+      start = new Date();
+    }
     const end = new Date(start);
     end.setDate(start.getDate() + n - 1);
     setRentaFrom(iso(start));
