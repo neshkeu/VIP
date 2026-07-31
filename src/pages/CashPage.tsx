@@ -341,12 +341,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const yandexRedovniSum  = yandexRedovniList.reduce((s, r) => s + yRemain(r), 0);
   const yandexOdbiciSum   = yandexOdbiciList.reduce((s, r) => s + Math.abs(r.net_amount), 0);
 
-  // OBAVEZE — šta vozač duguje bruto (renta + članarina + POS + dug)
+  // OBAVEZE — šta vozač duguje (renta + članarina + POS + dug)
   const obligTotal = rentaTotal + clanTotal + posTotal + debtTotal;
-  // Vaučeri i PDV gorivo — umanjuju vozačev dug (već smo mu ih obračunali/dali)
-  const kreditTotal = vaucerTotal + vaucerMbTotal + pdvTotal;
-  // NETO OBAVEZE — koliko vozač stvarno treba da plati
-  const netObligTotal = Math.max(0, obligTotal - kreditTotal);
 
   // DOSTUPNO po izvoru
   const kesTake  = Number(keshAmt) || 0;                              // koliko keša vozač doneo
@@ -357,8 +353,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const karTakeNum = Math.max(0, Math.min(Number(karTake) || 0, karAvail));
   const neoTakeNum = Math.max(0, Math.min(Number(neoTake) || 0, neoAvail));
 
-  const takenTotal = kesTake + yanTakeNum + karTakeNum + neoTakeNum;   // koliko ukupno "stavljeno na sto"
-  const surplus    = takenTotal - netObligTotal;          // >0 isplata vozaču, <0 manjak → dug
+  // Vaučeri i PDV goriva su prihod vozača — kao yandex/kartica automatski pokrivaju obaveze,
+  // a ako ostane surplus → ide u isplatu u keš.
+  const takenTotal = kesTake + yanTakeNum + karTakeNum + neoTakeNum + vaucerTotal + vaucerMbTotal + pdvTotal;
+  const surplus    = takenTotal - obligTotal;             // >0 isplata vozaču, <0 manjak → dug
   const isplataVozacu = Math.max(surplus, 0);
   const manjak     = Math.max(-surplus, 0);
   const yanStay    = yanAvail - yanTakeNum;               // ostaje na yandex saldu
@@ -991,22 +989,22 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 {(() => {
                   const depozit = depositEnabled ? Number(depositAmt) || 0 : 0;
                   const uKes = Math.max(isplataVozacu - depozit, 0);
-                  const coverPct = netObligTotal > 0 ? Math.min(100, takenTotal / netObligTotal * 100) : 100;
+                  const coverPct = obligTotal > 0 ? Math.min(100, takenTotal / obligTotal * 100) : 100;
+                  const autoSources = vaucerTotal + vaucerMbTotal + pdvTotal;
 
                   return (
                     <div className="rounded-lg border p-4 space-y-3 sticky top-4">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold uppercase">Odakle uzimam</p>
-                        <span className="text-xs text-muted-foreground">Duguje: <strong className="text-red-600">{fmt(netObligTotal)}</strong></span>
+                        <span className="text-xs text-muted-foreground">Duguje: <strong className="text-red-600">{fmt(obligTotal)}</strong></span>
                       </div>
 
-                      {kreditTotal > 0 && (
-                        <div className="rounded-md bg-emerald-50 border border-emerald-200 p-2 space-y-0.5">
-                          <div className="flex justify-between text-xs"><span className="text-muted-foreground">Bruto obaveze</span><span className="font-medium">{fmt(obligTotal)}</span></div>
-                          {pdvTotal>0 && <div className="flex justify-between text-xs"><span className="text-emerald-700">− PDV goriva</span><span className="text-emerald-700 font-medium">−{fmt(pdvTotal)}</span></div>}
-                          {vaucerTotal>0 && <div className="flex justify-between text-xs"><span className="text-emerald-700">− Vaučeri (naši)</span><span className="text-emerald-700 font-medium">−{fmt(vaucerTotal)}</span></div>}
-                          {vaucerMbTotal>0 && <div className="flex justify-between text-xs"><span className="text-emerald-700">− Vaučeri (MB)</span><span className="text-emerald-700 font-medium">−{fmt(vaucerMbTotal)}</span></div>}
-                          <div className="flex justify-between text-xs pt-1 border-t border-emerald-200"><span className="font-semibold">Za plaćanje</span><span className="font-bold text-red-600">{fmt(netObligTotal)}</span></div>
+                      {autoSources > 0 && (
+                        <div className="rounded-md bg-purple-50 border border-purple-200 p-2 space-y-0.5">
+                          <div className="text-xs font-semibold text-purple-800 mb-1">Automatski u obračun (pokriva → ostatak u keš)</div>
+                          {pdvTotal>0     && <div className="flex justify-between text-xs"><span className="text-purple-700">PDV goriva</span><span className="text-purple-700 font-medium">+{fmt(pdvTotal)}</span></div>}
+                          {vaucerTotal>0  && <div className="flex justify-between text-xs"><span className="text-purple-700">Vaučeri (naši)</span><span className="text-purple-700 font-medium">+{fmt(vaucerTotal)}</span></div>}
+                          {vaucerMbTotal>0&& <div className="flex justify-between text-xs"><span className="text-purple-700">Vaučeri (MB)</span><span className="text-purple-700 font-medium">+{fmt(vaucerMbTotal)}</span></div>}
                         </div>
                       )}
 
@@ -1033,7 +1031,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanTake} onChange={e=>setYanTake(e.target.value)}/>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(netObligTotal - kesTake - karTakeNum - neoTakeNum,0), yanAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(obligTotal - kesTake - karTakeNum - neoTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), yanAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(yanAvail))}>Sve ({fmt(yanAvail)})</Button>
                           </div>
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(yanStay,0))}</strong></p>
@@ -1052,7 +1050,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karTake} onChange={e=>setKarTake(e.target.value)}/>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(netObligTotal - kesTake - yanTakeNum - neoTakeNum,0), karAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - neoTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), karAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(karAvail))}>Sve ({fmt(karAvail)})</Button>
                           </div>
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(karStay,0))}</strong></p>
@@ -1071,7 +1069,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoTake} onChange={e=>setNeoTake(e.target.value)}/>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(Math.min(Math.max(netObligTotal - kesTake - yanTakeNum - karTakeNum,0), neoAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - karTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), neoAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(neoAvail))}>Sve ({fmt(neoAvail)})</Button>
                           </div>
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(neoStay,0))}</strong></p>
@@ -1085,7 +1083,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       </div>
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>Uzeto: <strong className="text-foreground">{fmt(takenTotal)}</strong></span>
-                        <span>− Za plaćanje: {fmt(netObligTotal)}</span>
+                        <span>− Obaveze: {fmt(obligTotal)}</span>
                       </div>
 
                       <div className={`flex justify-between items-center text-base font-bold rounded-md px-3 py-2 ${manjak>0?"bg-red-50 text-red-700":surplus>0?"bg-orange-50 text-orange-700":"bg-green-50 text-green-700"}`}>
@@ -1125,24 +1123,20 @@ Vozač: ${driver.full_name}
 Datum: ${fmtD(obracunDate || today)}
 Evidentirao: ${currentUser}
 
-BRUTO OBAVEZE: ${fmt(obligTotal)}
+DUGUJE (obaveze): ${fmt(obligTotal)}
 ${rentaEnabled && rentaTotal > 0 ? `  Renta (${workDays} dana): ${fmt(rentaTotal)}` : ""}
 ${clanEnabled && clanTotal > 0 ? `  Članarina (${clanWeeks} sed.): ${fmt(clanTotal)}` : ""}
 ${posEnabled && posTotal > 0 ? `  POS naknada: ${fmt(posTotal)}` : ""}
 ${debtTotal > 0 ? `  Dugovanja: ${fmt(debtTotal)}` : ""}
-${kreditTotal > 0 ? `
-UMANJENJA (KREDIT VOZAČU): ${fmt(kreditTotal)}
-${pdvEnabled && pdvTotal > 0 ? `  − PDV goriva: ${fmt(pdvTotal)}` : ""}
-${vaucerEnabled && vaucerTotal > 0 ? `  − Vaučeri (naši): ${fmt(vaucerTotal)}` : ""}
-${vaucerMbEnabled && vaucerMbTotal > 0 ? `  − Vaučeri (MB): ${fmt(vaucerMbTotal)}` : ""}
-
-ZA PLAĆANJE: ${fmt(netObligTotal)}` : ""}
 
 UZETO IZ IZVORA: ${fmt(takenTotal)}
 ${kesTake > 0 ? `  Keš (doneo): ${fmt(kesTake)}` : ""}
 ${yanTakeNum > 0 ? `  Yandex: ${fmt(yanTakeNum)} (ostaje ${fmt(Math.max(yanStay,0))} na saldu)` : ""}
 ${karTakeNum > 0 ? `  Kartica: ${fmt(karTakeNum)} (ostaje ${fmt(Math.max(karStay,0))} na saldu)` : ""}
 ${neoTakeNum > 0 ? `  Neoplanta: ${fmt(neoTakeNum)} (ostaje ${fmt(Math.max(neoStay,0))} na saldu)` : ""}
+${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
+${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri (naši): ${fmt(vaucerTotal)}` : ""}
+${vaucerMbEnabled && vaucerMbTotal > 0 ? `  Vaučeri (MB): ${fmt(vaucerMbTotal)}` : ""}
 
 ==========================
 ${manjak > 0 ? `NEDOSTAJE (dug): ${fmt(manjak)}` : `ZA ISPLATU VOZAČU: ${fmt(isplataVozacu)}`}
