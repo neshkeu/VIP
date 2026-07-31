@@ -512,10 +512,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
 
-      // 7. Yandex — potroši izvode za: uzeti iznos (yanTakeNum) + 3% odbitak.
+      // 7. Yandex — potroši izvode FIFO (starije prvo) za: uzeti iznos + 3% odbitak.
       //    Ostatak ostaje na saldu (izvod neisplaćen) za sledeći put.
       let poolYandex = yanTakeNum + yandexOdbiciSum;
-      for (const r of yandexRedovniList) {
+      const yandexFifo = [...yandexRedovniList].sort((a, b) => (a.period_from ?? a.date).localeCompare(b.period_from ?? b.date));
+      for (const r of yandexFifo) {
         if (poolYandex <= 0.01) break;
         const eff = yRemain(r);
         const already = r.paid_amount || 0;
@@ -535,9 +536,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         stavke.push({ type:"yandex", direction:"out", amount:yanTakeNum, description:"Yandex — uzeto" });
       }
 
-      // 8. Kartice — potroši izvode za karTakeNum, ostatak na saldu
+      // 8. Kartice — FIFO (starije prvo) za karTakeNum, ostatak na saldu
       let poolKartica = karTakeNum;
-      for (const r of cardSelected) {
+      const cardsFifo = [...cardSelected].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+      for (const r of cardsFifo) {
         if (poolKartica <= 0.01) break;
         const eff = cRemain(r);
         const already = r.paid_amount || 0;

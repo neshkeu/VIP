@@ -33,8 +33,10 @@ function CardsUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
   const groups = Object.entries(byDriver)
     .map(([driverId, ents]) => {
       const driver = drivers.find(d => d.id === driverId);
-      const available = ents.reduce((s, e) => s + (e.net_amount - (e.paid_amount || 0)), 0);
-      return { driverId, driver, ents, available, count: ents.length };
+      // FIFO: sortiraj po datumu ASC (starije prvo)
+      const sortedEnts = [...ents].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+      const available = sortedEnts.reduce((s, e) => s + (e.net_amount - (e.paid_amount || 0)), 0);
+      return { driverId, driver, ents: sortedEnts, available, count: sortedEnts.length };
     })
     .sort((a, b) => (a.driver?.full_name ?? "—").localeCompare(b.driver?.full_name ?? "—"));
 
@@ -68,29 +70,38 @@ function CardsUnpaidGrouped({ unpaid, drivers, onPay, onEdit, onDelete }: {
                     <TableHead>Iznos</TableHead>
                     <TableHead>Provizija</TableHead>
                     <TableHead>Za uplatu</TableHead>
+                    <TableHead>Raspoloživo</TableHead>
                     <TableHead className="text-right">Akcije</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
-                    {g.ents.map(r => (
-                      <TableRow key={r.id}>
-                        <TableCell>
-                          {r.card_type && r.card_type !== "—"
-                            ? <Badge variant="outline" className="text-xs">{r.card_type}</Badge>
-                            : <span className="text-muted-foreground text-xs">—</span>}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{fmtD(r.date)}</TableCell>
-                        <TableCell>{fmt(r.gross_amount)}</TableCell>
-                        <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
-                        <TableCell className="font-bold text-green-600">{fmt(r.net_amount - (r.paid_amount || 0))}{(r.paid_amount || 0) > 0 && <span className="text-[10px] text-blue-600 ml-1">(delimično)</span>}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-0.5">
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onPay(r.id)}>Isplati</Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi" onClick={() => onEdit(r)}><Pencil className="h-4 w-4"/></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4"/></Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {g.ents.map(r => {
+                      const paid = r.paid_amount || 0;
+                      const remaining = r.net_amount - paid;
+                      return (
+                        <TableRow key={r.id}>
+                          <TableCell>
+                            {r.card_type && r.card_type !== "—"
+                              ? <Badge variant="outline" className="text-xs">{r.card_type}</Badge>
+                              : <span className="text-muted-foreground text-xs">—</span>}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{fmtD(r.date)}</TableCell>
+                          <TableCell>{fmt(r.gross_amount)}</TableCell>
+                          <TableCell className="text-red-500">−{fmt(r.deduction_amount)} ({r.deduction_pct}%)</TableCell>
+                          <TableCell className="font-bold text-muted-foreground">{fmt(r.net_amount)}</TableCell>
+                          <TableCell className={`font-bold ${remaining <= 0 ? "text-gray-400" : "text-green-600"}`}>
+                            {fmt(remaining)}
+                            {paid > 0 && <span className="text-[10px] text-blue-600 ml-1">(isplaćeno {fmt(paid)})</span>}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onPay(r.id)}>Isplati</Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi" onClick={() => onEdit(r)}><Pencil className="h-4 w-4"/></Button>
+                              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4"/></Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -126,6 +137,7 @@ const CardsPage = () => {
   const [payId, setPayId]         = useState("");
   const [payBy, setPayBy]         = useState("");
   const [payOpen, setPayOpen]     = useState(false);
+  const [payAmt, setPayAmt]       = useState("");
 
   // Edit state
   const [editId, setEditId]       = useState<string | null>(null);
@@ -327,34 +339,55 @@ const CardsPage = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+      <Dialog open={payOpen} onOpenChange={v => { setPayOpen(v); if (!v) { setPayBy(""); setPayAmt(""); } }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Isplati vozaču</DialogTitle></DialogHeader>
-          <div className="py-3">
-            <Label>Ko isplaćuje</Label>
-            <Input className="mt-2" placeholder={displayName || "Nemanja, Milica..."} value={payBy} onChange={e => setPayBy(e.target.value)} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
-            <Button
-              disabled={!payBy || saving}
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  await markPaidOut(payId, payBy);
-                  toast.success("Isplaćeno — " + payBy);
-                  setPayOpen(false);
-                  setPayBy("");
-                } catch (e) {
-                  toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
-                } finally {
-                  setSaving(false);
-                }
-              }}
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Isplati
-            </Button>
-          </DialogFooter>
+          {(() => {
+            const r = reports.find(x => x.id === payId);
+            const paidPrev = r?.paid_amount || 0;
+            const remaining = r ? r.net_amount - paidPrev : 0;
+            const amtNum = Number(payAmt) || 0;
+            const isFull = amtNum >= remaining - 0.01;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Isplati vozaču</DialogTitle>
+                  {r && <DialogDescription>Raspoloživo: <strong>{fmt(remaining)}</strong>{paidPrev > 0 && <span className="text-blue-600"> (već isplaćeno {fmt(paidPrev)} od {fmt(r.net_amount)})</span>}</DialogDescription>}
+                </DialogHeader>
+                <div className="py-3 space-y-3">
+                  <div className="grid gap-1.5">
+                    <Label>Iznos u keš (RSD)</Label>
+                    <Input type="number" placeholder={String(remaining)} value={payAmt} onChange={e => setPayAmt(e.target.value)}/>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => setPayAmt(String(remaining))}>Isplati sve ({fmt(remaining)})</Button>
+                    </div>
+                    {amtNum > remaining && <p className="text-xs text-amber-600">Iznos je veći od raspoloživog — biće ograničeno na {fmt(remaining)}</p>}
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>Ko isplaćuje</Label>
+                    <Input placeholder={displayName || "Nemanja, Milica..."} value={payBy} onChange={e => setPayBy(e.target.value)}/>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setPayOpen(false)}>Otkazi</Button>
+                  <Button disabled={!payBy || amtNum <= 0 || saving} onClick={async () => {
+                    if (!r) return;
+                    setSaving(true);
+                    try {
+                      const take = Math.min(amtNum, remaining);
+                      const newPaid = paidPrev + take;
+                      const fully = newPaid >= r.net_amount - 0.01;
+                      await updateCard(r.id, { paid_amount: newPaid, paid_out: fully, received_by: payBy });
+                      toast.success(fully ? `Isplaćeno u celosti (${fmt(take)}) — ${payBy}` : `Delimična isplata ${fmt(take)} — ${payBy}`);
+                      setPayOpen(false); setPayBy(""); setPayAmt("");
+                    } catch (e: any) { toast.error("Greška: " + e.message); }
+                    finally { setSaving(false); }
+                  }}>
+                    {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}{isFull ? "Isplati u celosti" : "Isplati delimično"}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -372,7 +405,11 @@ const CardsPage = () => {
             <CardsUnpaidGrouped
               unpaid={unpaid}
               drivers={drivers}
-              onPay={(id) => { setPayId(id); setPayOpen(true); }}
+              onPay={(id) => {
+                const r = reports.find(x => x.id === id);
+                const rem = r ? r.net_amount - (r.paid_amount || 0) : 0;
+                setPayId(id); setPayAmt(String(rem)); setPayBy(displayName || ""); setPayOpen(true);
+              }}
               onEdit={(r) => {
                 setEditId(r.id);
                 setEditGross(String(r.gross_amount));
