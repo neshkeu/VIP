@@ -175,7 +175,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
 }) {
   const { drivers, vehicles } = useApp();
-  const { yandexReports, cardReports, markYandexPaid: yandexPaidOut, markCardPaid: cardPaidOut, updateYandex, updateCard } = useApp();
+  const { yandexReports, cardReports, updateYandex, updateCard } = useApp();
   const today = new Date().toISOString().split("T")[0];
   const curMonthStr = today.slice(0,7);
 
@@ -512,6 +512,17 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
 
+      // OSNOV isplate — određuje kako je novac iskorišćen na ovom obračunu:
+      //   "u kešu"        → sve što je uzeto iz izvora ide vozaču u keš (nema obaveza)
+      //   "kroz obračun"  → sve pokriva obaveze (renta/članarina/POS/dug)
+      //   "kombinovano"   → deo pokriva obaveze, deo ide u keš
+      const basisFor = (): string => {
+        if (obligTotal <= 0.01) return "u kešu";
+        if (surplus <= 0.01) return "kroz obračun";
+        return "kombinovano";
+      };
+      const paymentBasis = basisFor();
+
       // 7. Yandex — potroši izvode FIFO (starije prvo) za: uzeti iznos + 3% odbitak.
       //    Ostatak ostaje na saldu (izvod neisplaćen) za sledeći put.
       let poolYandex = yanTakeNum + yandexOdbiciSum;
@@ -525,10 +536,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         if (take <= 0) continue;
         poolYandex -= take;
         const newPaid = already + take;
-        await updateYandex(r.id, { paid_amount: newPaid, paid_out: newPaid >= r.net_amount - 0.01, received_by: currentUser });
+        const fully = newPaid >= r.net_amount - 0.01;
+        await updateYandex(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       // 3% odbici — evidentiraj kao izmirene (odbitak sa yandexa, nije keš izlaz)
-      for (const r of yandexOdbiciList) await yandexPaidOut(r.id, currentUser);
+      for (const r of yandexOdbiciList) {
+        await updateYandex(r.id, { paid_out: true, received_by: currentUser, payment_basis: "kroz obračun" });
+      }
       // Realni izlaz iz yandexa (novac koji radi na obračunu) = yanTakeNum
       if (yanTakeNum > 0) {
         await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:yanTakeNum, date:saveDate,
@@ -547,7 +561,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         if (take <= 0) continue;
         poolKartica -= take;
         const newPaid = already + take;
-        await updateCard(r.id, { paid_amount: newPaid, paid_out: newPaid >= r.net_amount - 0.01, received_by: currentUser });
+        const fully = newPaid >= r.net_amount - 0.01;
+        await updateCard(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (karTakeNum > 0) {
         await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karTakeNum, date:saveDate,
