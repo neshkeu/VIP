@@ -314,10 +314,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // sada korisnik dobija PREDLOG ("možeš još N dana") i sam bira (vidi fillRentaDays).
 
   // Izračuni za rente i clanarine (ručno ili auto)
-  // Nedelja je otključana — ide u obračun kao svaki drugi dan (ako nije markirana "nije radio").
-  // Svaki dan: 1 (radni), 0.5 (pola), 0 (nije_radio/servis/praznik).
+  // NEDELJA je uvek besplatna (0) osim ako je eksplicitno markirana "radi".
+  // Ostali dani: 1 (radni), 0.5 (pola), 0 (nije_radio/servis/praznik).
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
   const workDays    = rentaDates.reduce((sum, d) => {
+    const dow = new Date(d+"T00:00:00").getDay();
+    if (dow === 0) {
+      // Nedelja: default besplatna; broji se samo ako je user označio "radi"
+      const sun = cal.getSundayStatus(driverId, d);
+      return sum + (sun === "radi" ? 1 : 0);
+    }
     const off = cal.getOffStatus(driverId, d);
     if (off === "pola") return sum + 0.5;
     if (off) return sum; // nije_radio, servis, praznik
@@ -362,6 +368,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const yanStay    = yanAvail - yanTakeNum;               // ostaje na yandex saldu
   const karStay    = karAvail - karTakeNum;               // ostaje na kartica saldu
   const neoStay    = neoAvail - neoTakeNum;               // ostaje na neoplanta saldu
+
+  // BREAKDOWN — koliko dela source-a pokriva obaveze, koliko ide u kes.
+  // Proporcionalno prema udelu obaveza u ukupnom uzetom.
+  const obligCoverPct = takenTotal > 0 ? Math.min(1, obligTotal / takenTotal) : 0;
+  const splitLabel = (amt: number): string => {
+    if (amt <= 0) return "";
+    const oblig = Math.round(amt * obligCoverPct);
+    const cash = amt - oblig;
+    if (cash <= 0) return `na obaveze`;
+    if (oblig <= 0) return `u keš vozaču`;
+    return `${fmt(oblig)} na obaveze, ${fmt(cash)} u keš`;
+  };
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
   const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
@@ -483,7 +501,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       // 4. PDV goriva — izlaz (isplata vozaču)
       if (pdvEnabled && pdvTotal > 0) {
         await onAdd({ type:"pdv_gorivo", direction:"out", driver_id:driverId, amount:pdvTotal, date:saveDate,
-          description:`PDV goriva (limit ${fmt(fuelPdv.PDV_MONTHLY_LIMIT)}/mj)`, received_by:currentUser, notes:"" });
+          description:`PDV goriva (limit ${fmt(fuelPdv.PDV_MONTHLY_LIMIT)}/mj) · ${splitLabel(pdvTotal)}`, received_by:currentUser, notes:"" });
         await supabase.from("fuel_pdv_entries").insert({ driver_id:driverId, date:saveDate, amount:pdvTotal, evidenced_by:currentUser });
       }
 
@@ -510,14 +528,14 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       // 6. Vaučeri (naši)
       if (vaucerEnabled && vaucerTotal > 0) {
         const stavka = { type:"vaučer", direction:"out", driver_id:driverId, amount:vaucerTotal, date:saveDate,
-          description:`Vaučeri (naši): ${vaucerCount} × ${fmt(Number(vaucerAmt))}`, received_by:currentUser, notes:"" };
+          description:`Vaučeri (naši): ${vaucerCount} × ${fmt(Number(vaucerAmt))} · ${splitLabel(vaucerTotal)}`, received_by:currentUser, notes:"" };
         await onAdd({...stavka});
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
       // 6b. MB Vaučeri
       if (vaucerMbEnabled && vaucerMbTotal > 0) {
         const stavka = { type:"vaučer_mb", direction:"out", driver_id:driverId, amount:vaucerMbTotal, date:saveDate,
-          description:`Vaučeri (MB): ${vaucerMbCount} × ${fmt(Number(vaucerMbAmt))}`, received_by:currentUser, notes:"" };
+          description:`Vaučeri (MB): ${vaucerMbCount} × ${fmt(Number(vaucerMbAmt))} · ${splitLabel(vaucerMbTotal)}`, received_by:currentUser, notes:"" };
         await onAdd({...stavka});
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
@@ -555,9 +573,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       }
       // Realni izlaz iz yandexa (novac koji radi na obračunu) = yanTakeNum
       if (yanTakeNum > 0) {
+        const desc = `Yandex — uzeto ${fmt(yanTakeNum)} · ${splitLabel(yanTakeNum)}${yanStay>0?` · ostaje ${fmt(yanStay)} na saldu`:""}`;
         await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:yanTakeNum, date:saveDate,
-          description:`Yandex — uzeto ${fmt(yanTakeNum)}${yanStay>0?` (ostaje ${fmt(yanStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
-        stavke.push({ type:"yandex", direction:"out", amount:yanTakeNum, description:"Yandex — uzeto" });
+          description:desc, received_by:currentUser, notes:"" });
+        stavke.push({ type:"yandex", direction:"out", amount:yanTakeNum, description:desc });
       }
 
       // 8. Kartice — FIFO (starije prvo) za karTakeNum, ostatak na saldu
@@ -575,9 +594,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await updateCard(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (karTakeNum > 0) {
+        const desc = `Kartica — uzeto ${fmt(karTakeNum)} · ${splitLabel(karTakeNum)}${karStay>0?` · ostaje ${fmt(karStay)} na saldu`:""}`;
         await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karTakeNum, date:saveDate,
-          description:`Kartica — uzeto ${fmt(karTakeNum)}${karStay>0?` (ostaje ${fmt(karStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
-        stavke.push({ type:"kartica", direction:"out", amount:karTakeNum, description:"Kartica — uzeto" });
+          description:desc, received_by:currentUser, notes:"" });
+        stavke.push({ type:"kartica", direction:"out", amount:karTakeNum, description:desc });
       }
 
       // 8c. Neoplanta — FIFO (starije prvo) za neoTakeNum, ostatak na saldu
@@ -595,9 +615,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await updateNeoplanta(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (neoTakeNum > 0) {
+        const desc = `Neoplanta — uzeto ${fmt(neoTakeNum)} · ${splitLabel(neoTakeNum)}${neoStay>0?` · ostaje ${fmt(neoStay)} na saldu`:""}`;
         await onAdd({ type:"neoplanta", direction:"out", driver_id:driverId, amount:neoTakeNum, date:saveDate,
-          description:`Neoplanta — uzeto ${fmt(neoTakeNum)}${neoStay>0?` (ostaje ${fmt(neoStay)} na saldu)`:""}`, received_by:currentUser, notes:"" });
-        stavke.push({ type:"neoplanta", direction:"out", amount:neoTakeNum, description:"Neoplanta — uzeto" });
+          description:desc, received_by:currentUser, notes:"" });
+        stavke.push({ type:"neoplanta", direction:"out", amount:neoTakeNum, description:desc });
       }
 
       // 8b. Depozit — prebaci deo isplate na račun vozača
@@ -676,7 +697,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
           </div>
 
           {driver && (
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
 
               {/* LIJEVA KOLONA */}
               <div className="space-y-3">
@@ -708,6 +729,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
                   amount={rentaTotal}
                   sublabel={workDays > 0 ? `${workDays} ${workDays===1?"dan":"dana"} × ${fmt(driver.daily_rate)}` : undefined}>
+                  {/* KALENDAR — vizualni pregled istorije plaćanja */}
+                  <div className="rounded-lg border p-3 space-y-2 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <button type="button" onClick={() => { if(calMonth===1){setCalMonth(12);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); }}
+                        className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">‹</button>
+                      <span className="text-xs font-semibold">{MONTHS_SR[calMonth-1]} {calYear}</span>
+                      <button type="button" onClick={() => { if(calMonth===12){setCalMonth(1);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); }}
+                        className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">›</button>
+                    </div>
+                    <KalendarPregled driverId={driverId} cal={cal} year={calYear} month={calMonth}/>
+                  </div>
+
                   {/* PREDLOG na osnovu raspoloživog novca */}
                   {maxRentaDays > 0 && (
                     <div className="rounded-md bg-blue-50 border border-blue-200 p-2 flex items-center justify-between gap-2">
@@ -741,21 +774,31 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                           const isSun = dow === 0;
                           const existing = cal.getStatus(driverId, date);
                           const off = cal.getOffStatus(driverId, date);
+                          const sun = cal.getSundayStatus(driverId, date);
                           const canEdit = existing !== "izmireno";
                           const setOff = (v: "nije_radio"|"servis"|"praznik"|"pola"|null) => {
                             cal.saveOffStatus(driverId, date, v).catch(e => toast.error("Greška: " + e.message));
                           };
-                          const label = off === "nije_radio" ? "Nije radio"
-                                      : off === "servis" ? "Servis"
-                                      : off === "praznik" ? "Praznik"
-                                      : off === "pola" ? "½ rente" : "";
-                          const cls = off === "nije_radio" ? "bg-red-100 text-red-700 border border-red-300 line-through"
-                                    : off === "servis" ? "bg-amber-100 text-amber-700 border border-amber-300 line-through"
-                                    : off === "praznik" ? "bg-purple-100 text-purple-700 border border-purple-300 line-through"
-                                    : off === "pola" ? "bg-blue-100 text-blue-700 border border-blue-300"
-                                    : existing === "izmireno" ? "bg-gray-100 text-gray-400 line-through"
-                                    : isSun ? "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
-                                    : "bg-primary/10 text-primary hover:bg-primary/20";
+                          const setSun = (v: "radi"|"slobodan") => {
+                            cal.saveSundayStatus(driverId, date, v).catch(e => toast.error("Greška: " + e.message));
+                          };
+                          const sunWorks = isSun && sun === "radi";
+                          const label = isSun
+                            ? (sunWorks ? "Radi" : "Besplatno")
+                            : (off === "nije_radio" ? "Nije radio"
+                              : off === "servis" ? "Servis"
+                              : off === "praznik" ? "Praznik"
+                              : off === "pola" ? "½ rente" : "");
+                          const cls = isSun
+                            ? (sunWorks
+                                ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
+                                : "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100")
+                            : off === "nije_radio" ? "bg-red-100 text-red-700 border border-red-300 line-through"
+                            : off === "servis" ? "bg-amber-100 text-amber-700 border border-amber-300 line-through"
+                            : off === "praznik" ? "bg-purple-100 text-purple-700 border border-purple-300 line-through"
+                            : off === "pola" ? "bg-blue-100 text-blue-700 border border-blue-300"
+                            : existing === "izmireno" ? "bg-gray-100 text-gray-400 line-through"
+                            : "bg-primary/10 text-primary hover:bg-primary/20";
                           const pillContent = (
                             <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors ${cls} ${canEdit ? "cursor-pointer" : "cursor-default"}`}>
                               {date.slice(8)}. {DAYS_SR[dow]}
@@ -772,26 +815,41 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                                 <div className="px-2 py-1.5 text-xs text-muted-foreground border-b mb-1">
                                   {new Date(date+"T00:00:00").toLocaleDateString("sr-RS", { weekday:"long", day:"numeric", month:"long" })}
                                 </div>
-                                <button type="button" onClick={() => setOff(null)}
-                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${!off ? "bg-primary/10" : ""}`}>
-                                  <Sun className="h-3.5 w-3.5 text-primary" />Cela renta {!off && <Check className="h-3.5 w-3.5 ml-auto" />}
-                                </button>
-                                <button type="button" onClick={() => setOff("pola")}
-                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "pola" ? "bg-blue-50" : ""}`}>
-                                  <span className="h-3.5 w-3.5 flex items-center justify-center text-xs text-blue-600 font-bold">½</span>Pola rente {off === "pola" && <Check className="h-3.5 w-3.5 ml-auto" />}
-                                </button>
-                                <button type="button" onClick={() => setOff("nije_radio")}
-                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "nije_radio" ? "bg-red-50" : ""}`}>
-                                  <X className="h-3.5 w-3.5 text-red-600" />Nije radio (ne plaća) {off === "nije_radio" && <Check className="h-3.5 w-3.5 ml-auto" />}
-                                </button>
-                                <button type="button" onClick={() => setOff("servis")}
-                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "servis" ? "bg-amber-50" : ""}`}>
-                                  <Wrench className="h-3.5 w-3.5 text-amber-600" />Servis {off === "servis" && <Check className="h-3.5 w-3.5 ml-auto" />}
-                                </button>
-                                <button type="button" onClick={() => setOff("praznik")}
-                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "praznik" ? "bg-purple-50" : ""}`}>
-                                  <PartyPopper className="h-3.5 w-3.5 text-purple-600" />Praznik {off === "praznik" && <Check className="h-3.5 w-3.5 ml-auto" />}
-                                </button>
+                                {isSun ? (
+                                  <>
+                                    <button type="button" onClick={() => setSun("slobodan")}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${!sunWorks ? "bg-amber-50" : ""}`}>
+                                      <span className="h-3.5 w-3.5 flex items-center justify-center text-xs text-amber-700">🎉</span>Besplatno (default) {!sunWorks && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                    <button type="button" onClick={() => setSun("radi")}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${sunWorks ? "bg-emerald-50" : ""}`}>
+                                      <Sun className="h-3.5 w-3.5 text-emerald-600" />Radi (naplaćuje se) {sunWorks && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button type="button" onClick={() => setOff(null)}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${!off ? "bg-primary/10" : ""}`}>
+                                      <Sun className="h-3.5 w-3.5 text-primary" />Cela renta {!off && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                    <button type="button" onClick={() => setOff("pola")}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "pola" ? "bg-blue-50" : ""}`}>
+                                      <span className="h-3.5 w-3.5 flex items-center justify-center text-xs text-blue-600 font-bold">½</span>Pola rente {off === "pola" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                    <button type="button" onClick={() => setOff("nije_radio")}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "nije_radio" ? "bg-red-50" : ""}`}>
+                                      <X className="h-3.5 w-3.5 text-red-600" />Nije radio (ne plaća) {off === "nije_radio" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                    <button type="button" onClick={() => setOff("servis")}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "servis" ? "bg-amber-50" : ""}`}>
+                                      <Wrench className="h-3.5 w-3.5 text-amber-600" />Servis {off === "servis" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                    <button type="button" onClick={() => setOff("praznik")}
+                                      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent ${off === "praznik" ? "bg-purple-50" : ""}`}>
+                                      <PartyPopper className="h-3.5 w-3.5 text-purple-600" />Praznik {off === "praznik" && <Check className="h-3.5 w-3.5 ml-auto" />}
+                                    </button>
+                                  </>
+                                )}
                               </PopoverContent>
                             </Popover>
                           );
@@ -972,19 +1030,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 </div>
               </div>
 
-              {/* DESNA KOLONA — kalendar + sumarno */}
+              {/* DESNA KOLONA — samo Odakle uzimam / rezultat */}
               <div className="space-y-4">
-                <div className="rounded-lg border p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <button onClick={() => { if(calMonth===1){setCalMonth(12);setCalYear(y=>y-1);}else setCalMonth(m=>m-1); }}
-                      className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">‹</button>
-                    <span className="text-xs font-semibold">{MONTHS_SR[calMonth-1]} {calYear}</span>
-                    <button onClick={() => { if(calMonth===12){setCalMonth(1);setCalYear(y=>y+1);}else setCalMonth(m=>m+1); }}
-                      className="h-7 w-7 rounded hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground font-bold text-lg">›</button>
-                  </div>
-                  <KalendarPregled driverId={driverId} cal={cal} year={calYear} month={calMonth}/>
-                </div>
-
                 {/* ODAKLE UZIMAM — slobodna raspodela + rezultat */}
                 {(() => {
                   const depozit = depositEnabled ? Number(depositAmt) || 0 : 0;
