@@ -1046,14 +1046,29 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                         <span className="text-xs text-muted-foreground">Duguje: <strong className="text-red-600">{fmt(obligTotal)}</strong></span>
                       </div>
 
-                      {autoSources > 0 && (
-                        <div className="rounded-md bg-purple-50 border border-purple-200 p-2 space-y-0.5">
-                          <div className="text-xs font-semibold text-purple-800 mb-1">Automatski u obračun (pokriva → ostatak u keš)</div>
-                          {pdvTotal>0     && <div className="flex justify-between text-xs"><span className="text-purple-700">PDV goriva</span><span className="text-purple-700 font-medium">+{fmt(pdvTotal)}</span></div>}
-                          {vaucerTotal>0  && <div className="flex justify-between text-xs"><span className="text-purple-700">Vaučeri (naši)</span><span className="text-purple-700 font-medium">+{fmt(vaucerTotal)}</span></div>}
-                          {vaucerMbTotal>0&& <div className="flex justify-between text-xs"><span className="text-purple-700">Vaučeri (MB)</span><span className="text-purple-700 font-medium">+{fmt(vaucerMbTotal)}</span></div>}
-                        </div>
-                      )}
+                      {autoSources > 0 && (() => {
+                        const splitRow = (label: string, amt: number) => {
+                          const oblig = Math.round(amt * obligCoverPct);
+                          const cash = amt - oblig;
+                          return (
+                            <div key={label} className="flex flex-wrap items-baseline justify-between text-xs gap-x-2">
+                              <span className="text-purple-700">{label} <strong>+{fmt(amt)}</strong></span>
+                              <span className="text-[11px] flex items-center gap-2">
+                                {oblig > 0 && <span className="text-red-700">obaveze <strong>{fmt(oblig)}</strong></span>}
+                                {cash > 0 && <span className="text-emerald-700">u keš <strong>{fmt(cash)}</strong></span>}
+                              </span>
+                            </div>
+                          );
+                        };
+                        return (
+                          <div className="rounded-md bg-purple-50 border border-purple-200 p-2 space-y-1">
+                            <div className="text-xs font-semibold text-purple-800 mb-1">Automatski u obračun</div>
+                            {pdvTotal>0      && splitRow("PDV goriva", pdvTotal)}
+                            {vaucerTotal>0   && splitRow("Vaučeri (naši)", vaucerTotal)}
+                            {vaucerMbTotal>0 && splitRow("Vaučeri (MB)", vaucerMbTotal)}
+                          </div>
+                        );
+                      })()}
 
                       {/* KEŠ */}
                       <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-2.5 space-y-1.5">
@@ -1064,6 +1079,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                           <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
                           <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={keshAmt} onChange={e=>setKeshAmt(e.target.value)}/>
                         </div>
+                        {kesTake > 0 && (() => {
+                          const oblig = Math.round(kesTake * obligCoverPct);
+                          const cash = kesTake - oblig;
+                          return (
+                            <div className="text-[11px] flex items-center gap-3 pt-0.5">
+                              {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
+                              {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* YANDEX */}
@@ -1081,6 +1106,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(obligTotal - kesTake - karTakeNum - neoTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), yanAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(yanAvail))}>Sve ({fmt(yanAvail)})</Button>
                           </div>
+                          {yanTakeNum > 0 && (() => {
+                            const oblig = Math.round(yanTakeNum * obligCoverPct);
+                            const cash = yanTakeNum - oblig;
+                            return (
+                              <div className="text-[11px] flex items-center gap-3 pt-0.5">
+                                {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
+                                {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
+                              </div>
+                            );
+                          })()}
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(yanStay,0))}</strong></p>
                         </div>
                       )}
@@ -1100,6 +1135,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - neoTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), karAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(karAvail))}>Sve ({fmt(karAvail)})</Button>
                           </div>
+                          {karTakeNum > 0 && (() => {
+                            const oblig = Math.round(karTakeNum * obligCoverPct);
+                            const cash = karTakeNum - oblig;
+                            return (
+                              <div className="text-[11px] flex items-center gap-3 pt-0.5">
+                                {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
+                                {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
+                              </div>
+                            );
+                          })()}
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(karStay,0))}</strong></p>
                         </div>
                       )}
@@ -1119,6 +1164,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - karTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), neoAvail)))}>Pokrij obaveze</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(neoAvail))}>Sve ({fmt(neoAvail)})</Button>
                           </div>
+                          {neoTakeNum > 0 && (() => {
+                            const oblig = Math.round(neoTakeNum * obligCoverPct);
+                            const cash = neoTakeNum - oblig;
+                            return (
+                              <div className="text-[11px] flex items-center gap-3 pt-0.5">
+                                {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
+                                {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
+                              </div>
+                            );
+                          })()}
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(neoStay,0))}</strong></p>
                         </div>
                       )}
