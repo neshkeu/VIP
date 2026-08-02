@@ -234,9 +234,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [clanWeeksPick, setClanWeeksPick]       = useState("");
 
   // RASPODELA PO IZVORIMA — koliko uzimam iz svakog (slobodna kombinacija)
-  const [yanTake, setYanTake] = useState("");
-  const [karTake, setKarTake] = useState("");
-  const [neoTake, setNeoTake] = useState("");
+  // Po izvoru: eksplicitna raspodela — deo za obaveze, deo u keš vozaču
+  const [yanCover, setYanCover] = useState("");
+  const [yanCash,  setYanCash]  = useState("");
+  const [karCover, setKarCover] = useState("");
+  const [karCash,  setKarCash]  = useState("");
+  const [neoCover, setNeoCover] = useState("");
+  const [neoCash,  setNeoCash]  = useState("");
 
   const driver = drivers.find(d => d.id === driverId);
   const cal    = useCalendar(calYear, calMonth);
@@ -355,9 +359,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const yanAvail = Math.max(0, yandexRedovniSum - yandexOdbiciSum);   // yandex umanjen za 3% odbitak
   const karAvail = cardNet;
   const neoAvail = neoplantaNet;
-  const yanTakeNum = Math.max(0, Math.min(Number(yanTake) || 0, yanAvail));
-  const karTakeNum = Math.max(0, Math.min(Number(karTake) || 0, karAvail));
-  const neoTakeNum = Math.max(0, Math.min(Number(neoTake) || 0, neoAvail));
+  // Klampuj cover+cash ≤ avail (prioritet cover)
+  const clampSource = (cover: string, cash: string, avail: number) => {
+    const c = Math.max(0, Math.min(Number(cover) || 0, avail));
+    const k = Math.max(0, Math.min(Number(cash) || 0, avail - c));
+    return { cover: c, cash: k, total: c + k };
+  };
+  const yanS = clampSource(yanCover, yanCash, yanAvail);
+  const karS = clampSource(karCover, karCash, karAvail);
+  const neoS = clampSource(neoCover, neoCash, neoAvail);
+  const yanTakeNum = yanS.total;
+  const karTakeNum = karS.total;
+  const neoTakeNum = neoS.total;
 
   // Vaučeri i PDV goriva su prihod vozača — kao yandex/kartica automatski pokrivaju obaveze,
   // a ako ostane surplus → ide u isplatu u keš.
@@ -453,7 +466,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setDepositEnabled(false); setDepositAmt("");
     setKeshEnabled(false); setKeshAmt("");
     setRentaDaysPick(""); setClanWeeksPick("");
-    setYanTake(""); setKarTake(""); setNeoTake("");
+    setYanCover(""); setYanCash(""); setKarCover(""); setKarCash(""); setNeoCover(""); setNeoCash("");
   };
 
   const reset = () => {
@@ -573,7 +586,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       }
       // Realni izlaz iz yandexa (novac koji radi na obračunu) = yanTakeNum
       if (yanTakeNum > 0) {
-        const desc = `Yandex — uzeto ${fmt(yanTakeNum)} · ${splitLabel(yanTakeNum)}${yanStay>0?` · ostaje ${fmt(yanStay)} na saldu`:""}`;
+        const parts = [
+          yanS.cover > 0 ? `${fmt(yanS.cover)} na obaveze` : "",
+          yanS.cash  > 0 ? `${fmt(yanS.cash)} u keš`      : "",
+        ].filter(Boolean).join(", ");
+        const desc = `Yandex — uzeto ${fmt(yanTakeNum)}${parts?` · ${parts}`:""}${yanStay>0?` · ostaje ${fmt(yanStay)} na saldu`:""}`;
         await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:yanTakeNum, date:saveDate,
           description:desc, received_by:currentUser, notes:"" });
         stavke.push({ type:"yandex", direction:"out", amount:yanTakeNum, description:desc });
@@ -594,7 +611,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await updateCard(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (karTakeNum > 0) {
-        const desc = `Kartica — uzeto ${fmt(karTakeNum)} · ${splitLabel(karTakeNum)}${karStay>0?` · ostaje ${fmt(karStay)} na saldu`:""}`;
+        const parts = [
+          karS.cover > 0 ? `${fmt(karS.cover)} na obaveze` : "",
+          karS.cash  > 0 ? `${fmt(karS.cash)} u keš`      : "",
+        ].filter(Boolean).join(", ");
+        const desc = `Kartica — uzeto ${fmt(karTakeNum)}${parts?` · ${parts}`:""}${karStay>0?` · ostaje ${fmt(karStay)} na saldu`:""}`;
         await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karTakeNum, date:saveDate,
           description:desc, received_by:currentUser, notes:"" });
         stavke.push({ type:"kartica", direction:"out", amount:karTakeNum, description:desc });
@@ -615,7 +636,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await updateNeoplanta(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (neoTakeNum > 0) {
-        const desc = `Neoplanta — uzeto ${fmt(neoTakeNum)} · ${splitLabel(neoTakeNum)}${neoStay>0?` · ostaje ${fmt(neoStay)} na saldu`:""}`;
+        const parts = [
+          neoS.cover > 0 ? `${fmt(neoS.cover)} na obaveze` : "",
+          neoS.cash  > 0 ? `${fmt(neoS.cash)} u keš`      : "",
+        ].filter(Boolean).join(", ");
+        const desc = `Neoplanta — uzeto ${fmt(neoTakeNum)}${parts?` · ${parts}`:""}${neoStay>0?` · ostaje ${fmt(neoStay)} na saldu`:""}`;
         await onAdd({ type:"neoplanta", direction:"out", driver_id:driverId, amount:neoTakeNum, date:saveDate,
           description:desc, received_by:currentUser, notes:"" });
         stavke.push({ type:"neoplanta", direction:"out", amount:neoTakeNum, description:desc });
@@ -1098,24 +1123,23 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500"/>Yandex</span>
                             <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(yanAvail)}</strong>{yandexOdbiciSum>0 && <span className="text-red-600"> (−3% {fmt(yandexOdbiciSum)})</span>}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
-                            <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanTake} onChange={e=>setYanTake(e.target.value)}/>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
+                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanCover} onChange={e=>setYanCover(e.target.value)}/>
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
+                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanCash} onChange={e=>setYanCash(e.target.value)}/>
+                            </div>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(Math.min(Math.max(obligTotal - kesTake - karTakeNum - neoTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), yanAvail)))}>Pokrij obaveze</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanTake(String(yanAvail))}>Sve ({fmt(yanAvail)})</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanCover(String(Math.min(Math.max(obligTotal - kesTake - karS.cover - neoS.cover - vaucerTotal - vaucerMbTotal - pdvTotal,0), yanAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanCash(String(Math.max(yanAvail - yanS.cover, 0)))}>Ostatak u keš</Button>
                           </div>
-                          {yanTakeNum > 0 && (() => {
-                            const oblig = Math.round(yanTakeNum * obligCoverPct);
-                            const cash = yanTakeNum - oblig;
-                            return (
-                              <div className="text-[11px] flex items-center gap-3 pt-0.5">
-                                {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
-                                {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
-                              </div>
-                            );
-                          })()}
+                          {yanTakeNum > 0 && (
+                            <div className="text-[11px] text-muted-foreground pt-0.5">Uzeto ukupno: <strong className="text-foreground">{fmt(yanTakeNum)}</strong></div>
+                          )}
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(yanStay,0))}</strong></p>
                         </div>
                       )}
@@ -1127,24 +1151,23 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500"/>Kartica</span>
                             <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(karAvail)}</strong></span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
-                            <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karTake} onChange={e=>setKarTake(e.target.value)}/>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
+                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karCover} onChange={e=>setKarCover(e.target.value)}/>
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
+                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karCash} onChange={e=>setKarCash(e.target.value)}/>
+                            </div>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - neoTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), karAvail)))}>Pokrij obaveze</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarTake(String(karAvail))}>Sve ({fmt(karAvail)})</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarCover(String(Math.min(Math.max(obligTotal - kesTake - yanS.cover - neoS.cover - vaucerTotal - vaucerMbTotal - pdvTotal,0), karAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarCash(String(Math.max(karAvail - karS.cover, 0)))}>Ostatak u keš</Button>
                           </div>
-                          {karTakeNum > 0 && (() => {
-                            const oblig = Math.round(karTakeNum * obligCoverPct);
-                            const cash = karTakeNum - oblig;
-                            return (
-                              <div className="text-[11px] flex items-center gap-3 pt-0.5">
-                                {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
-                                {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
-                              </div>
-                            );
-                          })()}
+                          {karTakeNum > 0 && (
+                            <div className="text-[11px] text-muted-foreground pt-0.5">Uzeto ukupno: <strong className="text-foreground">{fmt(karTakeNum)}</strong></div>
+                          )}
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(karStay,0))}</strong></p>
                         </div>
                       )}
@@ -1156,24 +1179,23 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                             <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Neoplanta</span>
                             <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(neoAvail)}</strong></span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs whitespace-nowrap text-muted-foreground">Uzimam:</Label>
-                            <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoTake} onChange={e=>setNeoTake(e.target.value)}/>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
+                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoCover} onChange={e=>setNeoCover(e.target.value)}/>
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
+                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoCash} onChange={e=>setNeoCash(e.target.value)}/>
+                            </div>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(Math.min(Math.max(obligTotal - kesTake - yanTakeNum - karTakeNum - vaucerTotal - vaucerMbTotal - pdvTotal,0), neoAvail)))}>Pokrij obaveze</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoTake(String(neoAvail))}>Sve ({fmt(neoAvail)})</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoCover(String(Math.min(Math.max(obligTotal - kesTake - yanS.cover - karS.cover - vaucerTotal - vaucerMbTotal - pdvTotal,0), neoAvail)))}>Pokrij obaveze</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoCash(String(Math.max(neoAvail - neoS.cover, 0)))}>Ostatak u keš</Button>
                           </div>
-                          {neoTakeNum > 0 && (() => {
-                            const oblig = Math.round(neoTakeNum * obligCoverPct);
-                            const cash = neoTakeNum - oblig;
-                            return (
-                              <div className="text-[11px] flex items-center gap-3 pt-0.5">
-                                {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
-                                {cash > 0 && <span className="text-emerald-700">→ u keš: <strong>{fmt(cash)}</strong></span>}
-                              </div>
-                            );
-                          })()}
+                          {neoTakeNum > 0 && (
+                            <div className="text-[11px] text-muted-foreground pt-0.5">Uzeto ukupno: <strong className="text-foreground">{fmt(neoTakeNum)}</strong></div>
+                          )}
                           <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(neoStay,0))}</strong></p>
                         </div>
                       )}
