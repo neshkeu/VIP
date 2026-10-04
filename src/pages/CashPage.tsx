@@ -1,5 +1,5 @@
 import { useApp } from "@/context/AppContext";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useCash } from "@/hooks/useCash";
 import { useObracun } from "@/hooks/useObracun";
@@ -21,8 +21,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, Wrench, PartyPopper, X, Sun } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, Wrench, PartyPopper, X, Sun, Eye, Printer, Share2, Download } from "lucide-react";
 import { toast } from "sonner";
+import html2canvas from "html2canvas";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
@@ -71,12 +72,14 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
   kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
   likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasu",
+  vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
   komunalni:"text-green-700",doprinosi:"text-green-700",dugovanje:"text-blue-700",
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",neoplanta:"text-emerald-700",
   vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
+  vaučer_isplata:"text-red-700",bankarska_naknada:"text-green-700",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
@@ -124,6 +127,42 @@ function KalendarPregled({ driverId, cal, year, month }: { driverId: string; cal
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-red-100 inline-block"/>Neizmireno</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-amber-50 border border-amber-200 inline-block"/>Ned. naplaćuje</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-gray-100 inline-block"/>Nije radio</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── VAUČER REDOVI (više apoena) ──────────────────────────────
+function VaucerLinesEditor({ lines, setLines, defaultAmt }: {
+  lines: { count: string; amt: string }[];
+  setLines: (l: { count: string; amt: string }[]) => void;
+  defaultAmt: string;
+}) {
+  const update = (i: number, key: "count" | "amt", val: string) =>
+    setLines(lines.map((l, idx) => idx === i ? { ...l, [key]: val } : l));
+  const add = () => setLines([...lines, { count: "", amt: defaultAmt }]);
+  const remove = (i: number) => setLines(lines.length > 1 ? lines.filter((_, idx) => idx !== i) : lines);
+  const total = lines.reduce((s, l) => s + (Number(l.count) || 0) * (Number(l.amt) || 0), 0);
+  return (
+    <div className="space-y-2">
+      {lines.map((l, i) => (
+        <div key={i} className="flex items-end gap-1.5">
+          <div className="grid gap-1 flex-1">
+            {i === 0 && <Label className="text-[10px] text-muted-foreground">Broj</Label>}
+            <Input type="number" className="h-8 text-sm" placeholder="0" value={l.count} onChange={e => update(i, "count", e.target.value)} />
+          </div>
+          <span className="pb-2 text-muted-foreground text-sm">×</span>
+          <div className="grid gap-1 flex-1">
+            {i === 0 && <Label className="text-[10px] text-muted-foreground">Iznos</Label>}
+            <Input type="number" className="h-8 text-sm" placeholder={defaultAmt} value={l.amt} onChange={e => update(i, "amt", e.target.value)} />
+          </div>
+          <div className="pb-2 w-20 text-right text-xs font-medium">{fmt((Number(l.count) || 0) * (Number(l.amt) || 0))}</div>
+          <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => remove(i)} disabled={lines.length <= 1}><X className="h-4 w-4" /></Button>
+        </div>
+      ))}
+      <div className="flex items-center justify-between pt-0.5">
+        <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={add}><Plus className="h-3.5 w-3.5 mr-1" />Dodaj apoen</Button>
+        <span className="text-xs font-semibold">Ukupno: {fmt(total)}</span>
       </div>
     </div>
   );
@@ -213,13 +252,12 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [yandexAmounts, setYandexAmounts]   = useState<Record<string,string>>({});
   const [selectedCards, setSelectedCards]   = useState<Set<string>>(new Set());
   const [cardAmounts, setCardAmounts]       = useState<Record<string,string>>({});
-  // VAUČERI - dva tipa: nasi (fiksno 400) i MB (varijabilno)
+  // VAUČERI - dva tipa: naši i MB. Svaki može imati više apoena (redova).
+  type VLine = { count: string; amt: string };
   const [vaucerEnabled, setVaucerEnabled]       = useState(false);
-  const [vaucerCount, setVaucerCount]           = useState("");
-  const [vaucerAmt, setVaucerAmt]               = useState("400");
+  const [vaucerLines, setVaucerLines]           = useState<VLine[]>([{ count: "", amt: "400" }]);
   const [vaucerMbEnabled, setVaucerMbEnabled]   = useState(false);
-  const [vaucerMbCount, setVaucerMbCount]       = useState("");
-  const [vaucerMbAmt, setVaucerMbAmt]           = useState("200");
+  const [vaucerMbLines, setVaucerMbLines]       = useState<VLine[]>([{ count: "", amt: "200" }]);
 
   // DEPOZIT — prebaci deo isplate na račun vozača
   const [depositEnabled, setDepositEnabled]     = useState(false);
@@ -308,8 +346,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const driverNeoplanta = neoplantaRides.filter(r => r.driver_id === driverId && !r.paid_out);
   const neoplantaSelected = driverNeoplanta;
   const neoplantaNet = neoplantaSelected.reduce((s,r) => s + nRemain(r), 0);
-  const vaucerTotal   = vaucerEnabled   ? (Number(vaucerCount)   || 0) * (Number(vaucerAmt)   || 0) : 0;
-  const vaucerMbTotal = vaucerMbEnabled ? (Number(vaucerMbCount) || 0) * (Number(vaucerMbAmt) || 0) : 0;
+  const vLineSum = (lines: VLine[]) => lines.reduce((s, l) => s + (Number(l.count) || 0) * (Number(l.amt) || 0), 0);
+  const vLineDesc = (lines: VLine[]) => lines.filter(l => Number(l.count) > 0 && Number(l.amt) > 0).map(l => `${l.count}×${fmt(Number(l.amt))}`).join(" + ");
+  const vaucerTotal   = vaucerEnabled   ? vLineSum(vaucerLines)   : 0;
+  const vaucerMbTotal = vaucerMbEnabled ? vLineSum(vaucerMbLines) : 0;
   const keshTotal     = Number(keshAmt) || 0;
 
   const totalPrihodi = yandexNet + cardNet + neoplantaNet + pdvTotal + vaucerTotal + vaucerMbTotal + keshTotal;
@@ -461,8 +501,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setSelectedDebts(new Set()); setDebtAmounts({});
     setSelectedYandex(new Set()); setYandexAmounts({});
     setSelectedCards(new Set()); setCardAmounts({});
-    setVaucerEnabled(false); setVaucerCount(""); setVaucerAmt("400");
-    setVaucerMbEnabled(false); setVaucerMbCount(""); setVaucerMbAmt("200");
+    setVaucerEnabled(false); setVaucerLines([{ count: "", amt: "400" }]);
+    setVaucerMbEnabled(false); setVaucerMbLines([{ count: "", amt: "200" }]);
     setDepositEnabled(false); setDepositAmt("");
     setKeshEnabled(false); setKeshAmt("");
     setRentaDaysPick(""); setClanWeeksPick("");
@@ -541,14 +581,14 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       // 6. Vaučeri (naši)
       if (vaucerEnabled && vaucerTotal > 0) {
         const stavka = { type:"vaučer", direction:"out", driver_id:driverId, amount:vaucerTotal, date:saveDate,
-          description:`Vaučeri (naši): ${vaucerCount} × ${fmt(Number(vaucerAmt))} · ${splitLabel(vaucerTotal)}`, received_by:currentUser, notes:"" };
+          description:`Vaučeri (naši): ${vLineDesc(vaucerLines)} · ${splitLabel(vaucerTotal)}`, received_by:currentUser, notes:"" };
         await onAdd({...stavka});
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
       // 6b. MB Vaučeri
       if (vaucerMbEnabled && vaucerMbTotal > 0) {
         const stavka = { type:"vaučer_mb", direction:"out", driver_id:driverId, amount:vaucerMbTotal, date:saveDate,
-          description:`Vaučeri (MB): ${vaucerMbCount} × ${fmt(Number(vaucerMbAmt))} · ${splitLabel(vaucerMbTotal)}`, received_by:currentUser, notes:"" };
+          description:`Vaučeri (MB): ${vLineDesc(vaucerMbLines)} · ${splitLabel(vaucerMbTotal)}`, received_by:currentUser, notes:"" };
         await onAdd({...stavka});
         stavke.push({ type:stavka.type, direction:stavka.direction, amount:stavka.amount, description:stavka.description });
       }
@@ -1013,24 +1053,18 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   )}
                 </CheckRow>
 
-                {/* VAUČERI - naši (fiksno 400) */}
+                {/* VAUČERI - naši */}
                 <CheckRow label="Vaučeri (naši)" enabled={vaucerEnabled} onToggle={() => setVaucerEnabled(!vaucerEnabled)}
                   amount={vaucerTotal}
-                  sublabel={vaucerCount && vaucerAmt ? `${vaucerCount} × ${fmt(Number(vaucerAmt))}` : undefined}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="grid gap-1"><Label className="text-xs">Broj vaučera</Label><Input type="number" value={vaucerCount} onChange={e=>setVaucerCount(e.target.value)}/></div>
-                    <div className="grid gap-1"><Label className="text-xs">Iznos/vaučeru</Label><Input type="number" value={vaucerAmt} onChange={e=>setVaucerAmt(e.target.value)}/></div>
-                  </div>
+                  sublabel={vaucerEnabled && vLineDesc(vaucerLines) ? vLineDesc(vaucerLines) : undefined}>
+                  <VaucerLinesEditor lines={vaucerLines} setLines={setVaucerLines} defaultAmt="400" />
                 </CheckRow>
 
-                {/* VAUČERI - MB (varijabilni) */}
+                {/* VAUČERI - MB (varijabilni apoeni) */}
                 <CheckRow label="Vaučeri (MB)" enabled={vaucerMbEnabled} onToggle={() => setVaucerMbEnabled(!vaucerMbEnabled)}
                   amount={vaucerMbTotal}
-                  sublabel={vaucerMbCount && vaucerMbAmt ? `${vaucerMbCount} × ${fmt(Number(vaucerMbAmt))}` : undefined}>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="grid gap-1"><Label className="text-xs">Broj vaučera</Label><Input type="number" value={vaucerMbCount} onChange={e=>setVaucerMbCount(e.target.value)}/></div>
-                    <div className="grid gap-1"><Label className="text-xs">Iznos/vaučeru</Label><Input type="number" value={vaucerMbAmt} onChange={e=>setVaucerMbAmt(e.target.value)}/></div>
-                  </div>
+                  sublabel={vaucerMbEnabled && vLineDesc(vaucerMbLines) ? vLineDesc(vaucerMbLines) : undefined}>
+                  <VaucerLinesEditor lines={vaucerMbLines} setLines={setVaucerMbLines} defaultAmt="200" />
                 </CheckRow>
 
                 {/* DEPOZIT — prebaci deo isplate na račun vozača */}
@@ -1259,8 +1293,8 @@ ${yanTakeNum > 0 ? `  Yandex: ${fmt(yanTakeNum)} (ostaje ${fmt(Math.max(yanStay,
 ${karTakeNum > 0 ? `  Kartica: ${fmt(karTakeNum)} (ostaje ${fmt(Math.max(karStay,0))} na saldu)` : ""}
 ${neoTakeNum > 0 ? `  Neoplanta: ${fmt(neoTakeNum)} (ostaje ${fmt(Math.max(neoStay,0))} na saldu)` : ""}
 ${pdvEnabled && pdvTotal > 0 ? `  PDV goriva: ${fmt(pdvTotal)}` : ""}
-${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri (naši): ${fmt(vaucerTotal)}` : ""}
-${vaucerMbEnabled && vaucerMbTotal > 0 ? `  Vaučeri (MB): ${fmt(vaucerMbTotal)}` : ""}
+${vaucerEnabled && vaucerTotal > 0 ? `  Vaučeri (naši): ${vLineDesc(vaucerLines)} = ${fmt(vaucerTotal)}` : ""}
+${vaucerMbEnabled && vaucerMbTotal > 0 ? `  Vaučeri (MB): ${vLineDesc(vaucerMbLines)} = ${fmt(vaucerMbTotal)}` : ""}
 
 ==========================
 ${manjak > 0 ? `NEDOSTAJE (dug): ${fmt(manjak)}` : `ZA ISPLATU VOZAČU: ${fmt(isplataVozacu)}`}
@@ -1282,6 +1316,82 @@ ${manjak > 0 ? `NEDOSTAJE (dug): ${fmt(manjak)}` : `ZA ISPLATU VOZAČU: ${fmt(is
   );
 }
 
+// ─── PREGLED RAČUNA (pregled → štampa / podeli / preuzmi) ─────
+function ReceiptPreview({ open, onClose, title, bodyHtml }: {
+  open: boolean; onClose: () => void; title: string; bodyHtml: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const fileBase = title.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "") || "racun";
+
+  const render = async (): Promise<Blob | null> => {
+    if (!ref.current) return null;
+    const canvas = await html2canvas(ref.current, { scale: 2, backgroundColor: "#ffffff" });
+    return await new Promise(res => canvas.toBlob(b => res(b), "image/png"));
+  };
+
+  const share = async () => {
+    setBusy(true);
+    try {
+      const blob = await render();
+      if (!blob) throw new Error("Greška pri generisanju slike");
+      const file = new File([blob], `${fileBase}.png`, { type: "image/png" });
+      const nav = navigator as any;
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        await nav.share({ files: [file], title });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = `${fileBase}.png`; a.click();
+        URL.revokeObjectURL(url);
+        toast.success("Slika preuzeta — možeš je poslati");
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") toast.error("Greška: " + (e?.message ?? e));
+    } finally { setBusy(false); }
+  };
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const blob = await render();
+      if (!blob) throw new Error("Greška");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${fileBase}.png`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { toast.error("Greška: " + (e?.message ?? e)); }
+    finally { setBusy(false); }
+  };
+
+  const print = () => {
+    const w = window.open("", "_blank", "width=420,height=640");
+    if (!w) { toast.error("Dozvoli pop-up da bi štampao"); return; }
+    w.document.write(`<html><head><title>${title}</title></head><body style="margin:0">${bodyHtml}</body></html>`);
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 150);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Pregled računa</DialogTitle>
+          <DialogDescription>{title}</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-auto rounded-lg border bg-neutral-100 p-3">
+          <div ref={ref} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+        </div>
+        <DialogFooter className="flex-row flex-wrap gap-2 sm:justify-between">
+          <Button variant="outline" size="sm" onClick={print} disabled={busy}><Printer className="h-4 w-4 mr-1.5"/>Štampaj</Button>
+          <Button variant="outline" size="sm" onClick={download} disabled={busy}><Download className="h-4 w-4 mr-1.5"/>Preuzmi</Button>
+          <Button size="sm" onClick={share} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5"/> : <Share2 className="h-4 w-4 mr-1.5"/>}Podeli</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── OBRACUN KARTICA ──────────────────────────────────────────
 function ObracunCard({ date, entries, obracun }: { date: string; entries: any[]; obracun: any }) {
   const { drivers, displayName } = useApp();
@@ -1291,6 +1401,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const [stornoReason,setStornoReason]=useState("");
   const [saving,setSaving]=useState(false);
   const [openDriverId,setOpenDriverId]=useState<string|null>(null);
+  const [preview,setPreview]=useState<{title:string;html:string}|null>(null);
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
@@ -1312,45 +1423,46 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
     return { driverId, driver, ents: ents as any[], inSum, outSum, saldo: outSum-inSum };
   }).sort((a,b)=>(a.driver?.full_name??"—").localeCompare(b.driver?.full_name??"—"));
 
-  const printDriver=(g:typeof driverGroups[0])=>{
-    const w=window.open("","_blank","width=400,height=600");
-    if(!w)return;
-    const rows=g.ents.map(e=>`<tr><td>${CASH_TYPE_LABELS[e.type]??e.type}</td><td>${e.description}</td><td style="text-align:right;color:${e.direction==="in"?"#080":"#c00"}">${e.direction==="in"?"+":"−"}${fmt(e.amount)}</td></tr>`).join("");
-    w.document.write(`<html><head><title>${g.driver?.full_name??"Obračun"} — ${fmtDate(date)}</title>
-      <style>body{font-family:monospace;font-size:12px;padding:16px;max-width:380px}h2{text-align:center;margin:0}
-      .sub{text-align:center;color:#666;font-size:11px;margin-bottom:10px}table{width:100%;border-collapse:collapse}
-      td{padding:2px 0;border-bottom:1px solid #eee}th{text-align:left;border-bottom:1px solid #000;font-size:11px}
-      .total{font-weight:bold;border-top:2px solid #000;font-size:13px}.foot{text-align:center;color:#999;font-size:10px;margin-top:14px}</style>
-      </head><body><h2>VIP PLUS TAXI</h2><div class="sub">${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
-      <div><strong>${g.driver?.full_name??"—"}</strong></div>
-      <table><tr><th>Tip</th><th>Opis</th><th style="text-align:right">Iznos</th></tr>${rows}
-      <tr class="total"><td colspan="2">${g.saldo>=0?"Vozač prima":"Vozač plaća"}</td><td style="text-align:right">${fmt(Math.abs(g.saldo))}</td></tr></table>
-      <div class="foot">${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}</div>
-      </body></html>`);
-    w.document.close();w.print();
+  // Fiskalni račun — inline stilovi (html2canvas-friendly)
+  const receiptWrap = (inner: string) =>
+    `<div style="font-family:'Courier New',monospace;font-size:13px;color:#111;background:#fff;padding:18px;width:300px;margin:0 auto;box-sizing:border-box">
+      <div style="text-align:center;font-weight:bold;font-size:18px;letter-spacing:1px">VIP PLUS TAXI</div>
+      ${inner}
+      <div style="text-align:center;color:#999;font-size:10px;margin-top:12px;border-top:1px dashed #bbb;padding-top:6px">
+        ${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}
+      </div>
+    </div>`;
+  const rowHtml = (left: string, right: string, dir: "in"|"out") =>
+    `<tr><td style="padding:3px 0;border-bottom:1px solid #eee;vertical-align:top">${left}</td>
+      <td style="padding:3px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:${dir==="in"?"#080":"#c00"}">${dir==="in"?"+":"−"}${right}</td></tr>`;
+
+  const buildDriverReceipt=(g:typeof driverGroups[0])=>{
+    const rows=g.ents.map(e=>rowHtml(
+      `<strong>${CASH_TYPE_LABELS[e.type]??e.type}</strong><br><span style="color:#666;font-size:11px">${e.description||""}</span>`,
+      fmt(e.amount), e.direction)).join("");
+    return receiptWrap(`
+      <div style="text-align:center;color:#666;font-size:11px;margin-bottom:10px">${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
+      <div style="font-weight:bold;margin-bottom:4px">${g.driver?.full_name??"—"}</div>
+      <table style="width:100%;border-collapse:collapse">${rows}
+        <tr><td style="padding-top:8px;border-top:2px solid #000;font-weight:bold">${g.saldo>=0?"Vozač prima":"Vozač plaća"}</td>
+        <td style="padding-top:8px;border-top:2px solid #000;font-weight:bold;text-align:right">${fmt(Math.abs(g.saldo))}</td></tr>
+      </table>`);
   };
 
-  const printObracun=()=>{
-    const w=window.open("","_blank","width=420,height=640");
-    if(!w)return;
+  const buildObracunReceipt=()=>{
     const rows=entries.map(e=>{
       const driver=e.driver_id?drivers.find((d:any)=>d.id===e.driver_id):null;
-      return `<tr><td>${CASH_TYPE_LABELS[e.type]??e.type}</td><td>${driver?.full_name??""}</td><td style="text-align:right;color:${e.direction==="in"?"#080":"#c00"}">${e.direction==="in"?"+":"−"}${fmt(e.amount)}</td></tr>`;
+      return rowHtml(
+        `<strong>${CASH_TYPE_LABELS[e.type]??e.type}</strong>${driver?`<br><span style="color:#666;font-size:11px">${driver.full_name}</span>`:""}`,
+        fmt(e.amount), e.direction);
     }).join("");
-    w.document.write(`
-      <html><head><title>Obračun ${fmtDate(date)}</title>
-      <style>body{font-family:monospace;font-size:12px;padding:16px;max-width:400px}h2{text-align:center;margin:0}
-      .sub{text-align:center;color:#666;font-size:11px;margin-bottom:10px}table{width:100%;border-collapse:collapse}
-      td{padding:2px 0;border-bottom:1px solid #eee}th{text-align:left;border-bottom:1px solid #000;font-size:11px}
-      .total{font-weight:bold;border-top:2px solid #000}.foot{text-align:center;color:#999;font-size:10px;margin-top:14px}</style>
-      </head><body><h2>VIP PLUS TAXI</h2><div class="sub">Obračun · ${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
-      <table><tr><th>Tip</th><th>Vozač</th><th style="text-align:right">Iznos</th></tr>${rows}
-      <tr class="total"><td colspan="2">Ulaz</td><td style="text-align:right;color:#080">+${fmt(total_in)}</td></tr>
-      <tr class="total"><td colspan="2">Izlaz</td><td style="text-align:right;color:#c00">−${fmt(total_out)}</td></tr>
-      <tr class="total"><td colspan="2">BILANS</td><td style="text-align:right">${fmt(total_in-total_out)}</td></tr></table>
-      <div class="foot">${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}</div>
-      </body></html>`);
-    w.document.close();w.print();
+    return receiptWrap(`
+      <div style="text-align:center;color:#666;font-size:11px;margin-bottom:10px">Obračun · ${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
+      <table style="width:100%;border-collapse:collapse">${rows}
+        <tr><td style="padding-top:8px;border-top:2px solid #000">Ulaz</td><td style="padding-top:8px;border-top:2px solid #000;text-align:right;color:#080">+${fmt(total_in)}</td></tr>
+        <tr><td>Izlaz</td><td style="text-align:right;color:#c00">−${fmt(total_out)}</td></tr>
+        <tr><td style="font-weight:bold;font-size:14px">BILANS</td><td style="font-weight:bold;font-size:14px;text-align:right">${fmt(total_in-total_out)}</td></tr>
+      </table>`);
   };
   return (
     <motion.div layout initial={{opacity:0,y:6}} animate={{opacity:1,y:0}}>
@@ -1393,8 +1505,8 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                             <span className={`font-bold text-sm ${g.saldo>=0?"text-orange-600":"text-green-600"}`}>
                               {g.saldo>=0?"prima ":"plaća "}{fmt(Math.abs(g.saldo))}
                             </span>
-                            <button onClick={(e)=>{e.stopPropagation();printDriver(g);}}
-                              className="text-xs text-primary hover:underline" title="Štampaj za ovog vozača">🖨</button>
+                            <button onClick={(e)=>{e.stopPropagation();setPreview({title:`${g.driver?.full_name??"Obračun"} — ${fmtDate(date)}`,html:buildDriverReceipt(g)});}}
+                              className="text-muted-foreground hover:text-primary" title="Pregled računa za ovog vozača"><Eye className="h-4 w-4"/></button>
                           </div>
                         </div>
                         <AnimatePresence>
@@ -1425,6 +1537,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                 {!confirmed?(
                   <div className="flex items-center gap-2 flex-wrap w-full">
                     <div className="flex items-center gap-2 text-sm text-amber-700 flex-1"><AlertCircle className="h-4 w-4 flex-shrink-0"/><span>Nije zatvoren — bilans: <strong>{fmt(total_in-total_out)}</strong></span></div>
+                    <Button size="sm" variant="outline" onClick={()=>setPreview({title:`Obračun ${fmtDate(date)}`,html:buildObracunReceipt()})}><Eye className="h-4 w-4 mr-1.5"/>Pregled</Button>
                     <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
                       <DialogTrigger asChild><Button size="sm"><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Zatvori obračun</Button></DialogTrigger>
                       <DialogContent className="max-w-sm">
@@ -1445,7 +1558,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                   <div className="flex items-center justify-between w-full gap-2 flex-wrap">
                     <div className="flex items-center gap-2 text-sm text-green-700"><CheckCircle2 className="h-4 w-4"/><span>Zatvoren — <strong>{confirmedBy}</strong></span></div>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={printObracun}>🖨 Štampaj</Button>
+                      <Button size="sm" variant="outline" onClick={()=>setPreview({title:`Obračun ${fmtDate(date)}`,html:buildObracunReceipt()})}><Eye className="h-4 w-4 mr-1.5"/>Pregled</Button>
                       <Dialog open={stornoOpen} onOpenChange={v=>{setStornoOpen(v);if(!v)setStornoReason("");}}>
                         <DialogTrigger asChild>
                           <Button size="sm" variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10">
@@ -1494,6 +1607,7 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
           )}
         </AnimatePresence>
       </Card>
+      {preview && <ReceiptPreview open={!!preview} onClose={()=>setPreview(null)} title={preview.title} bodyHtml={preview.html}/>}
     </motion.div>
   );
 }
@@ -1552,6 +1666,137 @@ function KasaDepozitDialog({ onAdd, currentUser, defaultDate }: {
   );
 }
 
+// ─── ISPLATA VAUČERA (spolja) ─────────────────────────────────
+// Neko spolja (gazda MB, vozač iz drugog udruženja) donese NAŠE vaučere → isplaćujemo keš.
+function IsplataVauceraDialog({ onAdd, currentUser, defaultDate }: {
+  onAdd: (e: any) => Promise<void>; currentUser: string; defaultDate: string;
+}) {
+  const [open, setOpen]   = useState(false);
+  const [ko, setKo]       = useState("");
+  const [date, setDate]   = useState(defaultDate);
+  const [lines, setLines] = useState<{ count: string; amt: string }[]>([{ count: "", amt: "" }]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (open) setDate(defaultDate); }, [open, defaultDate]);
+  const total = lines.reduce((s, l) => s + (Number(l.count) || 0) * (Number(l.amt) || 0), 0);
+  const desc  = lines.filter(l => Number(l.count) > 0 && Number(l.amt) > 0).map(l => `${l.count}×${fmt(Number(l.amt))}`).join(" + ");
+
+  const save = async () => {
+    if (!(total > 0)) { toast.error("Unesi vaučere"); return; }
+    if (!ko.trim())   { toast.error("Unesi ko donosi vaučere"); return; }
+    setSaving(true);
+    try {
+      await onAdd({
+        type: "vaučer_isplata", direction: "out", driver_id: null,
+        amount: total, date,
+        description: `Isplata vaučera — ${ko.trim()}: ${desc}`, received_by: currentUser, notes: "",
+      });
+      toast.success(`Isplaćeno za vaučere: ${fmt(total)}`);
+      setOpen(false); setKo(""); setLines([{ count: "", amt: "" }]);
+    } catch (e: any) {
+      toast.error("Greška: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setKo(""); setLines([{ count: "", amt: "" }]); } }}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Plus className="mr-2 h-4 w-4"/>Isplata vaučera</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Isplata vaučera (spolja)</DialogTitle>
+          <DialogDescription>Neko donese NAŠE vaučere, mi mu isplaćujemo keš iz kase</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid gap-1.5"><Label>Ko donosi</Label><Input placeholder="npr. MB taxi — Marko / vozač X" value={ko} onChange={e=>setKo(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="grid gap-1.5">
+            <Label>Vaučeri (apoeni)</Label>
+            <VaucerLinesEditor lines={lines} setLines={setLines} defaultAmt="" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
+          <Button disabled={!(total>0)||!ko.trim()||saving} onClick={save}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Isplati {total>0?fmt(total):""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── BANKARSKA NAKNADA ────────────────────────────────────────
+// Vozač donese novac da pokrije bankarske usluge (POS/aplikacija). Ulaz u kasu, NE drži se za vozača.
+function BankarskaNaknadaDialog({ onAdd, currentUser, defaultDate }: {
+  onAdd: (e: any) => Promise<void>; currentUser: string; defaultDate: string;
+}) {
+  const { drivers } = useApp();
+  const [open, setOpen]       = useState(false);
+  const [driverId, setDriverId] = useState<string>("");
+  const [amount, setAmount]   = useState("");
+  const [date, setDate]       = useState(defaultDate);
+  const [note, setNote]       = useState("");
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => { if (open) setDate(defaultDate); }, [open, defaultDate]);
+
+  const save = async () => {
+    if (!(Number(amount) > 0)) { toast.error("Unesi iznos"); return; }
+    const d = drivers.find((x: any) => x.id === driverId);
+    setSaving(true);
+    try {
+      await onAdd({
+        type: "bankarska_naknada", direction: "in", driver_id: driverId || null,
+        amount: Number(amount), date,
+        description: `Bankarska naknada${d ? ` — ${d.full_name}` : ""}${note ? ` (${note})` : ""}`,
+        received_by: currentUser, notes: "",
+      });
+      toast.success(`Bankarska naknada: ${fmt(Number(amount))}`);
+      setOpen(false); setDriverId(""); setAmount(""); setNote("");
+    } catch (e: any) {
+      toast.error("Greška: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setDriverId(""); setAmount(""); setNote(""); } }}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Plus className="mr-2 h-4 w-4"/>Bankarska naknada</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Bankarska naknada</DialogTitle>
+          <DialogDescription>Vozač uplaćuje za bankarske usluge (POS/aplikacija) — ulaz u kasu</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid gap-1.5">
+            <Label>Vozač (opciono)</Label>
+            <DriverCombobox
+              value={driverId}
+              onChange={setDriverId}
+              options={drivers
+                .filter((d: any) => d.status === "active")
+                .sort((a: any, b: any) => a.full_name.localeCompare(b.full_name))
+                .map((d: any) => ({ value: d.id, label: d.full_name }))}
+            />
+          </div>
+          <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" placeholder="npr. 1500" value={amount} onChange={e=>setAmount(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") save(); }}/></div>
+          <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label>Napomena (opciono)</Label><Input placeholder="npr. mesečna banka / POS" value={note} onChange={e=>setNote(e.target.value)}/></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
+          <Button disabled={!(Number(amount)>0)||saving} onClick={save}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── GLAVNA STRANICA ─────────────────────────────────────────
 const CashPage = () => {
   const today = new Date();
@@ -1579,6 +1824,8 @@ const CashPage = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
           <KasaDepozitDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
+          <BankarskaNaknadaDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
+          <IsplataVauceraDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
           <ObracunVozacDialog onAdd={addEntry} currentUser={displayName} obracunDate={currentObracun}/>
         </div>
       </div>

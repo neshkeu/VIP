@@ -31,8 +31,10 @@ export function useObracun(month: string) {
       supabase.from("obracun_days").select("*").gte("date", from).lte("date", to),
       supabase.from("obracun_storno_log").select("*").gte("date", from).lte("date", to).order("created_at", { ascending: false }),
     ]);
-    setObracunDays(data ?? []);
-    setStornoLogs(logs ?? []);
+    // Normalizuj datum (ako kolona vraća timestamp sa vremenom) na YYYY-MM-DD
+    const norm = (rows: any[] | null) => (rows ?? []).map(r => ({ ...r, date: (r.date ?? "").slice(0, 10) }));
+    setObracunDays(norm(data));
+    setStornoLogs(norm(logs));
   }
 
   function getStornoLogs(date: string) {
@@ -45,9 +47,10 @@ export function useObracun(month: string) {
       .upsert({ date, confirmed: true, confirmed_by: confirmedBy, total_in: totalIn, total_out: totalOut }, { onConflict: "date" })
       .select().single();
     if (error) throw error;
+    const row = { ...data, date: (data.date ?? "").slice(0, 10) };
     setObracunDays(prev => {
-      const exists = prev.find(o => o.date === date);
-      return exists ? prev.map(o => o.date === date ? data : o) : [...prev, data];
+      const exists = prev.find(o => o.date === row.date);
+      return exists ? prev.map(o => o.date === row.date ? row : o) : [...prev, row];
     });
   }
 
@@ -65,8 +68,10 @@ export function useObracun(month: string) {
       .eq("date", date)
       .select().single();
     if (error) throw error;
-    setObracunDays(prev => prev.map(o => o.date === date ? data : o));
-    setStornoLogs(prev => [log, ...prev]);
+    const row = { ...data, date: (data.date ?? "").slice(0, 10) };
+    const logRow = { ...log, date: (log.date ?? "").slice(0, 10) };
+    setObracunDays(prev => prev.map(o => o.date === row.date ? row : o));
+    setStornoLogs(prev => [logRow, ...prev]);
   }
 
   function isConfirmed(date: string) {
