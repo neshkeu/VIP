@@ -25,12 +25,16 @@ export function useObracun(month: string) {
   useEffect(() => { fetchObracun(); }, [month]);
 
   async function fetchObracun() {
+    const [y, m] = month.split("-").map(Number);
     const from = `${month}-01`;
-    const to   = `${month}-31`;
-    const [{ data }, { data: logs }] = await Promise.all([
+    const lastDay = new Date(y, m, 0).getDate();           // stvarni zadnji dan (28/29/30/31)
+    const to   = `${month}-${String(lastDay).padStart(2, "0")}`;
+    const [{ data, error: e1 }, { data: logs, error: e2 }] = await Promise.all([
       supabase.from("obracun_days").select("*").gte("date", from).lte("date", to),
       supabase.from("obracun_storno_log").select("*").gte("date", from).lte("date", to).order("created_at", { ascending: false }),
     ]);
+    if (e1) console.error("fetchObracun days:", e1);
+    if (e2) console.error("fetchObracun storno:", e2);
     // Normalizuj datum (ako kolona vraća timestamp sa vremenom) na YYYY-MM-DD
     const norm = (rows: any[] | null) => (rows ?? []).map(r => ({ ...r, date: (r.date ?? "").slice(0, 10) }));
     setObracunDays(norm(data));
