@@ -71,7 +71,7 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   komunalni:"Komunalni",doprinosi:"Doprinosi",dugovanje:"Uplata dugovanja",
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
   kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
-  likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasu",
+  likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasi",
   vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
@@ -1374,12 +1374,12 @@ function ReceiptPreview({ open, onClose, title, bodyHtml }: {
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Pregled računa</DialogTitle>
           <DialogDescription>{title}</DialogDescription>
         </DialogHeader>
-        <div className="max-h-[60vh] overflow-auto rounded-lg border bg-neutral-100 p-3">
+        <div className="max-h-[65vh] overflow-auto rounded-lg border bg-neutral-100 p-3">
           <div ref={ref} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
         </div>
         <DialogFooter className="flex-row flex-wrap gap-2 sm:justify-between">
@@ -1423,46 +1423,47 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
     return { driverId, driver, ents: ents as any[], inSum, outSum, saldo: outSum-inSum };
   }).sort((a,b)=>(a.driver?.full_name??"—").localeCompare(b.driver?.full_name??"—"));
 
-  // Fiskalni račun — inline stilovi (html2canvas-friendly)
-  const receiptWrap = (inner: string) =>
-    `<div style="font-family:'Courier New',monospace;font-size:13px;color:#111;background:#fff;padding:18px;width:300px;margin:0 auto;box-sizing:border-box">
-      <div style="text-align:center;font-weight:bold;font-size:18px;letter-spacing:1px">VIP PLUS TAXI</div>
+  // Račun — inline stilovi (html2canvas-friendly), širi A4-friendly format
+  const receiptWrap = (inner: string, subtitle: string) =>
+    `<div style="font-family:'Segoe UI',Arial,sans-serif;font-size:14px;color:#111;background:#fff;padding:26px 30px;max-width:700px;width:100%;margin:0 auto;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:16px">
+        <div style="font-weight:800;font-size:24px;letter-spacing:1px">VIP PLUS TAXI</div>
+        <div style="text-align:right;font-size:12px;color:#555">${subtitle}${confirmed?' · <span style="color:#080;font-weight:700">ZATVOREN</span>':""}</div>
+      </div>
       ${inner}
-      <div style="text-align:center;color:#999;font-size:10px;margin-top:12px;border-top:1px dashed #bbb;padding-top:6px">
+      <div style="text-align:center;color:#999;font-size:11px;margin-top:18px;border-top:1px solid #ddd;padding-top:8px">
         ${confirmed?`Zatvorio: ${confirmedBy}`:"Nije zatvoren"} · ${new Date().toLocaleString("sr-RS")}
       </div>
     </div>`;
-  const rowHtml = (left: string, right: string, dir: "in"|"out") =>
-    `<tr><td style="padding:3px 0;border-bottom:1px solid #eee;vertical-align:top">${left}</td>
-      <td style="padding:3px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;color:${dir==="in"?"#080":"#c00"}">${dir==="in"?"+":"−"}${right}</td></tr>`;
 
-  const buildDriverReceipt=(g:typeof driverGroups[0])=>{
-    const rows=g.ents.map(e=>rowHtml(
-      `<strong>${CASH_TYPE_LABELS[e.type]??e.type}</strong><br><span style="color:#666;font-size:11px">${e.description||""}</span>`,
-      fmt(e.amount), e.direction)).join("");
-    return receiptWrap(`
-      <div style="text-align:center;color:#666;font-size:11px;margin-bottom:10px">${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
-      <div style="font-weight:bold;margin-bottom:4px">${g.driver?.full_name??"—"}</div>
-      <table style="width:100%;border-collapse:collapse">${rows}
-        <tr><td style="padding-top:8px;border-top:2px solid #000;font-weight:bold">${g.saldo>=0?"Vozač prima":"Vozač plaća"}</td>
-        <td style="padding-top:8px;border-top:2px solid #000;font-weight:bold;text-align:right">${fmt(Math.abs(g.saldo))}</td></tr>
-      </table>`);
-  };
+  const entryRow = (e: any) =>
+    `<tr>
+      <td style="padding:5px 0;border-bottom:1px solid #f0f0f0;vertical-align:top">
+        <strong>${CASH_TYPE_LABELS[e.type]??e.type}</strong>${e.description?`<span style="color:#888;font-size:12px"> · ${e.description}</span>`:""}
+      </td>
+      <td style="padding:5px 0;border-bottom:1px solid #f0f0f0;text-align:right;white-space:nowrap;font-weight:600;color:${e.direction==="in"?"#0a0":"#c00"}">${e.direction==="in"?"+":"−"}${fmt(e.amount)}</td>
+    </tr>`;
+
+  const driverSection = (g: typeof driverGroups[0]) =>
+    `<div style="margin-bottom:16px">
+      <div style="font-weight:700;font-size:16px;background:#f4f4f5;padding:5px 8px;border-radius:4px">${g.driver?.full_name ?? "— (bez vozača)"}</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:2px">${g.ents.map(entryRow).join("")}</table>
+      <div style="text-align:right;font-size:13px;margin-top:4px;color:${g.saldo>=0?"#c60":"#080"}">
+        ${g.saldo>=0?"Prima":"Plaća"}: <strong>${fmt(Math.abs(g.saldo))}</strong>
+      </div>
+    </div>`;
+
+  const buildDriverReceipt=(g:typeof driverGroups[0])=>
+    receiptWrap(driverSection(g), fmtDate(date));
 
   const buildObracunReceipt=()=>{
-    const rows=entries.map(e=>{
-      const driver=e.driver_id?drivers.find((d:any)=>d.id===e.driver_id):null;
-      return rowHtml(
-        `<strong>${CASH_TYPE_LABELS[e.type]??e.type}</strong>${driver?`<br><span style="color:#666;font-size:11px">${driver.full_name}</span>`:""}`,
-        fmt(e.amount), e.direction);
-    }).join("");
-    return receiptWrap(`
-      <div style="text-align:center;color:#666;font-size:11px;margin-bottom:10px">Obračun · ${fmtDate(date)}${confirmed?" · ZATVOREN":""}</div>
-      <table style="width:100%;border-collapse:collapse">${rows}
-        <tr><td style="padding-top:8px;border-top:2px solid #000">Ulaz</td><td style="padding-top:8px;border-top:2px solid #000;text-align:right;color:#080">+${fmt(total_in)}</td></tr>
-        <tr><td>Izlaz</td><td style="text-align:right;color:#c00">−${fmt(total_out)}</td></tr>
-        <tr><td style="font-weight:bold;font-size:14px">BILANS</td><td style="font-weight:bold;font-size:14px;text-align:right">${fmt(total_in-total_out)}</td></tr>
-      </table>`);
+    const sections = driverGroups.map(driverSection).join("");
+    return receiptWrap(`${sections}
+      <table style="width:100%;border-collapse:collapse;border-top:2px solid #111;margin-top:4px">
+        <tr><td style="padding-top:8px">Ukupan ulaz</td><td style="padding-top:8px;text-align:right;color:#0a0;font-weight:600">+${fmt(total_in)}</td></tr>
+        <tr><td>Ukupan izlaz</td><td style="text-align:right;color:#c00;font-weight:600">−${fmt(total_out)}</td></tr>
+        <tr><td style="font-weight:800;font-size:17px;padding-top:4px">BILANS</td><td style="font-weight:800;font-size:17px;text-align:right;padding-top:4px">${fmt(total_in-total_out)}</td></tr>
+      </table>`, `Obračun · ${fmtDate(date)}`);
   };
   return (
     <motion.div layout initial={{opacity:0,y:6}} animate={{opacity:1,y:0}}>
@@ -1631,9 +1632,9 @@ function KasaDepozitDialog({ onAdd, currentUser, defaultDate }: {
       await onAdd({
         type: "kasa_depozit", direction: "in", driver_id: null,
         amount: Number(amount), date,
-        description: note || "Depozit u kasu", received_by: currentUser, notes: "",
+        description: note || "Depozit u kasi", received_by: currentUser, notes: "",
       });
-      toast.success(`Depozit u kasu: ${fmt(Number(amount))}`);
+      toast.success(`Depozit u kasi: ${fmt(Number(amount))}`);
       setOpen(false); setAmount(""); setNote("");
     } catch (e: any) {
       toast.error("Greška: " + e.message);
@@ -1643,11 +1644,11 @@ function KasaDepozitDialog({ onAdd, currentUser, defaultDate }: {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline"><Plus className="mr-2 h-4 w-4"/>Depozit u kasu</Button>
+        <Button variant="outline"><Plus className="mr-2 h-4 w-4"/>Depozit u kasi</Button>
       </DialogTrigger>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Depozit u kasu</DialogTitle>
+          <DialogTitle>Depozit u kasi</DialogTitle>
           <DialogDescription>Ubaci novac u kasu (likvidnost) za isplate</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 py-2">
