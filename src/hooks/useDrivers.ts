@@ -78,5 +78,11 @@ export function useDrivers() {
     return data;
   }
 
-  return { drivers, loading, error, addDriver, updateDriver, refetch: fetchDrivers };
+  async function deleteDriver(id: string) {
+    const { error } = await supabase.from("drivers").delete().eq("id", id);
+    if (error) throw error;
+    setDrivers(prev => prev.filter(d => d.id !== id));
+  }
+
+  return { drivers, loading, error, addDriver, updateDriver, deleteDriver, refetch: fetchDrivers };
 }
