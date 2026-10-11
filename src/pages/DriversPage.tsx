@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Plus, User, Car, CarTaxiFront, Wrench, Loader2, Pencil, FileText, Users, ArrowRightLeft } from "lucide-react";
+import { Search, Plus, User, Car, CarTaxiFront, Wrench, Loader2, Pencil, FileText, Users, ArrowRightLeft, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/DocumentStatusBadge";
@@ -238,11 +238,12 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   );
 }
 
-function DriversTable({ list, vehicles, onEdit, onChangeVehicle, debtByDriver, depositByDriver }: {
+function DriversTable({ list, vehicles, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
   list: Driver[];
   vehicles: Vehicle[];
   onEdit: (d: Driver) => void;
   onChangeVehicle: (d: Driver) => void;
+  onDelete: (d: Driver) => void;
   debtByDriver: Record<string, number>;
   depositByDriver: (id: string) => number;
 }) {
@@ -348,6 +349,9 @@ function DriversTable({ list, vehicles, onEdit, onChangeVehicle, debtByDriver, d
                       </Button>
                       <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi" onClick={() => onEdit(d)}>
                         <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" title="Obriši" onClick={() => onDelete(d)}>
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -462,7 +466,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onClose }: 
 }
 
 const DriversPage = () => {
-  const { drivers, loading, addDriver, updateDriver } = useDrivers();
+  const { drivers, loading, addDriver, updateDriver, deleteDriver } = useDrivers();
   const { vehicles } = useVehicles();
   const { assignVehicle, getByDriver } = useAssignments();
   const { debts } = useDebts();
@@ -471,6 +475,22 @@ const DriversPage = () => {
   const [addOpen, setAddOpen]       = useState(false);
   const [editDriver, setEditDriver] = useState<Driver | null>(null);
   const [changeVehicleDriver, setChangeVehicleDriver] = useState<Driver | null>(null);
+
+  const handleDelete = async (d: Driver) => {
+    const naziv = d.full_name?.trim() || "(bez naziva)";
+    if (!confirm(`Obrisati vozača ${naziv}${d.komunalni_broj ? ` (kom. ${d.komunalni_broj})` : ""}?\n\nAko ima vezane obračune/dugovanja, brisanje neće proći — tada ih spoji umesto brisanja.`)) return;
+    try {
+      await deleteDriver(d.id);
+      toast.success("Vozač obrisan");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/23503|foreign key|violates/i.test(msg)) {
+        toast.error("Vozač ima vezane zapise (obračuni/dugovanja) — ne može da se obriše. Spoji ga sa pravim vozačem umesto brisanja.");
+      } else {
+        toast.error("Greška: " + msg);
+      }
+    }
+  };
 
   const debtByDriver: Record<string, number> = {};
   debts.forEach(d => {
@@ -581,13 +601,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={handleDelete} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={handleDelete} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={handleDelete} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
         </Tabs>
       )}
