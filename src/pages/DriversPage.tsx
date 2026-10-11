@@ -371,8 +371,17 @@ const DriversPage = () => {
   });
 
   const filtered = drivers.filter(d => {
-    const q = search.toLowerCase();
-    return d.full_name.toLowerCase().includes(q) || (d.phone ?? "").includes(search) || (d.komunalni_broj ?? "").toLowerCase().includes(q);
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const veh = vehicles.find(v => v.id === d.vehicle_id);
+    const haystack = [
+      d.full_name, d.phone, d.komunalni_broj, d.license_number,
+      d.role === "operativni" ? "operativni" : "papiroloski",
+      d.driver_type === "renta" ? "renta" : "vlastito vozilo svoje",
+      d.status === "active" ? "aktivan" : "neaktivan",
+      veh?.brand, veh?.model, veh?.license_plate, veh?.taxi_license_number,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(q);
   });
 
   const operativni = filtered.filter(d => d.role === "operativni");
@@ -392,7 +401,7 @@ const DriversPage = () => {
         <div className="flex gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-8 w-56" placeholder="Ime, telefon..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Input className="pl-8 w-56" placeholder="Ime, tel, vozilo, komunalni..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
