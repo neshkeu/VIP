@@ -9,6 +9,7 @@ export interface Driver {
   full_name: string;
   phone: string;
   license_number: string;
+  komunalni_broj: string | null;   // jedinstveni identifikator vozača (sprečava duplikate)
   status: "active" | "inactive";
   role: DriverRole;
   driver_type: "renta" | "vlastito_vozilo";

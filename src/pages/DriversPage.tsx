@@ -42,6 +42,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   const [name, setName]           = useState(initial?.full_name ?? "");
   const [phone, setPhone]         = useState(initial?.phone ?? "");
   const [licNum, setLicNum]       = useState(initial?.license_number ?? "");
+  const [komBroj, setKomBroj]     = useState(initial?.komunalni_broj ?? "");
   const [vehicleId, setVehicleId] = useState(initial?.vehicle_id ?? "none");
   const [role, setRole]           = useState<DriverRole>(initial?.role ?? "operativni");
   const [type, setType]           = useState<"renta" | "vlastito_vozilo">(initial?.driver_type ?? "renta");
@@ -71,7 +72,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
     setSaving(true);
     try {
       await onSave({
-        full_name: name, phone, license_number: licNum, status: "active",
+        full_name: name, phone, license_number: licNum, komunalni_broj: komBroj.trim() || null, status: "active",
         role, driver_type: type,
         vehicle_id: vehicleId === "none" ? null : vehicleId,
         daily_rate: Number(dailyRate) || 0,
@@ -88,7 +89,12 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
       });
       onClose();
     } catch (e) {
-      toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/23505|duplicate|unique/i.test(msg) && /komunalni/i.test(msg)) {
+        toast.error("Već postoji vozač sa tim komunalnim brojem — proveri da nije duplikat.");
+      } else {
+        toast.error("Greška: " + msg);
+      }
     } finally { setSaving(false); }
   };
 
@@ -111,7 +117,10 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
             <div className="grid gap-2"><Label className="text-xs">Ime i prezime</Label><Input value={name} onChange={e => setName(e.target.value)} /></div>
             <div className="grid gap-2"><Label className="text-xs">Telefon</Label><Input value={phone} onChange={e => setPhone(e.target.value)} /></div>
           </div>
-          <div className="grid gap-2"><Label className="text-xs">Broj vozačke</Label><Input value={licNum} onChange={e => setLicNum(e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2"><Label className="text-xs">Broj vozačke</Label><Input value={licNum} onChange={e => setLicNum(e.target.value)} /></div>
+            <div className="grid gap-2"><Label className="text-xs">Komunalni broj</Label><Input value={komBroj} onChange={e => setKomBroj(e.target.value)} placeholder="jedinstven" /><p className="text-xs text-muted-foreground">Jedinstven — sprečava duplikat</p></div>
+          </div>
           <div className="grid gap-2">
             <Label className="text-xs">Vozilo</Label>
             <Select value={vehicleId ?? "none"} onValueChange={setVehicleId}>
@@ -269,7 +278,7 @@ function DriversTable({ list, vehicles, onEdit, debtByDriver, depositByDriver }:
                       </div>
                       <div>
                         <p className="font-medium text-sm">{d.full_name}</p>
-                        <p className="text-xs text-muted-foreground">{d.phone || "—"}</p>
+                        <p className="text-xs text-muted-foreground">{d.phone || "—"}{d.komunalni_broj ? ` · kom. ${d.komunalni_broj}` : ""}</p>
                       </div>
                     </div>
                   </TableCell>
@@ -363,7 +372,7 @@ const DriversPage = () => {
 
   const filtered = drivers.filter(d => {
     const q = search.toLowerCase();
-    return d.full_name.toLowerCase().includes(q) || (d.phone ?? "").includes(search);
+    return d.full_name.toLowerCase().includes(q) || (d.phone ?? "").includes(search) || (d.komunalni_broj ?? "").toLowerCase().includes(q);
   });
 
   const operativni = filtered.filter(d => d.role === "operativni");
