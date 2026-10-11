@@ -187,7 +187,13 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
     if (newDriverId === "none") { toast.error("Izaberi vozača!"); return; }
     setSaving(true);
     try {
-      await assignVehicle(newDriverId, vehicle.id, newDateFrom, newNotes);
+      const nd = drivers.find(d => d.id === newDriverId);
+      const fees = nd ? {
+        daily_rate: nd.daily_rate, weekly_membership: nd.weekly_membership,
+        weekly_membership_own: nd.weekly_membership_own, pos_monthly_fee: nd.pos_monthly_fee,
+        komunalni_monthly: nd.komunalni_monthly, doprinosi_monthly: nd.doprinosi_monthly,
+      } : undefined;
+      await assignVehicle(newDriverId, vehicle.id, newDateFrom, fees, newNotes);
       toast.success("Vozač dodijeljen");
       setAssignOpen(false); setNewDriverId("none"); setNewNotes("");
     } catch (e) {

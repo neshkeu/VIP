@@ -9,6 +9,7 @@ import { useFuelPdv } from "@/hooks/useFuelPdv";
 import { useObracuni } from "@/hooks/useObracuni";
 import { ClanarinaKalendar } from "@/components/ClanarinaKalendar";
 import { useDebts } from "@/hooks/useDebts";
+import { useAssignments } from "@/hooks/useAssignments";
 import { useDeposits } from "@/hooks/useDeposits";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -285,6 +286,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const membership = useMembership(driverId);
   const fuelPdv = useFuelPdv(driverId, curMonthStr);
   const { debts } = useDebts();
+  const { getByDriver: getDriverAssignments } = useAssignments();
   const { saveObracun } = useObracuni();
   const { balanceFor, addTransaction: addDeposit } = useDeposits();
 
@@ -361,20 +363,30 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // NEDELJA: za RENTA vozače besplatna (osim "radi"); za VLASTITO VOZILO se plaća kao normalan dan.
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
   const ownVehicle  = driver?.driver_type === "vlastito_vozilo";
-  const workDays    = rentaDates.reduce((sum, d) => {
+  // Cena rente po danu — iz istorije dodele vozila (stari auto stara cena, novi novo).
+  // Ako nema snimljene dodele za taj dan → fallback na trenutnu cenu vozača.
+  const driverAssignments = driverId ? getDriverAssignments(driverId) : [];
+  const rateForDay = (dateStr: string): number => {
+    const a = driverAssignments.find(x =>
+      x.date_from <= dateStr && (!x.date_to || dateStr < x.date_to) && (x.daily_rate ?? 0) > 0);
+    return a ? a.daily_rate : (driver?.daily_rate ?? 0);
+  };
+  const dayWeight = (d: string): number => {
     const dow = new Date(d+"T00:00:00").getDay();
     if (dow === 0 && !ownVehicle) {
-      // Nedelja (renta vozač): default besplatna; broji se samo ako je user označio "radi"
       const sun = cal.getSundayStatus(driverId, d);
-      return sum + (sun === "radi" ? 1 : 0);
+      return sun === "radi" ? 1 : 0;
     }
-    // Običan dan (i nedelja za vlastito vozilo): 1 radni, 0.5 pola, 0 off
     const off = cal.getOffStatus(driverId, d);
-    if (off === "pola") return sum + 0.5;
-    if (off) return sum; // nije_radio, servis, praznik
-    return sum + 1;
-  }, 0);
-  const rentaTotal  = driver ? Math.round(workDays * driver.daily_rate) : 0;
+    if (off === "pola") return 0.5;
+    if (off) return 0; // nije_radio, servis, praznik
+    return 1;
+  };
+  const workDays   = rentaDates.reduce((sum, d) => sum + dayWeight(d), 0);
+  const rentaTotal = driver ? Math.round(rentaDates.reduce((sum, d) => sum + dayWeight(d) * rateForDay(d), 0)) : 0;
+  // Da li period prelazi preko promene vozila (različite cene u opsegu)?
+  const rentaRates = rentaDates.filter(d => dayWeight(d) > 0).map(rateForDay);
+  const rentaMultiRate = new Set(rentaRates).size > 1;
   const clanWeeks   = clanEnabled && clanFrom && clanTo ? countWeeks(clanFrom, clanTo) : 0;
   const clanTotal   = clanEnabled ? Math.round(clanWeeks * (Number(clanAmt) || 0)) : 0;
 
@@ -806,7 +818,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 {/* RENTA */}
                 <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
                   amount={rentaTotal}
-                  sublabel={workDays > 0 ? `${workDays} ${workDays===1?"dan":"dana"} × ${fmt(driver.daily_rate)}` : undefined}>
+                  sublabel={workDays > 0 ? (rentaMultiRate ? `${workDays} ${workDays===1?"dan":"dana"} · više cena (promena vozila)` : `${workDays} ${workDays===1?"dan":"dana"} × ${fmt(rentaRates[0] ?? driver.daily_rate)}`) : undefined}>
+                  {rentaMultiRate && (
+                    <p className="text-[11px] text-amber-600">⚠ Period prelazi preko promene vozila — renta se računa po ceni koja važi za svaki dan.</p>
+                  )}
                   {/* KALENDAR — vizualni pregled istorije plaćanja */}
                   <div className="rounded-lg border p-3 space-y-2 bg-muted/20">
                     <div className="flex items-center justify-between">
