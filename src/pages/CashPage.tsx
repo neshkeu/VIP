@@ -72,14 +72,14 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
   kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
   likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasi",
-  vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",
+  vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",zaokruzivanje:"Zaokruživanje",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
   komunalni:"text-green-700",doprinosi:"text-green-700",dugovanje:"text-blue-700",
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",neoplanta:"text-emerald-700",
   vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
-  vaučer_isplata:"text-red-700",bankarska_naknada:"text-green-700",
+  vaučer_isplata:"text-red-700",bankarska_naknada:"text-green-700",zaokruzivanje:"text-gray-500",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
@@ -358,16 +358,17 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // sada korisnik dobija PREDLOG ("možeš još N dana") i sam bira (vidi fillRentaDays).
 
   // Izračuni za rente i clanarine (ručno ili auto)
-  // NEDELJA je uvek besplatna (0) osim ako je eksplicitno markirana "radi".
-  // Ostali dani: 1 (radni), 0.5 (pola), 0 (nije_radio/servis/praznik).
+  // NEDELJA: za RENTA vozače besplatna (osim "radi"); za VLASTITO VOZILO se plaća kao normalan dan.
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
+  const ownVehicle  = driver?.driver_type === "vlastito_vozilo";
   const workDays    = rentaDates.reduce((sum, d) => {
     const dow = new Date(d+"T00:00:00").getDay();
-    if (dow === 0) {
-      // Nedelja: default besplatna; broji se samo ako je user označio "radi"
+    if (dow === 0 && !ownVehicle) {
+      // Nedelja (renta vozač): default besplatna; broji se samo ako je user označio "radi"
       const sun = cal.getSundayStatus(driverId, d);
       return sum + (sun === "radi" ? 1 : 0);
     }
+    // Običan dan (i nedelja za vlastito vozilo): 1 radni, 0.5 pola, 0 off
     const off = cal.getOffStatus(driverId, d);
     if (off === "pola") return sum + 0.5;
     if (off) return sum; // nije_radio, servis, praznik
@@ -416,8 +417,12 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // a ako ostane surplus → ide u isplatu u keš.
   const takenTotal = kesTake + yanTakeNum + karTakeNum + neoTakeNum + vaucerTotal + vaucerMbTotal + pdvTotal;
   const surplus    = takenTotal - obligTotal;             // >0 isplata vozaču, <0 manjak → dug
-  const isplataVozacu = Math.max(surplus, 0);
-  const manjak     = Math.max(-surplus, 0);
+  // ZAOKRUŽIVANJE krajnjeg iznosa na najbližih 10 RSD (≥5 gore, <5 dole)
+  const roundTo10      = (n: number) => Math.round(n / 10) * 10;
+  const surplusRounded = roundTo10(surplus);
+  const roundAdjust    = surplusRounded - surplus;        // +: firma daje više; −: firma zadržava
+  const isplataVozacu = Math.max(surplusRounded, 0);
+  const manjak     = Math.max(-surplusRounded, 0);
   const yanStay    = yanAvail - yanTakeNum;               // ostaje na yandex saldu
   const karStay    = karAvail - karTakeNum;               // ostaje na kartica saldu
   const neoStay    = neoAvail - neoTakeNum;               // ostaje na neoplanta saldu
@@ -699,6 +704,14 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         stavke.push({ type:"depozit", direction:"in", amount:dep, description:"Prebačeno na depozit vozača" });
       }
 
+      // 8d. Zaokruživanje — razlika do najbližih 10 RSD kroz kasu (da se fizički keš poklopi)
+      if (Math.abs(roundAdjust) >= 0.01) {
+        const dir = roundAdjust > 0 ? "out" : "in"; // >0 firma daje više; <0 firma zadržava
+        await onAdd({ type:"zaokruzivanje", direction:dir, driver_id:driverId, amount:Math.abs(roundAdjust), date:saveDate,
+          description:"Zaokruživanje na 10 RSD", received_by:currentUser, notes:"" });
+        stavke.push({ type:"zaokruzivanje", direction:dir, amount:Math.abs(roundAdjust), description:"Zaokruživanje" });
+      }
+
       // 9. Sačuvaj obračun
       // Vaučeri i PDV su već umanjili dug (netObligTotal) — ne dodaju se u isplatu u kes
       const isplataUKes = isplataVozacu;
@@ -836,7 +849,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                       <div className="flex flex-wrap gap-1 mt-1">
                         {rentaDates.map(date => {
                           const dow = new Date(date+"T00:00:00").getDay();
-                          const isSun = dow === 0;
+                          const isSun = dow === 0 && !ownVehicle;
                           const existing = cal.getStatus(driverId, date);
                           const off = cal.getOffStatus(driverId, date);
                           const sun = cal.getSundayStatus(driverId, date);
@@ -1248,6 +1261,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                         <span>{manjak>0?"Nedostaje → dug:":surplus>0?"Za isplatu vozaču:":"Izmireno:"}</span>
                         <span>{fmt(manjak>0?manjak:isplataVozacu)}</span>
                       </div>
+                      {Math.abs(roundAdjust) >= 0.01 && (surplus>0.01||manjak>0.01) && (
+                        <p className="text-[11px] text-muted-foreground text-right">zaokruženo sa {fmt(Math.abs(surplus))} ({roundAdjust>0?"+":"−"}{fmt(Math.abs(roundAdjust))})</p>
+                      )}
 
                       {depozit > 0 && (
                         <div className="flex justify-between text-xs text-blue-700"><span>💰 Na depozit</span><span>−{fmt(depozit)}</span></div>
