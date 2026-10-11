@@ -475,13 +475,16 @@ const DriversPage = () => {
   const [addOpen, setAddOpen]       = useState(false);
   const [editDriver, setEditDriver] = useState<Driver | null>(null);
   const [changeVehicleDriver, setChangeVehicleDriver] = useState<Driver | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const handleDelete = async (d: Driver) => {
-    const naziv = d.full_name?.trim() || "(bez naziva)";
-    if (!confirm(`Obrisati vozača ${naziv}${d.komunalni_broj ? ` (kom. ${d.komunalni_broj})` : ""}?\n\nAko ima vezane obračune/dugovanja, brisanje neće proći — tada ih spoji umesto brisanja.`)) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await deleteDriver(d.id);
+      await deleteDriver(deleteTarget.id);
       toast.success("Vozač obrisan");
+      setDeleteTarget(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/23503|foreign key|violates/i.test(msg)) {
@@ -489,7 +492,7 @@ const DriversPage = () => {
       } else {
         toast.error("Greška: " + msg);
       }
-    }
+    } finally { setDeleting(false); }
   };
 
   const debtByDriver: Record<string, number> = {};
@@ -582,6 +585,27 @@ const DriversPage = () => {
         />
       )}
 
+      <Dialog open={!!deleteTarget} onOpenChange={v => { if (!v) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Obriši vozača</DialogTitle>
+            <DialogDescription>
+              Obrisati <strong>{deleteTarget?.full_name?.trim() || "(bez naziva)"}</strong>
+              {deleteTarget?.komunalni_broj ? ` — kom. ${deleteTarget.komunalni_broj}` : ""}?
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Ako vozač ima vezane obračune/dugovanja, brisanje neće proći — tada ga spoji umesto brisanja.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Otkazi</Button>
+            <Button variant="destructive" disabled={deleting} onClick={confirmDelete}>
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Obriši
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
@@ -601,13 +625,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={handleDelete} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={handleDelete} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={handleDelete} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
         </Tabs>
       )}
