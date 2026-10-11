@@ -13,10 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Plus, User, Car, CarTaxiFront, Wrench, Loader2, Pencil, FileText, Users } from "lucide-react";
+import { Search, Plus, User, Car, CarTaxiFront, Wrench, Loader2, Pencil, FileText, Users, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/DocumentStatusBadge";
+import { useAssignments, type VehicleAssignment, type AssignmentFees } from "@/hooks/useAssignments";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -237,10 +238,11 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   );
 }
 
-function DriversTable({ list, vehicles, onEdit, debtByDriver, depositByDriver }: {
+function DriversTable({ list, vehicles, onEdit, onChangeVehicle, debtByDriver, depositByDriver }: {
   list: Driver[];
   vehicles: Vehicle[];
   onEdit: (d: Driver) => void;
+  onChangeVehicle: (d: Driver) => void;
   debtByDriver: Record<string, number>;
   depositByDriver: (id: string) => number;
 }) {
@@ -340,9 +342,14 @@ function DriversTable({ list, vehicles, onEdit, debtByDriver, depositByDriver }:
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => onEdit(d)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-0.5">
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="Promeni vozilo" onClick={() => onChangeVehicle(d)}>
+                        <ArrowRightLeft className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="Uredi" onClick={() => onEdit(d)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </motion.tr>
               );
@@ -354,14 +361,116 @@ function DriversTable({ list, vehicles, onEdit, debtByDriver, depositByDriver }:
   );
 }
 
+// ─── PROMENI VOZILO ───────────────────────────────────────────
+function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onClose }: {
+  driver: Driver;
+  vehicles: Vehicle[];
+  history: VehicleAssignment[];
+  onConfirm: (vehicleId: string, dateFrom: string, fees: AssignmentFees, notes: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const today = new Date().toISOString().split("T")[0];
+  const [vehicleId, setVehicleId] = useState<string>("");
+  const [dateFrom, setDateFrom]   = useState(today);
+  const [notes, setNotes]         = useState("");
+  const [saving, setSaving]       = useState(false);
+  const [dr, setDr]   = useState(String(driver.daily_rate ?? ""));
+  const [wm, setWm]   = useState(String(driver.weekly_membership ?? ""));
+  const [wmo, setWmo] = useState(String(driver.weekly_membership_own ?? ""));
+  const [pos, setPos] = useState(String(driver.pos_monthly_fee ?? ""));
+  const [kom, setKom] = useState(String(driver.komunalni_monthly ?? ""));
+  const [dop, setDop] = useState(String(driver.doprinosi_monthly ?? ""));
+
+  const curVeh = vehicles.find(v => v.id === driver.vehicle_id);
+  const vehLabel = (id: string | null) => {
+    const v = vehicles.find(x => x.id === id);
+    return v ? `${v.brand} ${v.model}${v.taxi_license_number ? ` (${v.taxi_license_number})` : ""}` : "—";
+  };
+
+  const save = async () => {
+    if (!vehicleId) { toast.error("Izaberi novo vozilo"); return; }
+    if (!dateFrom)  { toast.error("Unesi datum prelaska"); return; }
+    setSaving(true);
+    try {
+      await onConfirm(vehicleId, dateFrom, {
+        daily_rate: Number(dr) || 0, weekly_membership: Number(wm) || 0,
+        weekly_membership_own: Number(wmo) || 0, pos_monthly_fee: Number(pos) || 0,
+        komunalni_monthly: Number(kom) || 0, doprinosi_monthly: Number(dop) || 0,
+      }, notes);
+      onClose();
+    } catch (e) {
+      toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Promeni vozilo — {driver.full_name}</DialogTitle>
+          <DialogDescription>
+            Trenutno: <strong>{vehLabel(driver.vehicle_id)}</strong>. Stari period ostaje po staroj ceni; od datuma prelaska važi nova.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Novo vozilo</Label>
+              <Select value={vehicleId} onValueChange={setVehicleId}>
+                <SelectTrigger><SelectValue placeholder="Izaberi vozilo" /></SelectTrigger>
+                <SelectContent>
+                  {vehicles.filter(v => v.id !== driver.vehicle_id).map(v => (
+                    <SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5"><Label className="text-xs">Datum prelaska</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
+          </div>
+          <div className="rounded-lg border p-3 bg-muted/20 space-y-2">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Nove naknade (od datuma prelaska)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1"><Label className="text-[11px]">Dnevna renta</Label><Input type="number" value={dr} onChange={e => setDr(e.target.value)} /></div>
+              <div className="grid gap-1"><Label className="text-[11px]">Članarina (renta)</Label><Input type="number" value={wm} onChange={e => setWm(e.target.value)} /></div>
+              <div className="grid gap-1"><Label className="text-[11px]">Članarina (vlastito)</Label><Input type="number" value={wmo} onChange={e => setWmo(e.target.value)} /></div>
+              <div className="grid gap-1"><Label className="text-[11px]">POS mjesečno</Label><Input type="number" value={pos} onChange={e => setPos(e.target.value)} /></div>
+              <div className="grid gap-1"><Label className="text-[11px]">Komunalni mjesečno</Label><Input type="number" value={kom} onChange={e => setKom(e.target.value)} /></div>
+              <div className="grid gap-1"><Label className="text-[11px]">Doprinosi mjesečno</Label><Input type="number" value={dop} onChange={e => setDop(e.target.value)} /></div>
+            </div>
+          </div>
+          <div className="grid gap-1.5"><Label className="text-xs">Napomena (opciono)</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
+
+          {history.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase">Istorija vozila</p>
+              {history.map(a => (
+                <div key={a.id} className="flex items-center justify-between text-xs rounded border px-2 py-1 bg-background">
+                  <span>{vehLabel(a.vehicle_id)}</span>
+                  <span className="text-muted-foreground">{a.date_from}{a.date_to ? ` → ${a.date_to}` : " → sada"} · renta {fmt(a.daily_rate || 0)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Otkazi</Button>
+          <Button disabled={!vehicleId || saving} onClick={save}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Prebaci</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const DriversPage = () => {
   const { drivers, loading, addDriver, updateDriver } = useDrivers();
   const { vehicles } = useVehicles();
+  const { assignVehicle, getByDriver } = useAssignments();
   const { debts } = useDebts();
   const { balanceFor } = useDeposits();
   const [search, setSearch]         = useState("");
   const [addOpen, setAddOpen]       = useState(false);
   const [editDriver, setEditDriver] = useState<Driver | null>(null);
+  const [changeVehicleDriver, setChangeVehicleDriver] = useState<Driver | null>(null);
 
   const debtByDriver: Record<string, number> = {};
   debts.forEach(d => {
@@ -434,6 +543,25 @@ const DriversPage = () => {
         </DialogContent>
       </Dialog>
 
+      {changeVehicleDriver && (
+        <ChangeVehicleDialog
+          driver={changeVehicleDriver}
+          vehicles={vehicles}
+          history={getByDriver(changeVehicleDriver.id)}
+          onConfirm={async (vehicleId, dateFrom, fees, notes) => {
+            await assignVehicle(changeVehicleDriver.id, vehicleId, dateFrom, fees, notes);
+            await updateDriver(changeVehicleDriver.id, {
+              vehicle_id: vehicleId,
+              daily_rate: fees.daily_rate, weekly_membership: fees.weekly_membership,
+              weekly_membership_own: fees.weekly_membership_own, pos_monthly_fee: fees.pos_monthly_fee,
+              komunalni_monthly: fees.komunalni_monthly, doprinosi_monthly: fees.doprinosi_monthly,
+            });
+            toast.success("Vozilo promenjeno — stari period ostaje po staroj ceni");
+          }}
+          onClose={() => setChangeVehicleDriver(null)}
+        />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
@@ -453,13 +581,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
         </Tabs>
       )}
