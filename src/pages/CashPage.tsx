@@ -439,6 +439,24 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const karStay    = karAvail - karTakeNum;               // ostaje na kartica saldu
   const neoStay    = neoAvail - neoTakeNum;               // ostaje na neoplanta saldu
 
+  // RASPODELA POKRIĆA na obaveze (prioritet: renta → članarina → POS → dugovi).
+  // Promet (kasa "in") beleži SAMO stvarno pokriveni deo; nepokriveno ide u DUG.
+  const coverAlloc = (() => {
+    let budget = Math.min(takenTotal, obligTotal);
+    const take = (amt: number) => { const c = Math.min(budget, Math.max(amt, 0)); budget -= c; return c; };
+    const renta = rentaEnabled ? take(rentaTotal) : 0;
+    const clan  = clanEnabled  ? take(clanTotal)  : 0;
+    const pos   = posEnabled   ? take(posTotal)   : 0;
+    const debtsCov: Record<string, number> = {};
+    for (const d of selectedDebtsList) {
+      const remaining = d.amount - d.paid_amount;
+      const custom = Number(debtAmounts[d.id]);
+      const willPay = custom > 0 && custom <= remaining ? custom : remaining;
+      debtsCov[d.id] = take(willPay);
+    }
+    return { renta, clan, pos, debts: debtsCov };
+  })();
+
   // BREAKDOWN — koliko dela source-a pokriva obaveze, koliko ide u kes.
   // Proporcionalno prema udelu obaveza u ukupnom uzetom.
   const obligCoverPct = takenTotal > 0 ? Math.min(1, obligTotal / takenTotal) : 0;
@@ -543,30 +561,34 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       const saveDate = obracunDate || today;
       const stavke: any[] = [];
 
-      // 1. Renta — svaki dan doprinosi 1.0 (radni), 0.5 (pola) ili 0 (off)
-      if (rentaEnabled && workDays > 0) {
-        await onAdd({ type:"renta", direction:"in", driver_id:driverId, amount:rentaTotal, date:saveDate,
-          description:`Renta ${fmtD(rentaFrom)} — ${fmtD(rentaTo)} (${workDays} ${workDays===1?"dan":"dana"})`, received_by:currentUser, notes:"" });
-        for (const d of rentaDates) {
-          const off = cal.getOffStatus(driverId, d);
-          if (off === "nije_radio" || off === "servis" || off === "praznik") continue;
-          const amt = off === "pola" ? Math.round(driver.daily_rate / 2) : driver.daily_rate;
-          await cal.saveAmount(driverId, d, "renta", amt, currentUser);
-          await cal.saveStatus(driverId, d, "izmireno", currentUser);
+      // 1. Renta — beleži se samo pokriveni deo (promet); nepokriveno → dug
+      if (rentaEnabled && workDays > 0 && coverAlloc.renta > 0) {
+        const rentaFull = coverAlloc.renta >= rentaTotal - 0.01;
+        await onAdd({ type:"renta", direction:"in", driver_id:driverId, amount:coverAlloc.renta, date:saveDate,
+          description:`Renta ${fmtD(rentaFrom)} — ${fmtD(rentaTo)} (${workDays} ${workDays===1?"dan":"dana"})${rentaFull?"":" — delimično"}`, received_by:currentUser, notes:"" });
+        if (rentaFull) {
+          for (const d of rentaDates) {
+            const off = cal.getOffStatus(driverId, d);
+            if (off === "nije_radio" || off === "servis" || off === "praznik") continue;
+            const amt = off === "pola" ? Math.round(rateForDay(d) / 2) : rateForDay(d);
+            await cal.saveAmount(driverId, d, "renta", amt, currentUser);
+            await cal.saveStatus(driverId, d, "izmireno", currentUser);
+          }
         }
       }
 
-      // 2. Članarina
-      if (clanEnabled && clanTotal > 0) {
-        await onAdd({ type:"clanarina", direction:"in", driver_id:driverId, amount:clanTotal, date:saveDate,
-          description:`Članarina ${fmtD(clanFrom)} — ${fmtD(clanTo)} (${clanWeeks} sed.)`, received_by:currentUser, notes:"" });
-        await membership.addEntry({ driver_id:driverId, date_from:clanFrom, date_to:clanTo, amount:clanTotal, evidenced_by:currentUser });
+      // 2. Članarina — pokriveni deo
+      if (clanEnabled && coverAlloc.clan > 0) {
+        const clanFull = coverAlloc.clan >= clanTotal - 0.01;
+        await onAdd({ type:"clanarina", direction:"in", driver_id:driverId, amount:coverAlloc.clan, date:saveDate,
+          description:`Članarina ${fmtD(clanFrom)} — ${fmtD(clanTo)} (${clanWeeks} sed.)${clanFull?"":" — delimično"}`, received_by:currentUser, notes:"" });
+        if (clanFull) await membership.addEntry({ driver_id:driverId, date_from:clanFrom, date_to:clanTo, amount:clanTotal, evidenced_by:currentUser });
       }
 
-      // 3. POS
-      if (posEnabled && posTotal > 0)
-        await onAdd({ type:"pos_naknada", direction:"in", driver_id:driverId, amount:posTotal, date:saveDate,
-          description:"POS naknada", received_by:currentUser, notes:"" });
+      // 3. POS — pokriveni deo
+      if (posEnabled && coverAlloc.pos > 0)
+        await onAdd({ type:"pos_naknada", direction:"in", driver_id:driverId, amount:coverAlloc.pos, date:saveDate,
+          description:`POS naknada${coverAlloc.pos >= posTotal - 0.01 ? "" : " — delimično"}`, received_by:currentUser, notes:"" });
 
       // 4. PDV goriva — izlaz (isplata vozaču)
       if (pdvEnabled && pdvTotal > 0) {
@@ -575,11 +597,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await supabase.from("fuel_pdv_entries").insert({ driver_id:driverId, date:saveDate, amount:pdvTotal, evidenced_by:currentUser });
       }
 
-      // 5. Dugovanja — uplata (delimično ili u celosti)
+      // 5. Dugovanja — uplata (samo pokriveni deo; nepokriveno ostaje otvoreno)
       for (const debt of selectedDebtsList) {
+        const amt = coverAlloc.debts[debt.id] ?? 0;
+        if (amt <= 0) continue;
         const remaining = debt.amount - debt.paid_amount;
-        const custom = Number(debtAmounts[debt.id]);
-        const amt = custom > 0 && custom <= remaining ? custom : remaining;
         await onAdd({ type:"dugovanje", direction:"in", driver_id:driverId, amount:amt, date:saveDate,
           description:`Uplata dugovanja: ${debt.description}${amt < remaining ? " (delimično)" : ""}`,
           received_by:currentUser, notes:"" });
@@ -734,15 +756,21 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         stavke
       });
 
-      // 10. Ako izabrani izvor nema pokriće → prenos duga na sledeći obračun
-      if (manjak > 0.01) {
+      // 10. Nepokrivene TEKUĆE obaveze (renta/članarina/POS) → novi dug.
+      //     Nepokriveni delovi izabranih starih dugova već ostaju otvoreni (gore), ne dupliramo.
+      const manjakNonDebt = roundTo10(
+        (rentaEnabled ? rentaTotal - coverAlloc.renta : 0) +
+        (clanEnabled  ? clanTotal  - coverAlloc.clan  : 0) +
+        (posEnabled   ? posTotal   - coverAlloc.pos   : 0)
+      );
+      if (manjakNonDebt > 0.01) {
         await supabase.from("driver_debts").insert({
-          driver_id: driverId, type:"ostalo", amount: Math.round(manjak), paid_amount:0,
+          driver_id: driverId, type:"ostalo", amount: manjakNonDebt, paid_amount:0,
           date: saveDate, status:"open",
           description: `Nepokrivena obaveza sa obračuna ${fmtD(saveDate)}`,
           created_by: currentUser
         });
-        toast.success(`Obračun završen — nepokriveno ${fmt(Math.round(manjak))} prebačeno u dug`);
+        toast.success(`Obračun završen — nepokriveno ${fmt(manjakNonDebt)} prebačeno u dug`);
       } else if (isplataUKes > 0) {
         toast.success(`Obračun završen — isplati vozaču ${fmt(isplataUKes)}${bonusSunday?" + nedjelja 🎉":""}`);
       } else {
