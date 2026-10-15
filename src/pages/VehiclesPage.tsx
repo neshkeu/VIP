@@ -162,14 +162,10 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
 }
 
 function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | null; open: boolean; onClose: () => void }) {
-  const { drivers, updateDriver } = useApp();
-  const { getByVehicle, getActiveDriver, assignVehicle, closeAssignment } = useAssignments();
+  const { drivers, updateDriver, refetchDrivers } = useApp();
+  const { getByVehicle, closeAssignment } = useAssignments();
   useCurrentUser();
 
-  const [assignOpen, setAssignOpen]   = useState(false);
-  const [newDriverId, setNewDriverId] = useState("none");
-  const [newDateFrom, setNewDateFrom] = useState(new Date().toISOString().split("T")[0]);
-  const [newNotes, setNewNotes]       = useState("");
   const [saving, setSaving]           = useState(false);
   const [editId, setEditId]           = useState<string | null>(null);
   const [editDateTo, setEditDateTo]   = useState("");
@@ -179,18 +175,14 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
   if (!vehicle) return null;
 
   const history      = getByVehicle(vehicle.id);
-  const activeEntry  = getActiveDriver(vehicle.id);
-  const driverByVehicleId = drivers.find(d => d.vehicle_id === vehicle.id);
   const vehicleDrivers = drivers.filter(d => d.vehicle_id === vehicle.id);
-  const activeDriver = activeEntry
-    ? drivers.find(d => d.id === activeEntry.driver_id)
-    : driverByVehicleId ?? null;
 
   const addDriverToVehicle = async () => {
     if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
     setSaving(true);
     try {
       await updateDriver(addDrvId, { vehicle_id: vehicle.id, role: addRole });
+      await refetchDrivers();
       toast.success("Vozač dodat na vozilo");
       setAddDrvId("none");
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
@@ -200,27 +192,10 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
     setSaving(true);
     try {
       await updateDriver(id, { vehicle_id: null });
+      await refetchDrivers();
       toast.success("Vozač uklonjen sa vozila");
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
     finally { setSaving(false); }
-  };
-
-  const handleAssign = async () => {
-    if (newDriverId === "none") { toast.error("Izaberi vozača!"); return; }
-    setSaving(true);
-    try {
-      const nd = drivers.find(d => d.id === newDriverId);
-      const fees = nd ? {
-        daily_rate: nd.daily_rate, weekly_membership: nd.weekly_membership,
-        weekly_membership_own: nd.weekly_membership_own, pos_monthly_fee: nd.pos_monthly_fee,
-        komunalni_monthly: nd.komunalni_monthly, doprinosi_monthly: nd.doprinosi_monthly,
-      } : undefined;
-      await assignVehicle(newDriverId, vehicle.id, newDateFrom, fees, newNotes);
-      toast.success("Vozač dodijeljen");
-      setAssignOpen(false); setNewDriverId("none"); setNewNotes("");
-    } catch (e) {
-      toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
-    } finally { setSaving(false); }
   };
 
   const handleClose = async (id: string) => {
@@ -242,33 +217,6 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
           <DialogTitle>{vehicle.brand} {vehicle.model} — Istorija vozača</DialogTitle>
           <DialogDescription>{vehicle.taxi_license_number} · {vehicle.license_plate}</DialogDescription>
         </DialogHeader>
-
-        <div className={`rounded-lg border p-3 ${activeDriver ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
-          <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Trenutno vozi</p>
-          {activeDriver ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <User className="h-3.5 w-3.5 text-green-700" />
-                </div>
-                <div>
-                  <p className="font-semibold text-sm">{activeDriver.full_name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {activeEntry ? `od ${activeEntry.date_from}` : "dodeljen preko baze vozača"}
-                  </p>
-                </div>
-              </div>
-              {activeEntry && (
-                <Button size="sm" variant="outline" className="h-7 text-xs"
-                  onClick={() => { setEditId(activeEntry.id); setEditDateTo(new Date().toISOString().split("T")[0]); }}>
-                  Zatvori period
-                </Button>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nema aktivnog vozača</p>
-          )}
-        </div>
 
         {/* VOZAČI NA VOZILU — operativni + papirološki, dodavanje/uklanjanje */}
         <div className="rounded-lg border p-3 space-y-2">
@@ -335,39 +283,6 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
             </motion.div>
           )}
         </AnimatePresence>
-
-        <Separator />
-
-        {!assignOpen ? (
-          <Button variant="outline" onClick={() => setAssignOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />Dodijeli vozača
-          </Button>
-        ) : (
-          <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
-            <p className="text-xs font-semibold text-muted-foreground uppercase">Novi period</p>
-            <div className="grid gap-1.5">
-              <Label className="text-xs">Vozač</Label>
-              <Select value={newDriverId} onValueChange={setNewDriverId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-xs">Datum od</Label>
-              <Input type="date" value={newDateFrom} onChange={e => setNewDateFrom(e.target.value)} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-xs">Napomena</Label>
-              <Input value={newNotes} onChange={e => setNewNotes(e.target.value)} />
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" disabled={saving} onClick={handleAssign}>
-                {saving && <Loader2 className="h-3 w-3 animate-spin mr-1" />}Dodijeli
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setAssignOpen(false)}>Otkazi</Button>
-            </div>
-          </div>
-        )}
 
         {history.length > 0 && (
           <>
