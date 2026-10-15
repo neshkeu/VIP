@@ -387,11 +387,12 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
 }
 
 // ─── PROMENI VOZILO ───────────────────────────────────────────
-function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onClose }: {
+function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAssignment, onClose }: {
   driver: Driver;
   vehicles: Vehicle[];
   history: VehicleAssignment[];
   onConfirm: (vehicleId: string, dateFrom: string, fees: AssignmentFees, notes: string) => Promise<void>;
+  onUpdateAssignment: (id: string, updates: Partial<VehicleAssignment>) => Promise<void>;
   onClose: () => void;
 }) {
   const today = new Date().toISOString().split("T")[0];
@@ -399,6 +400,10 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onClose }: 
   const [dateFrom, setDateFrom]   = useState(today);
   const [notes, setNotes]         = useState("");
   const [saving, setSaving]       = useState(false);
+  const [editAsgId, setEditAsgId] = useState<string | null>(null);
+  const [eRate, setERate] = useState("");
+  const [eFrom, setEFrom] = useState("");
+  const [eTo, setETo]     = useState("");
   const [dr, setDr]   = useState(String(driver.daily_rate ?? ""));
   const [wm, setWm]   = useState(String(driver.weekly_membership ?? ""));
   const [wmo, setWmo] = useState(String(driver.weekly_membership_own ?? ""));
@@ -467,11 +472,39 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onClose }: 
 
           {history.length > 0 && (
             <div className="space-y-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase">Istorija vozila</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase">Istorija vozila (klik ✏️ za ispravku cene/datuma)</p>
               {history.map(a => (
-                <div key={a.id} className="flex items-center justify-between text-xs rounded border px-2 py-1 bg-background">
-                  <span>{vehLabel(a.vehicle_id)}</span>
-                  <span className="text-muted-foreground">{a.date_from}{a.date_to ? ` → ${a.date_to}` : " → sada"} · renta {fmt(a.daily_rate || 0)}</span>
+                <div key={a.id} className="text-xs rounded border px-2 py-1 bg-background">
+                  {editAsgId === a.id ? (
+                    <div className="space-y-1.5 py-1">
+                      <div className="font-medium">{vehLabel(a.vehicle_id)}</div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <div className="grid gap-0.5"><Label className="text-[10px]">Renta/dan</Label><Input type="number" className="h-7" value={eRate} onChange={e => setERate(e.target.value)} /></div>
+                        <div className="grid gap-0.5"><Label className="text-[10px]">Od</Label><Input type="date" className="h-7" value={eFrom} onChange={e => setEFrom(e.target.value)} /></div>
+                        <div className="grid gap-0.5"><Label className="text-[10px]">Do (prazno = sada)</Label><Input type="date" className="h-7" value={eTo} onChange={e => setETo(e.target.value)} /></div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" className="h-7 text-xs" disabled={saving} onClick={async () => {
+                          setSaving(true);
+                          try {
+                            await onUpdateAssignment(a.id, { daily_rate: Number(eRate) || 0, date_from: eFrom, date_to: eTo || null });
+                            toast.success("Istorija ažurirana");
+                            setEditAsgId(null);
+                          } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+                          finally { setSaving(false); }
+                        }}>{saving && <Loader2 className="h-3 w-3 animate-spin mr-1" />}Sačuvaj</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditAsgId(null)}>Otkazi</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span>{vehLabel(a.vehicle_id)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">{a.date_from}{a.date_to ? ` → ${a.date_to}` : " → sada"} · renta {fmt(a.daily_rate || 0)}</span>
+                        <button type="button" className="text-muted-foreground hover:text-primary" title="Ispravi" onClick={() => { setEditAsgId(a.id); setERate(String(a.daily_rate || "")); setEFrom(a.date_from); setETo(a.date_to || ""); }}><Pencil className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -489,7 +522,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onClose }: 
 const DriversPage = () => {
   const { drivers, loading, addDriver, updateDriver, deleteDriver } = useDrivers();
   const { vehicles } = useVehicles();
-  const { assignVehicle, getByDriver } = useAssignments();
+  const { assignVehicle, getByDriver, updateAssignment } = useAssignments();
   const { links: vdLinks } = useVehicleDrivers();
   const { debts } = useDebts();
   const { balanceFor } = useDeposits();
@@ -593,6 +626,7 @@ const DriversPage = () => {
           driver={changeVehicleDriver}
           vehicles={vehicles}
           history={getByDriver(changeVehicleDriver.id)}
+          onUpdateAssignment={updateAssignment}
           onConfirm={async (vehicleId, dateFrom, fees, notes) => {
             const prevFees = {
               daily_rate: changeVehicleDriver.daily_rate, weekly_membership: changeVehicleDriver.weekly_membership,
