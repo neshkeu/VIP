@@ -469,14 +469,13 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase">Istorija vozila (klik ✏️ za ispravku cene/datuma)</p>
               {history.map(a => {
-                const vehRate = vehicles.find(v => v.id === a.vehicle_id)?.daily_rate ?? 0;
-                const vRate = vehRate > 0 ? vehRate : (a.daily_rate || driver.daily_rate || 0);
-                const fromVehicle = vehRate > 0;
+                // Zatvoren period → snapshot; otvoreni → trenutna cena vozača
+                const vRate = a.date_to ? (a.daily_rate || driver.daily_rate || 0) : (driver.daily_rate || a.daily_rate || 0);
                 return (
                 <div key={a.id} className="text-xs rounded border px-2 py-1 bg-background">
                   {editAsgId === a.id ? (
                     <div className="space-y-1.5 py-1">
-                      <div className="font-medium">{vehLabel(a.vehicle_id)} · renta {fmt(vRate)}/dan <span className="text-muted-foreground">{fromVehicle ? "(sa vozila)" : "(upiši rentu na vozilo)"}</span></div>
+                      <div className="font-medium">{vehLabel(a.vehicle_id)} · renta {fmt(vRate)}/dan</div>
                       <div className="grid grid-cols-2 gap-1.5">
                         <div className="grid gap-0.5"><Label className="text-[10px]">Od</Label><Input type="date" className="h-7" value={eFrom} onChange={e => setEFrom(e.target.value)} /></div>
                         <div className="grid gap-0.5"><Label className="text-[10px]">Do (prazno = sada)</Label><Input type="date" className="h-7" value={eTo} onChange={e => setETo(e.target.value)} /></div>

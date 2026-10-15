@@ -414,17 +414,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // NEDELJA: za RENTA vozače besplatna (osim "radi"); za VLASTITO VOZILO se plaća kao normalan dan.
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
   const ownVehicle  = (driver?.pays_sunday ?? false) || driver?.driver_type === "vlastito_vozilo";
-  // Cena rente po danu — VUČE SE SA VOZILA koje je vozač vozio tog dana (iz dodele).
-  // Fallback: snapshot cene na dodeli, pa trenutna cena vozača.
+  // Cena rente po danu. Renta "živi" na vozaču (popust se menja na vozaču).
+  //  - ZATVOREN period (stari auto) → istorijska cena (snapshot na dodeli)
+  //  - TEKUĆI/otvoreni period → trenutna cena vozača (važi i popust)
+  // Vozilo služi samo kao default koji se prepiše na vozača pri dodeli.
   const driverAssignments = driverId ? getDriverAssignments(driverId) : [];
   const rateForDay = (dateStr: string): number => {
     const a = driverAssignments.find(x => x.date_from <= dateStr && (!x.date_to || dateStr < x.date_to));
-    if (a) {
-      const veh = vehicles.find(v => v.id === a.vehicle_id);
-      if (veh && (veh.daily_rate ?? 0) > 0) return veh.daily_rate;   // renta sa vozila
-      if ((a.daily_rate ?? 0) > 0) return a.daily_rate;              // snapshot
-    }
-    return driver?.daily_rate ?? 0;
+    if (a && a.date_to && (a.daily_rate ?? 0) > 0) return a.daily_rate;   // zatvoren period → snapshot
+    return (driver?.daily_rate ?? 0) || (a?.daily_rate ?? 0);
   };
   const dayWeight = (d: string): number => {
     const dow = new Date(d+"T00:00:00").getDay();
