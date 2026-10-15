@@ -12,6 +12,7 @@ export interface Vehicle {
   taxi_license_number: string;
   vin: string | null;
   pos_terminal_id: string;
+  daily_rate: number;   // dnevna renta vozila (vozač je vuče sa auta)
   registration_expiry: string;
   insurance_expiry: string;
   taxi_license_expiry: string | null;
