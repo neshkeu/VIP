@@ -572,7 +572,12 @@ const DriversPage = () => {
           vehicles={vehicles}
           history={getByDriver(changeVehicleDriver.id)}
           onConfirm={async (vehicleId, dateFrom, fees, notes) => {
-            await assignVehicle(changeVehicleDriver.id, vehicleId, dateFrom, fees, notes);
+            const prevFees = {
+              daily_rate: changeVehicleDriver.daily_rate, weekly_membership: changeVehicleDriver.weekly_membership,
+              weekly_membership_own: changeVehicleDriver.weekly_membership_own, pos_monthly_fee: changeVehicleDriver.pos_monthly_fee,
+              komunalni_monthly: changeVehicleDriver.komunalni_monthly, doprinosi_monthly: changeVehicleDriver.doprinosi_monthly,
+            };
+            await assignVehicle(changeVehicleDriver.id, vehicleId, dateFrom, fees, notes, prevFees);
             await updateDriver(changeVehicleDriver.id, {
               vehicle_id: vehicleId,
               daily_rate: fees.daily_rate, weekly_membership: fees.weekly_membership,

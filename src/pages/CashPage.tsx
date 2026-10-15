@@ -1841,18 +1841,19 @@ const CashPage = () => {
   const [year,month]=filterMonth.split("-").map(Number);
   const daysInMonth=new Date(year,month,0).getDate();
   const todayStr=today.toISOString().split("T")[0];
+  // Obračunski dan = SVAKI dan (ne više samo pon/sri/pet)
   const obracunDates:string[]=[];
-  for(let d=1;d<=daysInMonth;d++){const dow=new Date(year,month-1,d).getDay();if(dow===1||dow===3||dow===5)obracunDates.push(`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`);}
-  const futureOrToday=obracunDates.filter(d=>d>=todayStr);
-  const currentObracun=futureOrToday.length>0?futureOrToday[0]:obracunDates[obracunDates.length-1];
-  const historyDates=obracunDates.filter(d=>d<currentObracun).sort().reverse();
-  const lastHistory=historyDates[0]??"0000-00-00";
-  const currentEntries=entries.filter(e=>e.date>lastHistory);
+  for(let d=1;d<=daysInMonth;d++)obracunDates.push(`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+  const firstDay=obracunDates[0], lastDay=obracunDates[obracunDates.length-1];
+  const currentObracun=(todayStr>=firstDay&&todayStr<=lastDay)?todayStr:lastDay;  // tekući = danas (ili zadnji dan ako gledaš drugi mesec)
+  // Istorija: samo dani sa prometom ili zatvoreni (bez praznih kartica)
+  const historyDates=obracunDates.filter(d=>d<currentObracun&&((byDate[d]?.length??0)>0||(obracun?.isConfirmed(d)??false))).sort().reverse();
+  const currentEntries=byDate[currentObracun]??[];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: pon/sri/pet</p></div>
+        <div><h1 className="text-2xl font-display font-bold">Kasa</h1><p className="text-muted-foreground text-sm">Evidencija uplata i isplata · Obračun: svaki dan</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <Input type="month" value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="w-40 h-9"/>
           <KasaDepozitDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
@@ -1873,7 +1874,7 @@ const CashPage = () => {
         <Tabs defaultValue="tekuci">
           <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="istorija">Istorija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
           <TabsContent value="tekuci" className="mt-4 space-y-3">
-            <p className="text-xs text-muted-foreground">Naredni obračun: <strong>{fmtDate(currentObracun)}</strong></p>
+            <p className="text-xs text-muted-foreground">Današnji obračun: <strong>{fmtDate(currentObracun)}</strong></p>
             <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun}/>
           </TabsContent>
           <TabsContent value="istorija" className="mt-4 space-y-3">
