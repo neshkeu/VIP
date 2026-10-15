@@ -404,28 +404,27 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
   const [eRate, setERate] = useState("");
   const [eFrom, setEFrom] = useState("");
   const [eTo, setETo]     = useState("");
-  const [dr, setDr]   = useState(String(driver.daily_rate ?? ""));
-  const [wm, setWm]   = useState(String(driver.weekly_membership ?? ""));
-  const [wmo, setWmo] = useState(String(driver.weekly_membership_own ?? ""));
-  const [pos, setPos] = useState(String(driver.pos_monthly_fee ?? ""));
-  const [kom, setKom] = useState(String(driver.komunalni_monthly ?? ""));
-  const [dop, setDop] = useState(String(driver.doprinosi_monthly ?? ""));
 
-  const curVeh = vehicles.find(v => v.id === driver.vehicle_id);
   const vehLabel = (id: string | null) => {
     const v = vehicles.find(x => x.id === id);
     return v ? `${v.brand} ${v.model}${v.taxi_license_number ? ` (${v.taxi_license_number})` : ""}` : "—";
   };
+
+  const chosenVeh = vehicles.find(v => v.id === vehicleId);
 
   const save = async () => {
     if (!vehicleId) { toast.error("Izaberi novo vozilo"); return; }
     if (!dateFrom)  { toast.error("Unesi datum prelaska"); return; }
     setSaving(true);
     try {
+      // Renta se vuče sa izabranog vozila; ostale naknade ostaju vozačeve trenutne
       await onConfirm(vehicleId, dateFrom, {
-        daily_rate: Number(dr) || 0, weekly_membership: Number(wm) || 0,
-        weekly_membership_own: Number(wmo) || 0, pos_monthly_fee: Number(pos) || 0,
-        komunalni_monthly: Number(kom) || 0, doprinosi_monthly: Number(dop) || 0,
+        daily_rate: chosenVeh?.daily_rate ?? 0,
+        weekly_membership: driver.weekly_membership ?? 0,
+        weekly_membership_own: driver.weekly_membership_own ?? 0,
+        pos_monthly_fee: driver.pos_monthly_fee ?? 0,
+        komunalni_monthly: driver.komunalni_monthly ?? 0,
+        doprinosi_monthly: driver.doprinosi_monthly ?? 0,
       }, notes);
       onClose();
     } catch (e) {
@@ -457,16 +456,11 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
             </div>
             <div className="grid gap-1.5"><Label className="text-xs">Datum prelaska</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
           </div>
-          <div className="rounded-lg border p-3 bg-muted/20 space-y-2">
-            <p className="text-xs font-semibold uppercase text-muted-foreground">Nove naknade (od datuma prelaska)</p>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="grid gap-1"><Label className="text-[11px]">Dnevna renta</Label><Input type="number" value={dr} onChange={e => setDr(e.target.value)} /></div>
-              <div className="grid gap-1"><Label className="text-[11px]">Članarina (renta)</Label><Input type="number" value={wm} onChange={e => setWm(e.target.value)} /></div>
-              <div className="grid gap-1"><Label className="text-[11px]">Članarina (vlastito)</Label><Input type="number" value={wmo} onChange={e => setWmo(e.target.value)} /></div>
-              <div className="grid gap-1"><Label className="text-[11px]">POS mjesečno</Label><Input type="number" value={pos} onChange={e => setPos(e.target.value)} /></div>
-              <div className="grid gap-1"><Label className="text-[11px]">Komunalni mjesečno</Label><Input type="number" value={kom} onChange={e => setKom(e.target.value)} /></div>
-              <div className="grid gap-1"><Label className="text-[11px]">Doprinosi mjesečno</Label><Input type="number" value={dop} onChange={e => setDop(e.target.value)} /></div>
-            </div>
+          <div className="rounded-lg border p-3 bg-muted/20">
+            <p className="text-xs text-muted-foreground">
+              Renta se vuče sa izabranog vozila: <strong className="text-foreground">{chosenVeh ? fmt(chosenVeh.daily_rate || 0) + "/dan" : "— izaberi vozilo"}</strong>.
+              Stari period ostaje po staroj ceni (do datuma prelaska), od datuma prelaska važi ova.
+            </p>
           </div>
           <div className="grid gap-1.5"><Label className="text-xs">Napomena (opciono)</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
 

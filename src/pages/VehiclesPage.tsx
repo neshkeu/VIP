@@ -42,6 +42,7 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
   const [taxiNum, setTaxiNum]     = useState(initial?.taxi_license_number ?? "");
   const [vin, setVin]             = useState(initial?.vin ?? "");
   const [posId, setPosId]         = useState(initial?.pos_terminal_id ?? "");
+  const [dailyRate, setDailyRate] = useState(String(initial?.daily_rate ?? ""));
   const [regExpiry, setRegExpiry] = useState(initial?.registration_expiry ?? "");
   const [insExpiry, setInsExpiry] = useState(initial?.insurance_expiry ?? "");
   const [taxiExpiry, setTaxiExpiry] = useState(initial?.taxi_license_expiry ?? "");
@@ -62,6 +63,7 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
         brand, model, year: Number(year) || 0,
         license_plate: plate, taxi_license_number: taxiNum, vin: vin || null,
         pos_terminal_id: posId,
+        daily_rate: Number(dailyRate) || 0,
         registration_expiry: regExpiry, insurance_expiry: insExpiry,
         taxi_license_expiry: taxiExpiry || null,
         udruzenje: udruzenje || null,
@@ -106,6 +108,11 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5"><Label className="text-xs">VIN (broj šasije)</Label><Input value={vin} onChange={e => setVin(e.target.value)} /></div>
             <div className="grid gap-1.5"><Label className="text-xs">POS terminal ID</Label><Input value={posId} onChange={e => setPosId(e.target.value)} /></div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Dnevna renta (RSD)</Label>
+            <Input type="number" placeholder="npr. 3900" value={dailyRate} onChange={e => setDailyRate(e.target.value)} />
+            <p className="text-xs text-muted-foreground">Vozač vuče ovu rentu dok vozi ovo vozilo</p>
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Status</Label>
