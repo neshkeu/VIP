@@ -36,9 +36,22 @@ export function useCash(month: string) {
     return data;
   }
 
+  async function deleteEntry(id: string) {
+    const { error } = await supabase.from("cash_entries").delete().eq("id", id);
+    if (error) throw error;
+    setEntries(prev => prev.filter(e => e.id !== id));
+  }
+
+  async function updateEntry(id: string, updates: Partial<CashEntry>) {
+    const { data, error } = await supabase.from("cash_entries").update(updates).eq("id", id).select().single();
+    if (error) throw error;
+    setEntries(prev => prev.map(e => e.id === id ? data : e));
+    return data;
+  }
+
   const total_in  = entries.filter(e => e.direction === "in").reduce((s,e) => s+e.amount, 0);
   const total_out = entries.filter(e => e.direction === "out").reduce((s,e) => s+e.amount, 0);
   const balance   = total_in - total_out;
 
-  return { entries, loading, error, addEntry, refetch: fetchEntries, total_in, total_out, balance };
+  return { entries, loading, error, addEntry, deleteEntry, updateEntry, refetch: fetchEntries, total_in, total_out, balance };
 }
