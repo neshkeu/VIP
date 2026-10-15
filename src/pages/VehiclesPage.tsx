@@ -343,7 +343,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
 }
 
 const VehiclesPage = () => {
-  const { vehicles, drivers, loading, addVehicle, updateVehicle } = useApp();
+  const { vehicles, drivers, loading, addVehicle, updateVehicle, updateDriver } = useApp();
   const { links: vdLinks } = useVehicleDrivers();
   const { getActiveDriver } = useAssignments();
 
@@ -400,7 +400,30 @@ const VehiclesPage = () => {
         <DialogContent className="max-w-2xl">
           {editVehicle && (
             <VehicleForm initial={editVehicle} title="Uredi vozilo"
-              onSave={async (data) => { await updateVehicle(editVehicle.id, data); toast.success("Vozilo ažurirano"); setEditVehicle(null); }}
+              onSave={async (data) => {
+                const oldRate = editVehicle.daily_rate || 0;
+                const newRate = data.daily_rate || 0;
+                await updateVehicle(editVehicle.id, data);
+                // Nova renta vozila se primenjuje i na vozače koji su trenutno na tom
+                // vozilu i voze po STANDARDNOJ ceni (renta == stara renta vozila).
+                // Vozača sa posebnom/popust cenom NE diramo.
+                let applied = 0;
+                if (newRate !== oldRate) {
+                  const affected = drivers.filter(d =>
+                    d.vehicle_id === editVehicle.id &&
+                    d.driver_type === "renta" &&
+                    (d.daily_rate || 0) === oldRate
+                  );
+                  for (const d of affected) {
+                    await updateDriver(d.id, { daily_rate: newRate });
+                  }
+                  applied = affected.length;
+                }
+                toast.success(applied > 0
+                  ? `Vozilo ažurirano — renta primenjena i na ${applied} vozača`
+                  : "Vozilo ažurirano");
+                setEditVehicle(null);
+              }}
               onClose={() => setEditVehicle(null)} />
           )}
         </DialogContent>
