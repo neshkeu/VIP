@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/DocumentStatusBadge";
 import { useAssignments, type VehicleAssignment, type AssignmentFees } from "@/hooks/useAssignments";
+import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -246,9 +247,10 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   );
 }
 
-function DriversTable({ list, vehicles, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
+function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
   list: Driver[];
   vehicles: Vehicle[];
+  vdLinks: { driver_id: string; vehicle_id: string; role: string }[];
   onEdit: (d: Driver) => void;
   onChangeVehicle: (d: Driver) => void;
   onDelete: (d: Driver) => void;
@@ -276,7 +278,12 @@ function DriversTable({ list, vehicles, onEdit, onChangeVehicle, onDelete, debtB
             {list.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
             ) : list.map((d, i) => {
-              const vehicle  = vehicles.find(v => v.id === d.vehicle_id);
+              // Vozila iz nove veze vozač–vozilo (fallback na legacy vehicle_id)
+              let vehiclesForDriver = vdLinks.filter(l => l.driver_id === d.id)
+                .map(l => vehicles.find(v => v.id === l.vehicle_id)).filter(Boolean) as Vehicle[];
+              if (vehiclesForDriver.length === 0 && d.vehicle_id) {
+                const v = vehicles.find(v => v.id === d.vehicle_id); if (v) vehiclesForDriver = [v];
+              }
               const roleCfg  = ROLE_CFG[d.role];
               const RoleIcon = roleCfg.icon;
               return (
@@ -299,15 +306,21 @@ function DriversTable({ list, vehicles, onEdit, onChangeVehicle, onDelete, debtB
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {vehicle?.taxi_license_number ? (
-                      <Badge variant="secondary" className="font-mono text-xs">{vehicle.taxi_license_number}</Badge>
+                    {vehiclesForDriver.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {vehiclesForDriver.map(v => <Badge key={v.id} variant="secondary" className="font-mono text-xs">{v.taxi_license_number || "—"}</Badge>)}
+                      </div>
                     ) : <span className="text-muted-foreground text-xs">—</span>}
                   </TableCell>
                   <TableCell>
-                    {vehicle ? (
-                      <div className="flex items-center gap-1.5">
-                        <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm">{vehicle.brand} {vehicle.model}</span>
+                    {vehiclesForDriver.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {vehiclesForDriver.map(v => (
+                          <div key={v.id} className="flex items-center gap-1.5">
+                            <Car className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-sm">{v.brand} {v.model}</span>
+                          </div>
+                        ))}
                       </div>
                     ) : <span className="text-muted-foreground text-sm">—</span>}
                   </TableCell>
@@ -477,6 +490,7 @@ const DriversPage = () => {
   const { drivers, loading, addDriver, updateDriver, deleteDriver } = useDrivers();
   const { vehicles } = useVehicles();
   const { assignVehicle, getByDriver } = useAssignments();
+  const { links: vdLinks } = useVehicleDrivers();
   const { debts } = useDebts();
   const { balanceFor } = useDeposits();
   const [search, setSearch]         = useState("");
@@ -638,13 +652,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={operativni} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={papiroloski} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} vehicles={vehicles} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={filtered} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
         </Tabs>
       )}
