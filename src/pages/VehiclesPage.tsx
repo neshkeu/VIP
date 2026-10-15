@@ -162,7 +162,7 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
 }
 
 function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | null; open: boolean; onClose: () => void }) {
-  const { drivers } = useApp();
+  const { drivers, updateDriver } = useApp();
   const { getByVehicle, getActiveDriver, assignVehicle, closeAssignment } = useAssignments();
   useCurrentUser();
 
@@ -173,15 +173,37 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
   const [saving, setSaving]           = useState(false);
   const [editId, setEditId]           = useState<string | null>(null);
   const [editDateTo, setEditDateTo]   = useState("");
+  const [addDrvId, setAddDrvId]       = useState("none");
+  const [addRole, setAddRole]         = useState<"operativni" | "papiroloski">("operativni");
 
   if (!vehicle) return null;
 
   const history      = getByVehicle(vehicle.id);
   const activeEntry  = getActiveDriver(vehicle.id);
   const driverByVehicleId = drivers.find(d => d.vehicle_id === vehicle.id);
+  const vehicleDrivers = drivers.filter(d => d.vehicle_id === vehicle.id);
   const activeDriver = activeEntry
     ? drivers.find(d => d.id === activeEntry.driver_id)
     : driverByVehicleId ?? null;
+
+  const addDriverToVehicle = async () => {
+    if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
+    setSaving(true);
+    try {
+      await updateDriver(addDrvId, { vehicle_id: vehicle.id, role: addRole });
+      toast.success("Vozač dodat na vozilo");
+      setAddDrvId("none");
+    } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+    finally { setSaving(false); }
+  };
+  const removeDriverFromVehicle = async (id: string) => {
+    setSaving(true);
+    try {
+      await updateDriver(id, { vehicle_id: null });
+      toast.success("Vozač uklonjen sa vozila");
+    } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+    finally { setSaving(false); }
+  };
 
   const handleAssign = async () => {
     if (newDriverId === "none") { toast.error("Izaberi vozača!"); return; }
@@ -246,6 +268,53 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
           ) : (
             <p className="text-sm text-muted-foreground">Nema aktivnog vozača</p>
           )}
+        </div>
+
+        {/* VOZAČI NA VOZILU — operativni + papirološki, dodavanje/uklanjanje */}
+        <div className="rounded-lg border p-3 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase">Vozači na vozilu</p>
+          {vehicleDrivers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nijedan vozač nije vezan za ovo vozilo</p>
+          ) : (
+            <div className="space-y-1">
+              {vehicleDrivers.map(d => (
+                <div key={d.id} className="flex items-center justify-between rounded border px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${d.role === "operativni" ? "bg-green-500" : "bg-orange-500"}`} />
+                    <span className="text-sm font-medium">{d.full_name}</span>
+                    <Badge variant="outline" className="text-[10px]">{d.role === "operativni" ? "operativni" : "papirološki"}</Badge>
+                  </div>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={saving} title="Ukloni sa vozila" onClick={() => removeDriverFromVehicle(d.id)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2 pt-1">
+            <div className="grid gap-1 flex-1">
+              <Label className="text-[11px]">Dodaj vozača</Label>
+              <Select value={addDrvId} onValueChange={setAddDrvId}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="izaberi" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {drivers.filter(d => d.vehicle_id !== vehicle.id && d.status === "active")
+                    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+                    .map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Select value={addRole} onValueChange={v => setAddRole(v as "operativni" | "papiroloski")}>
+              <SelectTrigger className="h-8 text-sm w-32"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="operativni">operativni</SelectItem>
+                <SelectItem value="papiroloski">papirološki</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="h-8" disabled={saving || addDrvId === "none"} onClick={addDriverToVehicle}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
 
         <AnimatePresence>
