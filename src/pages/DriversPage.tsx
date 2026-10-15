@@ -393,6 +393,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
   history: VehicleAssignment[];
   onConfirm: (vehicleId: string, dateFrom: string, fees: AssignmentFees, notes: string) => Promise<void>;
   onUpdateAssignment: (id: string, updates: Partial<VehicleAssignment>) => Promise<void>;
+  onDeleteAssignment: (id: string) => Promise<void>;
   onClose: () => void;
 }) {
   const today = new Date().toISOString().split("T")[0];
@@ -401,6 +402,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
   const [notes, setNotes]         = useState("");
   const [saving, setSaving]       = useState(false);
   const [editAsgId, setEditAsgId] = useState<string | null>(null);
+  const [delAsgId, setDelAsgId]   = useState<string | null>(null);
   const [eFrom, setEFrom] = useState("");
   const [eTo, setETo]     = useState("");
 
@@ -490,12 +492,26 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
                         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditAsgId(null)}>Otkazi</Button>
                       </div>
                     </div>
+                  ) : delAsgId === a.id ? (
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-destructive">Obrisati ovaj period?</span>
+                      <div className="flex items-center gap-1.5">
+                        <Button size="sm" variant="destructive" className="h-7 text-xs" disabled={saving} onClick={async () => {
+                          setSaving(true);
+                          try { await onDeleteAssignment(a.id); toast.success("Period obrisan"); setDelAsgId(null); }
+                          catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+                          finally { setSaving(false); }
+                        }}>{saving && <Loader2 className="h-3 w-3 animate-spin mr-1" />}Obriši</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setDelAsgId(null)}>Otkazi</Button>
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex items-center justify-between">
                       <span>{vehLabel(a.vehicle_id)}</span>
                       <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">{a.date_from}{a.date_to ? ` → ${a.date_to}` : " → sada"} · renta {fmt(vRate)}</span>
                         <button type="button" className="text-muted-foreground hover:text-primary" title="Ispravi datume" onClick={() => { setEditAsgId(a.id); setEFrom(a.date_from); setETo(a.date_to || ""); }}><Pencil className="h-3.5 w-3.5" /></button>
+                        <button type="button" className="text-muted-foreground hover:text-destructive" title="Obriši period" onClick={() => setDelAsgId(a.id)}><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
                     </div>
                   )}
@@ -517,7 +533,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
 const DriversPage = () => {
   const { drivers, loading, addDriver, updateDriver, deleteDriver } = useDrivers();
   const { vehicles } = useVehicles();
-  const { assignVehicle, getByDriver, updateAssignment } = useAssignments();
+  const { assignVehicle, getByDriver, updateAssignment, deleteAssignment } = useAssignments();
   const { links: vdLinks } = useVehicleDrivers();
   const { debts } = useDebts();
   const { balanceFor } = useDeposits();
@@ -622,6 +638,7 @@ const DriversPage = () => {
           vehicles={vehicles}
           history={getByDriver(changeVehicleDriver.id)}
           onUpdateAssignment={updateAssignment}
+          onDeleteAssignment={deleteAssignment}
           onConfirm={async (vehicleId, dateFrom, fees, notes) => {
             const prevFees = {
               daily_rate: changeVehicleDriver.daily_rate, weekly_membership: changeVehicleDriver.weekly_membership,

@@ -92,6 +92,12 @@ export function useAssignments() {
     await fetchAll();
   }
 
+  async function deleteAssignment(id: string) {
+    const { error } = await supabase.from("vehicle_assignments").delete().eq("id", id);
+    if (error) throw error;
+    setAssignments(prev => prev.filter(a => a.id !== id));
+  }
+
   function getByVehicle(vehicleId: string) {
     return assignments.filter(a => a.vehicle_id === vehicleId)
       .sort((a, b) => b.date_from.localeCompare(a.date_from));
@@ -106,5 +112,5 @@ export function useAssignments() {
       .sort((a, b) => b.date_from.localeCompare(a.date_from));
   }
 
-  return { assignments, loading, assignVehicle, closeAssignment, updateAssignment, getByVehicle, getActiveDriver, getByDriver, refetch: fetchAll };
+  return { assignments, loading, assignVehicle, closeAssignment, updateAssignment, deleteAssignment, getByVehicle, getActiveDriver, getByDriver, refetch: fetchAll };
 }
