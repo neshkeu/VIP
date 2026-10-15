@@ -47,6 +47,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   const [vehicleId, setVehicleId] = useState(initial?.vehicle_id ?? "none");
   const [role, setRole]           = useState<DriverRole>(initial?.role ?? "operativni");
   const [type, setType]           = useState<"renta" | "vlastito_vozilo">(initial?.driver_type ?? "renta");
+  const [paysSunday, setPaysSunday] = useState<boolean>(initial?.pays_sunday ?? (initial?.driver_type === "vlastito_vozilo"));
   const [dailyRate, setDailyRate] = useState(String(initial?.daily_rate ?? ""));
   const [weekly, setWeekly]       = useState(String(initial?.weekly_membership ?? "2000"));
   const [posFee, setPosFee]       = useState(String(initial?.pos_monthly_fee ?? ""));
@@ -74,7 +75,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
     try {
       await onSave({
         full_name: name, phone, license_number: licNum, komunalni_broj: komBroj.trim() || null, status: "active",
-        role, driver_type: type,
+        role, driver_type: type, pays_sunday: paysSunday,
         vehicle_id: vehicleId === "none" ? null : vehicleId,
         daily_rate: Number(dailyRate) || 0,
         weekly_membership: Number(weekly) || 0,
@@ -165,6 +166,13 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
               </div>
             </div>
           )}
+          <label className="flex items-center gap-2 rounded-lg border px-3 py-2.5 cursor-pointer hover:bg-muted/40">
+            <input type="checkbox" checked={paysSunday} onChange={e => setPaysSunday(e.target.checked)} className="h-4 w-4" />
+            <div>
+              <span className="text-sm font-medium">Plaća nedelju</span>
+              <p className="text-xs text-muted-foreground">Uključi ako radi na svom vozilu — tada se i nedelja naplaćuje (inače je nedelja besplatna po defaultu)</p>
+            </div>
+          </label>
           <div className="grid gap-2"><Label className="text-xs">Napomena</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
         </TabsContent>
 

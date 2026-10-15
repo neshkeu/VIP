@@ -411,7 +411,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // Izračuni za rente i clanarine (ručno ili auto)
   // NEDELJA: za RENTA vozače besplatna (osim "radi"); za VLASTITO VOZILO se plaća kao normalan dan.
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
-  const ownVehicle  = driver?.driver_type === "vlastito_vozilo";
+  const ownVehicle  = (driver?.pays_sunday ?? false) || driver?.driver_type === "vlastito_vozilo";
   // Cena rente po danu — iz istorije dodele vozila (stari auto stara cena, novi novo).
   // Ako nema snimljene dodele za taj dan → fallback na trenutnu cenu vozača.
   const driverAssignments = driverId ? getDriverAssignments(driverId) : [];

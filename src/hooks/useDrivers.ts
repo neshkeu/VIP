@@ -13,6 +13,7 @@ export interface Driver {
   status: "active" | "inactive";
   role: DriverRole;
   driver_type: "renta" | "vlastito_vozilo";
+  pays_sunday: boolean;   // radi na svom vozilu → plaća i nedelju
   vehicle_id: string | null;
   daily_rate: number;
   weekly_membership: number;
