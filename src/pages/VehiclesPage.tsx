@@ -64,7 +64,7 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
         license_plate: plate, taxi_license_number: taxiNum, vin: vin || null,
         pos_terminal_id: posId,
         daily_rate: Number(dailyRate) || 0,
-        registration_expiry: regExpiry, insurance_expiry: insExpiry,
+        registration_expiry: regExpiry || null, insurance_expiry: insExpiry || null,
         taxi_license_expiry: taxiExpiry || null,
         udruzenje: udruzenje || null,
         owner_name: ownerName || null,
