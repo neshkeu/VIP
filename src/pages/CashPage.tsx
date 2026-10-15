@@ -169,6 +169,54 @@ function VaucerLinesEditor({ lines, setLines, defaultAmt }: {
   );
 }
 
+// ─── RASPODELA IZVORA PO OBAVEZAMA ────────────────────────────
+function SourceObligAllocator({ label, dotColor, borderColor, bgColor, avail, obligItems, alloc, setAlloc, cash, setCash, total, stay, note }: {
+  label: string; dotColor: string; borderColor: string; bgColor: string;
+  avail: number;
+  obligItems: { key: string; label: string; amt: number }[];
+  alloc: { oblig: string; amt: string }[];
+  setAlloc: (l: { oblig: string; amt: string }[]) => void;
+  cash: string; setCash: (v: string) => void;
+  total: number; stay: number; note?: React.ReactNode;
+}) {
+  const used = new Set(alloc.map(l => l.oblig).filter(Boolean));
+  const addLine = () => {
+    const next = obligItems.find(o => !used.has(o.key));
+    setAlloc([...alloc, { oblig: next?.key ?? "", amt: "" }]);
+  };
+  const upd = (i: number, k: "oblig" | "amt", v: string) => setAlloc(alloc.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
+  const rm = (i: number) => setAlloc(alloc.filter((_, idx) => idx !== i));
+  return (
+    <div className={`rounded-lg border ${borderColor} ${bgColor} p-2.5 space-y-1.5`}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${dotColor}`} />{label}</span>
+        <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(avail)}</strong>{note}</span>
+      </div>
+      <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
+      {alloc.length === 0 && <p className="text-[11px] text-muted-foreground">Klikni „Dodaj obavezu" da raspodeliš (renta, članarina, kazna…)</p>}
+      {alloc.map((l, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <Select value={l.oblig} onValueChange={v => upd(i, "oblig", v)}>
+            <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="obaveza" /></SelectTrigger>
+            <SelectContent>
+              {obligItems.map(o => <SelectItem key={o.key} value={o.key} className="text-xs">{o.label} ({fmt(o.amt)})</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Input type="number" className="h-8 w-24 text-sm text-right" placeholder="0" value={l.amt} onChange={e => upd(i, "amt", e.target.value)} />
+          <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => rm(i)}><X className="h-4 w-4" /></Button>
+        </div>
+      ))}
+      <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={addLine} disabled={obligItems.length === 0}><Plus className="h-3.5 w-3.5 mr-1" />Dodaj obavezu</Button>
+      <div className="grid gap-1 pt-1">
+        <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
+        <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={cash} onChange={e => setCash(e.target.value)} />
+      </div>
+      {total > 0 && <div className="text-[11px] text-muted-foreground">Uzeto ukupno: <strong className="text-foreground">{fmt(total)}</strong></div>}
+      <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(stay, 0))}</strong></p>
+    </div>
+  );
+}
+
 // ─── CHECKBOX RED ─────────────────────────────────────────────
 function CheckRow({ label, sublabel, amount, enabled, onToggle, children }: {
   label: string; sublabel?: string; amount?: number;
@@ -273,12 +321,13 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const [clanWeeksPick, setClanWeeksPick]       = useState("");
 
   // RASPODELA PO IZVORIMA — koliko uzimam iz svakog (slobodna kombinacija)
-  // Po izvoru: eksplicitna raspodela — deo za obaveze, deo u keš vozaču
-  const [yanCover, setYanCover] = useState("");
+  // Po izvoru: raspodela na konkretne obaveze (renta/članarina/kazna) + deo u keš vozaču
+  type AllocLine = { oblig: string; amt: string };
+  const [yanAlloc, setYanAlloc] = useState<AllocLine[]>([]);
   const [yanCash,  setYanCash]  = useState("");
-  const [karCover, setKarCover] = useState("");
+  const [karAlloc, setKarAlloc] = useState<AllocLine[]>([]);
   const [karCash,  setKarCash]  = useState("");
-  const [neoCover, setNeoCover] = useState("");
+  const [neoAlloc, setNeoAlloc] = useState<AllocLine[]>([]);
   const [neoCash,  setNeoCash]  = useState("");
 
   const driver = drivers.find(d => d.id === driverId);
@@ -407,20 +456,41 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // OBAVEZE — šta vozač duguje (renta + članarina + POS + dug)
   const obligTotal = rentaTotal + clanTotal + posTotal + debtTotal;
 
+  // Lista pojedinačnih obaveza (za raspodelu po izvoru: "dodaj obavezu")
+  const obligItems = [
+    ...(rentaEnabled && rentaTotal > 0 ? [{ key: "renta", label: "Renta", amt: rentaTotal }] : []),
+    ...(clanEnabled && clanTotal > 0 ? [{ key: "clanarina", label: "Članarina", amt: clanTotal }] : []),
+    ...(posEnabled && posTotal > 0 ? [{ key: "pos", label: "POS naknada", amt: posTotal }] : []),
+    ...selectedDebtsList.map(d => {
+      const remaining = d.amount - d.paid_amount;
+      const custom = Number(debtAmounts[d.id]);
+      const willPay = custom > 0 && custom <= remaining ? custom : remaining;
+      return { key: `debt:${d.id}`, label: `Dug: ${d.description || d.type}`, amt: willPay };
+    }),
+  ];
+  const obligLabel = (key: string) => obligItems.find(o => o.key === key)?.label ?? key;
+  const allocDesc = (lines: AllocLine[], cash: string) => {
+    const parts = lines.filter(l => l.oblig && Number(l.amt) > 0).map(l => `${obligLabel(l.oblig)} ${fmt(Number(l.amt))}`);
+    const c = Number(cash) || 0;
+    if (c > 0) parts.push(`u keš ${fmt(c)}`);
+    return parts.join(", ");
+  };
+
   // DOSTUPNO po izvoru
   const kesTake  = Number(keshAmt) || 0;                              // koliko keša vozač doneo
   const yanAvail = Math.max(0, yandexRedovniSum - yandexOdbiciSum);   // yandex umanjen za 3% odbitak
   const karAvail = cardNet;
   const neoAvail = neoplantaNet;
-  // Klampuj cover+cash ≤ avail (prioritet cover)
-  const clampSource = (cover: string, cash: string, avail: number) => {
-    const c = Math.max(0, Math.min(Number(cover) || 0, avail));
+  // Raspodela po izvoru: cover = zbir alokacija na obaveze, cash = u keš; total ≤ avail
+  const allocSum = (lines: AllocLine[]) => lines.reduce((s, l) => s + (Number(l.amt) || 0), 0);
+  const clampSource = (lines: AllocLine[], cash: string, avail: number) => {
+    const c = Math.max(0, Math.min(allocSum(lines), avail));
     const k = Math.max(0, Math.min(Number(cash) || 0, avail - c));
     return { cover: c, cash: k, total: c + k };
   };
-  const yanS = clampSource(yanCover, yanCash, yanAvail);
-  const karS = clampSource(karCover, karCash, karAvail);
-  const neoS = clampSource(neoCover, neoCash, neoAvail);
+  const yanS = clampSource(yanAlloc, yanCash, yanAvail);
+  const karS = clampSource(karAlloc, karCash, karAvail);
+  const neoS = clampSource(neoAlloc, neoCash, neoAvail);
   const yanTakeNum = yanS.total;
   const karTakeNum = karS.total;
   const neoTakeNum = neoS.total;
@@ -428,34 +498,50 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // Vaučeri i PDV goriva su prihod vozača — kao yandex/kartica automatski pokrivaju obaveze,
   // a ako ostane surplus → ide u isplatu u keš.
   const takenTotal = kesTake + yanTakeNum + karTakeNum + neoTakeNum + vaucerTotal + vaucerMbTotal + pdvTotal;
-  const surplus    = takenTotal - obligTotal;             // >0 isplata vozaču, <0 manjak → dug
-  // ZAOKRUŽIVANJE krajnjeg iznosa na najbližih 10 RSD (≥5 gore, <5 dole)
-  const roundTo10      = (n: number) => Math.round(n / 10) * 10;
-  const surplusRounded = roundTo10(surplus);
-  const roundAdjust    = surplusRounded - surplus;        // +: firma daje više; −: firma zadržava
-  const isplataVozacu = Math.max(surplusRounded, 0);
-  const manjak     = Math.max(-surplusRounded, 0);
+  const roundTo10  = (n: number) => Math.round(n / 10) * 10;
   const yanStay    = yanAvail - yanTakeNum;               // ostaje na yandex saldu
   const karStay    = karAvail - karTakeNum;               // ostaje na kartica saldu
   const neoStay    = neoAvail - neoTakeNum;               // ostaje na neoplanta saldu
 
-  // RASPODELA POKRIĆA na obaveze (prioritet: renta → članarina → POS → dugovi).
-  // Promet (kasa "in") beleži SAMO stvarno pokriveni deo; nepokriveno ide u DUG.
-  const coverAlloc = (() => {
-    let budget = Math.min(takenTotal, obligTotal);
-    const take = (amt: number) => { const c = Math.min(budget, Math.max(amt, 0)); budget -= c; return c; };
-    const renta = rentaEnabled ? take(rentaTotal) : 0;
-    const clan  = clanEnabled  ? take(clanTotal)  : 0;
-    const pos   = posEnabled   ? take(posTotal)   : 0;
-    const debtsCov: Record<string, number> = {};
-    for (const d of selectedDebtsList) {
-      const remaining = d.amount - d.paid_amount;
-      const custom = Number(debtAmounts[d.id]);
-      const willPay = custom > 0 && custom <= remaining ? custom : remaining;
-      debtsCov[d.id] = take(willPay);
+  // POKRIĆE PO OBAVEZI = ručna raspodela (yandex/kartica/neoplanta "dodaj obavezu")
+  // + automatsko dopunjavanje iz keša/vaučera/PDV (prioritet renta → članarina → POS → dugovi).
+  const coveredByOblig: Record<string, number> = {};
+  const addManual = (lines: AllocLine[]) => {
+    for (const l of lines) {
+      const amt = Number(l.amt) || 0;
+      if (!l.oblig || amt <= 0) continue;
+      coveredByOblig[l.oblig] = (coveredByOblig[l.oblig] ?? 0) + amt;
     }
-    return { renta, clan, pos, debts: debtsCov };
-  })();
+  };
+  addManual(yanAlloc); addManual(karAlloc); addManual(neoAlloc);
+  // Auto-dopuna iz keša + vaučera + PDV (novac koji nije ručno raspodeljen)
+  let autoBudget = kesTake + vaucerTotal + vaucerMbTotal + pdvTotal;
+  for (const item of obligItems) {
+    const already = Math.min(coveredByOblig[item.key] ?? 0, item.amt);
+    coveredByOblig[item.key] = already;
+    const need = Math.max(0, item.amt - already);
+    const add = Math.min(autoBudget, need);
+    coveredByOblig[item.key] = already + add;
+    autoBudget -= add;
+  }
+  // Clamp: nijedna obaveza ne može biti pokrivena preko svog iznosa
+  for (const item of obligItems) coveredByOblig[item.key] = Math.min(coveredByOblig[item.key] ?? 0, item.amt);
+
+  const coverAlloc = {
+    renta: coveredByOblig["renta"] ?? 0,
+    clan:  coveredByOblig["clanarina"] ?? 0,
+    pos:   coveredByOblig["pos"] ?? 0,
+    debts: Object.fromEntries(selectedDebtsList.map(d => [d.id, coveredByOblig[`debt:${d.id}`] ?? 0])) as Record<string, number>,
+  };
+  const totalCovered = obligItems.reduce((s, o) => s + (coveredByOblig[o.key] ?? 0), 0);
+
+  // Keš vozaču i manjak su NEZAVISNI (ručna raspodela može dati keš a ostaviti obavezu u dug)
+  const cashToDriver  = Math.max(0, takenTotal - totalCovered);
+  const surplus       = takenTotal - obligTotal;          // za boju/progres
+  const surplusRounded = roundTo10(cashToDriver);
+  const roundAdjust   = surplusRounded - cashToDriver;    // +: firma daje više; −: firma zadržava
+  const isplataVozacu = surplusRounded;
+  const manjak        = Math.max(0, obligTotal - totalCovered);
 
   // BREAKDOWN — koliko dela source-a pokriva obaveze, koliko ide u kes.
   // Proporcionalno prema udelu obaveza u ukupnom uzetom.
@@ -541,7 +627,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setDepositEnabled(false); setDepositAmt("");
     setKeshEnabled(false); setKeshAmt("");
     setRentaDaysPick(""); setClanWeeksPick("");
-    setYanCover(""); setYanCash(""); setKarCover(""); setKarCash(""); setNeoCover(""); setNeoCash("");
+    setYanAlloc([]); setYanCash(""); setKarAlloc([]); setKarCash(""); setNeoAlloc([]); setNeoCash("");
   };
 
   const reset = () => {
@@ -665,10 +751,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       }
       // Realni izlaz iz yandexa (novac koji radi na obračunu) = yanTakeNum
       if (yanTakeNum > 0) {
-        const parts = [
-          yanS.cover > 0 ? `${fmt(yanS.cover)} na obaveze` : "",
-          yanS.cash  > 0 ? `${fmt(yanS.cash)} u keš`      : "",
-        ].filter(Boolean).join(", ");
+        const parts = allocDesc(yanAlloc, yanCash);
         const desc = `Yandex — uzeto ${fmt(yanTakeNum)}${parts?` · ${parts}`:""}${yanStay>0?` · ostaje ${fmt(yanStay)} na saldu`:""}`;
         await onAdd({ type:"yandex", direction:"out", driver_id:driverId, amount:yanTakeNum, date:saveDate,
           description:desc, received_by:currentUser, notes:"" });
@@ -690,10 +773,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await updateCard(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (karTakeNum > 0) {
-        const parts = [
-          karS.cover > 0 ? `${fmt(karS.cover)} na obaveze` : "",
-          karS.cash  > 0 ? `${fmt(karS.cash)} u keš`      : "",
-        ].filter(Boolean).join(", ");
+        const parts = allocDesc(karAlloc, karCash);
         const desc = `Kartica — uzeto ${fmt(karTakeNum)}${parts?` · ${parts}`:""}${karStay>0?` · ostaje ${fmt(karStay)} na saldu`:""}`;
         await onAdd({ type:"kartica", direction:"out", driver_id:driverId, amount:karTakeNum, date:saveDate,
           description:desc, received_by:currentUser, notes:"" });
@@ -715,10 +795,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await updateNeoplanta(r.id, { paid_amount: newPaid, paid_out: fully, received_by: currentUser, payment_basis: fully ? paymentBasis : r.payment_basis });
       }
       if (neoTakeNum > 0) {
-        const parts = [
-          neoS.cover > 0 ? `${fmt(neoS.cover)} na obaveze` : "",
-          neoS.cash  > 0 ? `${fmt(neoS.cash)} u keš`      : "",
-        ].filter(Boolean).join(", ");
+        const parts = allocDesc(neoAlloc, neoCash);
         const desc = `Neoplanta — uzeto ${fmt(neoTakeNum)}${parts?` · ${parts}`:""}${neoStay>0?` · ostaje ${fmt(neoStay)} na saldu`:""}`;
         await onAdd({ type:"neoplanta", direction:"out", driver_id:driverId, amount:neoTakeNum, date:saveDate,
           description:desc, received_by:currentUser, notes:"" });
@@ -1208,85 +1285,52 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
                       {/* YANDEX */}
                       {yanAvail > 0 && (
-                        <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-2.5 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500"/>Yandex</span>
-                            <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(yanAvail)}</strong>{yandexOdbiciSum>0 && <span className="text-red-600"> (−3% {fmt(yandexOdbiciSum)})</span>}</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
-                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanCover} onChange={e=>setYanCover(e.target.value)}/>
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
-                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={yanCash} onChange={e=>setYanCash(e.target.value)}/>
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanCover(String(Math.min(Math.max(obligTotal - kesTake - karS.cover - neoS.cover - vaucerTotal - vaucerMbTotal - pdvTotal,0), yanAvail)))}>Pokrij obaveze</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setYanCash(String(Math.max(yanAvail - yanS.cover, 0)))}>Ostatak u keš</Button>
-                          </div>
-                          {yanTakeNum > 0 && (
-                            <div className="text-[11px] text-muted-foreground pt-0.5">Uzeto ukupno: <strong className="text-foreground">{fmt(yanTakeNum)}</strong></div>
-                          )}
-                          <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(yanStay,0))}</strong></p>
-                        </div>
+                        <SourceObligAllocator
+                          label="Yandex" dotColor="bg-orange-500" borderColor="border-orange-200" bgColor="bg-orange-50/40"
+                          avail={yanAvail} obligItems={obligItems}
+                          alloc={yanAlloc} setAlloc={setYanAlloc} cash={yanCash} setCash={setYanCash}
+                          total={yanTakeNum} stay={yanStay}
+                          note={yandexOdbiciSum>0 ? <span className="text-red-600"> (−3% {fmt(yandexOdbiciSum)})</span> : undefined}
+                        />
                       )}
 
                       {/* KARTICA */}
                       {karAvail > 0 && (
-                        <div className="rounded-lg border border-orange-200 bg-orange-50/40 p-2.5 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-500"/>Kartica</span>
-                            <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(karAvail)}</strong></span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
-                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karCover} onChange={e=>setKarCover(e.target.value)}/>
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
-                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={karCash} onChange={e=>setKarCash(e.target.value)}/>
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarCover(String(Math.min(Math.max(obligTotal - kesTake - yanS.cover - neoS.cover - vaucerTotal - vaucerMbTotal - pdvTotal,0), karAvail)))}>Pokrij obaveze</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setKarCash(String(Math.max(karAvail - karS.cover, 0)))}>Ostatak u keš</Button>
-                          </div>
-                          {karTakeNum > 0 && (
-                            <div className="text-[11px] text-muted-foreground pt-0.5">Uzeto ukupno: <strong className="text-foreground">{fmt(karTakeNum)}</strong></div>
-                          )}
-                          <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(karStay,0))}</strong></p>
-                        </div>
+                        <SourceObligAllocator
+                          label="Kartica" dotColor="bg-orange-500" borderColor="border-orange-200" bgColor="bg-orange-50/40"
+                          avail={karAvail} obligItems={obligItems}
+                          alloc={karAlloc} setAlloc={setKarAlloc} cash={karCash} setCash={setKarCash}
+                          total={karTakeNum} stay={karStay}
+                        />
                       )}
 
                       {/* NEOPLANTA */}
                       {neoAvail > 0 && (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-2.5 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500"/>Neoplanta</span>
-                            <span className="text-xs text-muted-foreground">dostupno <strong className="text-foreground">{fmt(neoAvail)}</strong></span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-red-700 font-semibold">Za obaveze</Label>
-                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoCover} onChange={e=>setNeoCover(e.target.value)}/>
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-emerald-700 font-semibold">U keš vozaču</Label>
-                              <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={neoCash} onChange={e=>setNeoCash(e.target.value)}/>
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoCover(String(Math.min(Math.max(obligTotal - kesTake - yanS.cover - karS.cover - vaucerTotal - vaucerMbTotal - pdvTotal,0), neoAvail)))}>Pokrij obaveze</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={()=>setNeoCash(String(Math.max(neoAvail - neoS.cover, 0)))}>Ostatak u keš</Button>
-                          </div>
-                          {neoTakeNum > 0 && (
-                            <div className="text-[11px] text-muted-foreground pt-0.5">Uzeto ukupno: <strong className="text-foreground">{fmt(neoTakeNum)}</strong></div>
-                          )}
-                          <p className="text-xs text-blue-600">Ostaje na saldu: <strong>{fmt(Math.max(neoStay,0))}</strong></p>
+                        <SourceObligAllocator
+                          label="Neoplanta" dotColor="bg-emerald-500" borderColor="border-emerald-200" bgColor="bg-emerald-50/40"
+                          avail={neoAvail} obligItems={obligItems}
+                          alloc={neoAlloc} setAlloc={setNeoAlloc} cash={neoCash} setCash={setNeoCash}
+                          total={neoTakeNum} stay={neoStay}
+                        />
+                      )}
+
+                      {/* POKRIĆE OBAVEZA — pregled šta je i koliko pokriveno */}
+                      {obligItems.length > 0 && (
+                        <div className="rounded-lg border border-red-200 bg-red-50/40 p-2.5 space-y-1">
+                          <div className="text-xs font-bold uppercase text-red-800">Pokriće obaveza</div>
+                          {obligItems.map(o => {
+                            const cov = Math.min(coveredByOblig[o.key] ?? 0, o.amt);
+                            const rem = o.amt - cov;
+                            return (
+                              <div key={o.key} className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">{o.label}</span>
+                                <span className="flex items-center gap-2">
+                                  <span className={cov >= o.amt - 0.01 ? "text-green-700 font-medium" : "text-amber-700 font-medium"}>{fmt(cov)} / {fmt(o.amt)}</span>
+                                  {rem > 0.01 && <span className="text-red-600">ostaje {fmt(rem)}</span>}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
 
@@ -1300,12 +1344,25 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                         <span>− Obaveze: {fmt(obligTotal)}</span>
                       </div>
 
-                      <div className={`flex justify-between items-center text-base font-bold rounded-md px-3 py-2 ${manjak>0?"bg-red-50 text-red-700":surplus>0?"bg-orange-50 text-orange-700":"bg-green-50 text-green-700"}`}>
-                        <span>{manjak>0?"Nedostaje → dug:":surplus>0?"Za isplatu vozaču:":"Izmireno:"}</span>
-                        <span>{fmt(manjak>0?manjak:isplataVozacu)}</span>
-                      </div>
-                      {Math.abs(roundAdjust) >= 0.01 && (surplus>0.01||manjak>0.01) && (
-                        <p className="text-[11px] text-muted-foreground text-right">zaokruženo sa {fmt(Math.abs(surplus))} ({roundAdjust>0?"+":"−"}{fmt(Math.abs(roundAdjust))})</p>
+                      {isplataVozacu > 0 && (
+                        <div className="flex justify-between items-center text-base font-bold rounded-md px-3 py-2 bg-orange-50 text-orange-700">
+                          <span>Za isplatu vozaču:</span>
+                          <span>{fmt(isplataVozacu)}</span>
+                        </div>
+                      )}
+                      {manjak > 0 && (
+                        <div className="flex justify-between items-center text-base font-bold rounded-md px-3 py-2 bg-red-50 text-red-700">
+                          <span>Nedostaje → dug:</span>
+                          <span>{fmt(roundTo10(manjak))}</span>
+                        </div>
+                      )}
+                      {isplataVozacu <= 0 && manjak <= 0 && (
+                        <div className="flex justify-between items-center text-base font-bold rounded-md px-3 py-2 bg-green-50 text-green-700">
+                          <span>Izmireno:</span><span>{fmt(0)}</span>
+                        </div>
+                      )}
+                      {Math.abs(roundAdjust) >= 0.01 && isplataVozacu > 0 && (
+                        <p className="text-[11px] text-muted-foreground text-right">isplata zaokružena sa {fmt(cashToDriver)} ({roundAdjust>0?"+":"−"}{fmt(Math.abs(roundAdjust))})</p>
                       )}
 
                       {depozit > 0 && (
