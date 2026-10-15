@@ -44,13 +44,22 @@ export function useAssignments() {
   }
 
   // Kada vozač dobije novo vozilo — zatvori stari assignment i snimi cene za novi period
-  async function assignVehicle(driverId: string, vehicleId: string, dateFrom: string, fees?: Partial<AssignmentFees>, notes: string = "") {
-    // Zatvori sve aktivne assigne za ovog vozača (date_to = dan prelaska)
+  async function assignVehicle(driverId: string, vehicleId: string, dateFrom: string, fees?: Partial<AssignmentFees>, notes: string = "", prevFees?: Partial<AssignmentFees>) {
+    // Zatvori sve aktivne assigne za ovog vozača (date_to = dan prelaska).
+    // Ako zatvarana dodela nema snimljenu cenu (stari podaci), upečati staru cenu (prevFees)
+    // da bi se period pre prelaska računao po STAROJ ceni.
     const active = assignments.filter(a => a.driver_id === driverId && !a.date_to);
     for (const a of active) {
-      await supabase.from("vehicle_assignments")
-        .update({ date_to: dateFrom })
-        .eq("id", a.id);
+      const patch: Record<string, unknown> = { date_to: dateFrom };
+      if (!((a.daily_rate ?? 0) > 0) && prevFees) {
+        patch.daily_rate = prevFees.daily_rate ?? 0;
+        patch.weekly_membership = prevFees.weekly_membership ?? 0;
+        patch.weekly_membership_own = prevFees.weekly_membership_own ?? 0;
+        patch.pos_monthly_fee = prevFees.pos_monthly_fee ?? 0;
+        patch.komunalni_monthly = prevFees.komunalni_monthly ?? 0;
+        patch.doprinosi_monthly = prevFees.doprinosi_monthly ?? 0;
+      }
+      await supabase.from("vehicle_assignments").update(patch).eq("id", a.id);
     }
     // Kreiraj novi sa snapshotom naknada
     const { data, error } = await supabase.from("vehicle_assignments")

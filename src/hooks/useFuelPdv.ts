@@ -10,7 +10,7 @@ export interface FuelPdvEntry {
   created_at: string;
 }
 
-const PDV_MONTHLY_LIMIT = 4000;
+const PDV_MONTHLY_LIMIT = 5000;
 
 export function useFuelPdv(driverId: string, month: string) {
   const [entries, setEntries] = useState<FuelPdvEntry[]>([]);
