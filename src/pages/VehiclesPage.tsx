@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useAssignments } from "@/hooks/useAssignments";
+import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Vehicle, DocStatus } from "@/hooks/useVehicles";
 import { Input } from "@/components/ui/input";
@@ -162,8 +163,9 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
 }
 
 function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | null; open: boolean; onClose: () => void }) {
-  const { drivers, updateDriver, refetchDrivers } = useApp();
+  const { drivers, updateDriver } = useApp();
   const { getByVehicle, closeAssignment } = useAssignments();
+  const { forVehicle, addLink, removeLink } = useVehicleDrivers();
   useCurrentUser();
 
   const [saving, setSaving]           = useState(false);
@@ -174,25 +176,37 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
 
   if (!vehicle) return null;
 
-  const history      = getByVehicle(vehicle.id);
-  const vehicleDrivers = drivers.filter(d => d.vehicle_id === vehicle.id);
+  const history = getByVehicle(vehicle.id);
+  // Vozači na vozilu iz join tabele (+ legacy vehicle_id fallback)
+  const linkRows = forVehicle(vehicle.id)
+    .map(l => ({ linkId: l.id, driver: drivers.find(d => d.id === l.driver_id), role: l.role }))
+    .filter(x => x.driver) as { linkId: string; driver: typeof drivers[number]; role: string }[];
+  const legacyRows = drivers
+    .filter(d => d.vehicle_id === vehicle.id && !linkRows.some(r => r.driver.id === d.id))
+    .map(d => ({ linkId: null as string | null, driver: d, role: d.role }));
+  const vehicleDriverRows = [...linkRows, ...legacyRows];
+  const onVehicleIds = new Set(vehicleDriverRows.map(r => r.driver.id));
+  // Jedinstveni vozači za padajuću listu (bez duplih imena, bez onih već na vozilu)
+  const addOptions = Array.from(
+    new Map(drivers.filter(d => d.status === "active" && !onVehicleIds.has(d.id))
+      .map(d => [d.full_name.trim().toLowerCase(), d])).values()
+  ).sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const addDriverToVehicle = async () => {
     if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
     setSaving(true);
     try {
-      await updateDriver(addDrvId, { vehicle_id: vehicle.id, role: addRole });
-      await refetchDrivers();
+      await addLink(vehicle.id, addDrvId, addRole);
       toast.success("Vozač dodat na vozilo");
       setAddDrvId("none");
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
     finally { setSaving(false); }
   };
-  const removeDriverFromVehicle = async (id: string) => {
+  const removeDriverFromVehicle = async (row: { linkId: string | null; driver: typeof drivers[number] }) => {
     setSaving(true);
     try {
-      await updateDriver(id, { vehicle_id: null });
-      await refetchDrivers();
+      if (row.linkId) await removeLink(row.linkId);
+      else await updateDriver(row.driver.id, { vehicle_id: null });  // legacy veza preko vehicle_id
       toast.success("Vozač uklonjen sa vozila");
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
     finally { setSaving(false); }
@@ -221,18 +235,18 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
         {/* VOZAČI NA VOZILU — operativni + papirološki, dodavanje/uklanjanje */}
         <div className="rounded-lg border p-3 space-y-2">
           <p className="text-xs font-semibold text-muted-foreground uppercase">Vozači na vozilu</p>
-          {vehicleDrivers.length === 0 ? (
+          {vehicleDriverRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nijedan vozač nije vezan za ovo vozilo</p>
           ) : (
             <div className="space-y-1">
-              {vehicleDrivers.map(d => (
-                <div key={d.id} className="flex items-center justify-between rounded border px-2 py-1.5">
+              {vehicleDriverRows.map(row => (
+                <div key={row.driver.id} className="flex items-center justify-between rounded border px-2 py-1.5">
                   <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${d.role === "operativni" ? "bg-green-500" : "bg-orange-500"}`} />
-                    <span className="text-sm font-medium">{d.full_name}</span>
-                    <Badge variant="outline" className="text-[10px]">{d.role === "operativni" ? "operativni" : "papirološki"}</Badge>
+                    <span className={`h-2 w-2 rounded-full ${row.role === "operativni" ? "bg-green-500" : "bg-orange-500"}`} />
+                    <span className="text-sm font-medium">{row.driver.full_name}</span>
+                    <Badge variant="outline" className="text-[10px]">{row.role === "operativni" ? "operativni" : "papirološki"}</Badge>
                   </div>
-                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={saving} title="Ukloni sa vozila" onClick={() => removeDriverFromVehicle(d.id)}>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={saving} title="Ukloni sa vozila" onClick={() => removeDriverFromVehicle(row)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -246,9 +260,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
                 <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="izaberi" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">—</SelectItem>
-                  {drivers.filter(d => d.vehicle_id !== vehicle.id && d.status === "active")
-                    .sort((a, b) => a.full_name.localeCompare(b.full_name))
-                    .map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+                  {addOptions.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -325,6 +337,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
 
 const VehiclesPage = () => {
   const { vehicles, drivers, loading, addVehicle, updateVehicle } = useApp();
+  const { links: vdLinks } = useVehicleDrivers();
   const { getActiveDriver } = useAssignments();
 
   const [search, setSearch]             = useState("");
@@ -428,8 +441,15 @@ const VehiclesPage = () => {
                   <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
                   filtered.map((v, i) => {
-                    const ops = drivers.filter(d => d.vehicle_id === v.id && d.role === "operativni");
-                    const paps = drivers.filter(d => d.vehicle_id === v.id && d.role === "papiroloski");
+                    // Vozači na vozilu = iz join tabele (vozač–vozilo+uloga); fallback na legacy vehicle_id+role
+                    const linkRows = vdLinks.filter(l => l.vehicle_id === v.id)
+                      .map(l => ({ driver: drivers.find(d => d.id === l.driver_id), role: l.role }))
+                      .filter(x => x.driver) as { driver: typeof drivers[number]; role: string }[];
+                    const legacy = drivers.filter(d => d.vehicle_id === v.id && !vdLinks.some(l => l.vehicle_id === v.id && l.driver_id === d.id))
+                      .map(d => ({ driver: d, role: d.role }));
+                    const all = [...linkRows, ...legacy];
+                    const ops = all.filter(x => x.role === "operativni").map(x => x.driver);
+                    const paps = all.filter(x => x.role === "papiroloski").map(x => x.driver);
                     return (
                       <motion.tr key={v.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.5) }}
                         className="border-b hover:bg-muted/30 transition-colors">
