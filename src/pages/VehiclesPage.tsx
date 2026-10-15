@@ -463,9 +463,9 @@ const VehiclesPage = () => {
                         <TableCell>
                           <p className="font-medium">{v.brand} {v.model} {v.year > 0 && <span className="text-muted-foreground text-xs">({v.year})</span>}</p>
                           <p className="text-xs text-muted-foreground font-mono">{v.license_plate}</p>
-                          <p className={`text-xs mt-0.5 font-medium ${v.daily_rate > 0 ? "text-green-700" : "text-amber-600"}`}>
-                            {v.daily_rate > 0 ? `Renta: ${v.daily_rate.toLocaleString("sr-RS")} RSD/dan` : "Renta nije upisana"}
-                          </p>
+                          {v.daily_rate > 0 && (
+                            <p className="text-xs mt-0.5 font-medium text-green-700">Renta: {v.daily_rate.toLocaleString("sr-RS")} RSD/dan</p>
+                          )}
                           {v.komunalni_amount > 0 && (
                             <p className="text-xs text-blue-600 mt-0.5">💰 {v.komunalni_amount} {v.komunalni_currency}/mj.</p>
                           )}
