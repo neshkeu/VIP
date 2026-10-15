@@ -22,7 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, Wrench, PartyPopper, X, Sun, Eye, Printer, Share2, Download } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Plus, CheckCircle2, Clock, ChevronDown, ChevronUp, AlertCircle, Loader2, RotateCcw, Check, Wrench, PartyPopper, X, Sun, Eye, Printer, Share2, Download, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import html2canvas from "html2canvas";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1509,7 +1509,7 @@ function ReceiptPreview({ open, onClose, title, bodyHtml }: {
 }
 
 // ─── OBRACUN KARTICA ──────────────────────────────────────────
-function ObracunCard({ date, entries, obracun }: { date: string; entries: any[]; obracun: any }) {
+function ObracunCard({ date, entries, obracun, onDeleteEntry, onUpdateEntry }: { date: string; entries: any[]; obracun: any; onDeleteEntry?: (id: string) => Promise<void>; onUpdateEntry?: (id: string, u: any) => Promise<any> }) {
   const { drivers, displayName } = useApp();
   const [expanded,setExpanded]=useState(false);
   const [closeOpen,setCloseOpen]=useState(false);
@@ -1518,6 +1518,10 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
   const [saving,setSaving]=useState(false);
   const [openDriverId,setOpenDriverId]=useState<string|null>(null);
   const [preview,setPreview]=useState<{title:string;html:string}|null>(null);
+  const [delEntry,setDelEntry]=useState<any|null>(null);
+  const [editEntry,setEditEntry]=useState<any|null>(null);
+  const [editAmt,setEditAmt]=useState("");
+  const [editDesc,setEditDesc]=useState("");
   const total_in =entries.filter(e=>e.direction==="in").reduce((s,e)=>s+e.amount,0);
   const total_out=entries.filter(e=>e.direction==="out").reduce((s,e)=>s+e.amount,0);
   const confirmed  =obracun?.isConfirmed(date)??false;
@@ -1637,6 +1641,12 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
                                         <TableCell className="py-1.5"><Badge variant="outline" className={`text-xs ${CASH_TYPE_COLORS[e.type]??""}`}>{CASH_TYPE_LABELS[e.type]??e.type}</Badge></TableCell>
                                         <TableCell className="py-1.5 text-xs text-muted-foreground">{e.description}</TableCell>
                                         <TableCell className="py-1.5 text-right"><span className={`font-bold text-sm ${e.direction==="in"?"text-green-600":"text-red-500"}`}>{e.direction==="in"?"+":"−"}{fmt(e.amount)}</span></TableCell>
+                                        {!confirmed && (onDeleteEntry||onUpdateEntry) && (
+                                          <TableCell className="py-1.5 text-right whitespace-nowrap">
+                                            {onUpdateEntry && <button onClick={()=>{setEditEntry(e);setEditAmt(String(e.amount));setEditDesc(e.description||"");}} className="text-muted-foreground hover:text-primary mr-1" title="Ispravi stavku"><Pencil className="h-3.5 w-3.5"/></button>}
+                                            {onDeleteEntry && <button onClick={()=>setDelEntry(e)} className="text-muted-foreground hover:text-destructive" title="Obriši stavku"><Trash2 className="h-3.5 w-3.5"/></button>}
+                                          </TableCell>
+                                        )}
                                       </TableRow>
                                     ))}
                                   </TableBody>
@@ -1725,6 +1735,49 @@ function ObracunCard({ date, entries, obracun }: { date: string; entries: any[];
         </AnimatePresence>
       </Card>
       {preview && <ReceiptPreview open={!!preview} onClose={()=>setPreview(null)} title={preview.title} bodyHtml={preview.html}/>}
+
+      {/* Brisanje pojedinačne stavke (korekcija po vozaču) */}
+      <Dialog open={!!delEntry} onOpenChange={v=>{if(!v)setDelEntry(null);}}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Obriši stavku</DialogTitle>
+            <DialogDescription>
+              {delEntry && <>Obrisati <strong>{CASH_TYPE_LABELS[delEntry.type]??delEntry.type}</strong> ({delEntry.direction==="in"?"+":"−"}{fmt(delEntry.amount)})?</>}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">Briše se samo ova stavka iz kase. Ako je vezana za izvod/dug (yandex, kartica, dugovanje), ručno proveri taj saldo.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>setDelEntry(null)}>Otkazi</Button>
+            <Button variant="destructive" disabled={saving} onClick={async()=>{
+              if(!delEntry||!onDeleteEntry)return; setSaving(true);
+              try{await onDeleteEntry(delEntry.id);toast.success("Stavka obrisana");setDelEntry(null);}
+              catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
+            }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Obriši</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ispravka pojedinačne stavke */}
+      <Dialog open={!!editEntry} onOpenChange={v=>{if(!v)setEditEntry(null);}}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ispravi stavku</DialogTitle>
+            <DialogDescription>{editEntry && (CASH_TYPE_LABELS[editEntry.type]??editEntry.type)}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" value={editAmt} onChange={e=>setEditAmt(e.target.value)}/></div>
+            <div className="grid gap-1.5"><Label>Opis</Label><Input value={editDesc} onChange={e=>setEditDesc(e.target.value)}/></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={()=>setEditEntry(null)}>Otkazi</Button>
+            <Button disabled={saving||!(Number(editAmt)>0)} onClick={async()=>{
+              if(!editEntry||!onUpdateEntry)return; setSaving(true);
+              try{await onUpdateEntry(editEntry.id,{amount:Number(editAmt),description:editDesc});toast.success("Stavka ispravljena");setEditEntry(null);}
+              catch(e:any){toast.error("Greška: "+e.message);}finally{setSaving(false);}
+            }}>{saving&&<Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }
@@ -1918,7 +1971,7 @@ function BankarskaNaknadaDialog({ onAdd, currentUser, defaultDate }: {
 const CashPage = () => {
   const today = new Date();
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
-  const {entries,loading,addEntry,total_in,total_out,balance}=useCash(filterMonth);
+  const {entries,loading,addEntry,deleteEntry,updateEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
   const { drivers: allDrivers, displayName }=useApp();
 
@@ -1960,11 +2013,11 @@ const CashPage = () => {
           <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="istorija">Istorija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
           <TabsContent value="tekuci" className="mt-4 space-y-3">
             <p className="text-xs text-muted-foreground">Današnji obračun: <strong>{fmtDate(currentObracun)}</strong></p>
-            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun}/>
+            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun} onDeleteEntry={deleteEntry} onUpdateEntry={updateEntry}/>
           </TabsContent>
           <TabsContent value="istorija" className="mt-4 space-y-3">
             {historyDates.length===0?<Card><CardContent className="py-10 text-center text-muted-foreground">Nema zatvorenih obračuna</CardContent></Card>
-              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun}/>)}
+              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun} onDeleteEntry={deleteEntry} onUpdateEntry={updateEntry}/>)}
           </TabsContent>
           <TabsContent value="sve" className="mt-4">
             <Card><CardContent className="p-0">
