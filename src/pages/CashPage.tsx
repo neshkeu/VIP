@@ -10,6 +10,7 @@ import { useObracuni } from "@/hooks/useObracuni";
 import { ClanarinaKalendar } from "@/components/ClanarinaKalendar";
 import { useDebts } from "@/hooks/useDebts";
 import { useAssignments } from "@/hooks/useAssignments";
+import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useDeposits } from "@/hooks/useDeposits";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -336,6 +337,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const fuelPdv = useFuelPdv(driverId, curMonthStr);
   const { debts } = useDebts();
   const { getByDriver: getDriverAssignments } = useAssignments();
+  const { links: vdLinks } = useVehicleDrivers();
   const { saveObracun } = useObracuni();
   const { balanceFor, addTransaction: addDeposit } = useDeposits();
 
@@ -881,7 +883,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 .filter(d => d.role === "operativni" && d.status === "active")
                 .sort((a, b) => a.full_name.localeCompare(b.full_name))
                 .map(d => {
-                  const veh = vehicles.find(v => v.id === d.vehicle_id);
+                  const vehId = vdLinks.find(l => l.driver_id === d.id)?.vehicle_id ?? d.vehicle_id;
+                  const veh = vehicles.find(v => v.id === vehId);
                   return {
                     value: d.id,
                     label: d.full_name,
