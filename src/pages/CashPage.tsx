@@ -419,10 +419,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   //  - TEKUĆI/otvoreni period → trenutna cena vozača (važi i popust)
   // Vozilo služi samo kao default koji se prepiše na vozača pri dodeli.
   const driverAssignments = driverId ? getDriverAssignments(driverId) : [];
+  // Vozilo na kom vozač trenutno radi (operativno preko vdLinks, pa fallback na vehicle_id)
+  const driverVehId = vdLinks.find(l => l.driver_id === driverId)?.vehicle_id ?? driver?.vehicle_id;
+  const driverVehRate = vehicles.find(v => v.id === driverVehId)?.daily_rate ?? 0;
+  // Efektivna dnevna renta vozača: njegova cena (popust) ako je upisana, inače sa vozila
+  const effRate = (driver?.daily_rate ?? 0) || driverVehRate;
   const rateForDay = (dateStr: string): number => {
     const a = driverAssignments.find(x => x.date_from <= dateStr && (!x.date_to || dateStr < x.date_to));
     if (a && a.date_to && (a.daily_rate ?? 0) > 0) return a.daily_rate;   // zatvoren period → snapshot
-    return (driver?.daily_rate ?? 0) || (a?.daily_rate ?? 0);
+    // Tekući/otvoreni period: vozačeva cena (popust) ako postoji, inače renta sa vozila
+    return (driver?.daily_rate ?? 0) || driverVehRate || (a?.daily_rate ?? 0);
   };
   const dayWeight = (d: string): number => {
     const dow = new Date(d+"T00:00:00").getDay();
@@ -561,7 +567,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
   const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
-  const maxRentaDays = driver && driver.daily_rate > 0 ? Math.max(0, Math.floor(availableForRenta / driver.daily_rate)) : 0;
+  const maxRentaDays = driver && effRate > 0 ? Math.max(0, Math.floor(availableForRenta / effRate)) : 0;
 
   // Popuni N dana rente. Sidro:
   //  - Ako je korisnik izabrao "Od" (rentaFrom nije danas), koristi to.
@@ -615,7 +621,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   };
 
   // Koliko dana rente/sedmica clanarine pokriva pozitivni saldo
-  const saldioDana    = driver && saldo > 0 ? Math.floor(saldo / driver.daily_rate) : 0;
+  const saldioDana    = driver && saldo > 0 && effRate > 0 ? Math.floor(saldo / effRate) : 0;
   const saldioSedmica = driver && saldo > 0 && weeklyAmt > 0 ? Math.floor(saldo / weeklyAmt) : 0;
 
   // Resetuj sva polja unosa (bez driverId) — poziva se pri promeni vozača
@@ -904,7 +910,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
                 {/* Info */}
                 <div className="rounded-lg bg-muted/30 px-3 py-2 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Dnevna renta:</span><strong>{fmt(driver.daily_rate)}</strong></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Dnevna renta:</span><strong>{fmt(effRate)}</strong></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Članarina:</span><strong>{fmt(driver.driver_type==="renta"?driver.weekly_membership:driver.weekly_membership_own)}/sed.</strong></div>
                   {lastPaidDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednja renta:</span><strong>{fmtDate(lastPaidDate)}</strong></div>}
                   {lastClanDate && <div className="flex justify-between"><span className="text-muted-foreground">Posljednja članarina:</span><strong>{fmtDate(lastClanDate)}</strong></div>}
@@ -928,7 +934,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                 {/* RENTA */}
                 <CheckRow label="Renta" enabled={rentaEnabled} onToggle={() => setRentaEnabled(!rentaEnabled)}
                   amount={rentaTotal}
-                  sublabel={workDays > 0 ? (rentaMultiRate ? `${workDays} ${workDays===1?"dan":"dana"} · više cena (promena vozila)` : `${workDays} ${workDays===1?"dan":"dana"} × ${fmt(rentaRates[0] ?? driver.daily_rate)}`) : undefined}>
+                  sublabel={workDays > 0 ? (rentaMultiRate ? `${workDays} ${workDays===1?"dan":"dana"} · više cena (promena vozila)` : `${workDays} ${workDays===1?"dan":"dana"} × ${fmt(rentaRates[0] ?? effRate)}`) : undefined}>
                   {rentaMultiRate && (
                     <p className="text-[11px] text-amber-600">⚠ Period prelazi preko promene vozila — renta se računa po ceni koja važi za svaki dan.</p>
                   )}

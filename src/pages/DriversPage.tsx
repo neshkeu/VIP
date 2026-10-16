@@ -286,6 +286,8 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
               }
               const roleCfg  = ROLE_CFG[d.role];
               const RoleIcon = roleCfg.icon;
+              // Efektivna dnevna renta: vozačeva cena (popust) ako je upisana, inače sa vozila
+              const effRate  = (d.daily_rate || 0) || (vehiclesForDriver[0]?.daily_rate || 0);
               return (
                 <motion.tr key={d.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.015, 0.4) }}
                   className="border-b hover:bg-muted/30 transition-colors">
@@ -329,7 +331,7 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
                       <span className="text-xs text-muted-foreground italic">—</span>
                     ) : d.driver_type === "renta" ? (
                       <div className="text-xs space-y-0.5">
-                        <p>{fmt(d.daily_rate)}<span className="text-muted-foreground">/dan</span></p>
+                        <p>{fmt(effRate)}<span className="text-muted-foreground">/dan</span></p>
                         <p>{fmt(d.weekly_membership)}<span className="text-muted-foreground">/sed.</span></p>
                       </div>
                     ) : (
