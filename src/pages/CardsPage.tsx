@@ -122,14 +122,16 @@ const CardsPage = () => {
     { value: "aplikacija", label: "Aplikacija" },
   ];
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  type TxRow = { gross: string; provizija: string; date: string };
+  const newRow = (date = todayStr): TxRow => ({ gross: "", provizija: "", date });
+
   const [addOpen, setAddOpen]     = useState(false);
   const [driverId, setDriverId]   = useState("none");
   const [vehicleId, setVehicleId] = useState("none");
   const [cardType, setCardType]   = useState("");
   const [paymentMethod, setPaymentMethod] = useState("kartica");
-  const [gross, setGross]         = useState("");
-  const [provizija, setProvizija] = useState("");
-  const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
+  const [rows, setRows]           = useState<TxRow[]>([newRow()]);
   const [notes, setNotes]         = useState("");
   const [saving, setSaving]       = useState(false);
 
@@ -143,14 +145,14 @@ const CardsPage = () => {
 
   const reset = () => {
     setDriverId("none"); setVehicleId("none"); setCardType(""); setPaymentMethod("kartica");
-    setGross(""); setProvizija(""); setNotes("");
-    setDate(new Date().toISOString().split("T")[0]);
+    setRows([newRow()]); setNotes("");
   };
 
-  const grossNum     = Number(gross)     || 0;
-  const provizijaNum = Number(provizija) || 0;
-  const netNum       = grossNum - provizijaNum;
-  const pctCalc      = grossNum > 0 ? (provizijaNum / grossNum) * 100 : 0;
+  // Validni redovi (imaju iznos i proviziju) + zbirni pregled
+  const validRows = rows.filter(r => r.gross !== "" && r.provizija !== "");
+  const sumGross = validRows.reduce((s, r) => s + (Number(r.gross) || 0), 0);
+  const sumProv  = validRows.reduce((s, r) => s + (Number(r.provizija) || 0), 0);
+  const sumNet   = sumGross - sumProv;
 
   const unpaid = reports.filter(r => !r.paid_out);
   const paid   = reports.filter(r => r.paid_out);
@@ -165,7 +167,7 @@ const CardsPage = () => {
         </div>
         <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) reset(); }}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" />Novi izvod</Button></DialogTrigger>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Unesi kartica izvod</DialogTitle>
               <DialogDescription>Unesi iznos transakcije i proviziju — za uplatu se računa automatski</DialogDescription>
@@ -190,16 +192,7 @@ const CardsPage = () => {
                     })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5">
-                  <Label>Iznos transakcije (RSD)</Label>
-                  <Input type="number" placeholder="3000" value={gross} onChange={e => setGross(e.target.value)} />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Provizija (RSD)</Label>
-                  <Input type="number" step="0.01" placeholder="45" value={provizija} onChange={e => setProvizija(e.target.value)} />
-                </div>
-              </div>
+              {/* Način plaćanja + tip kartice — važe za ceo izvod */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="grid gap-1.5">
                   <Label>Način plaćanja</Label>
@@ -215,41 +208,97 @@ const CardsPage = () => {
                   <Input placeholder="Visa, Master..." value={cardType} onChange={e => setCardType(e.target.value)} />
                 </div>
               </div>
-              {grossNum > 0 && (
+
+              {/* Transakcije — više redova (jedan izvod može pokriti više dana) */}
+              <div className="grid gap-1.5">
+                <Label>Transakcije sa izvoda</Label>
+                <div className="space-y-2">
+                  {rows.map((r, i) => {
+                    const g = Number(r.gross) || 0;
+                    const p = Number(r.provizija) || 0;
+                    return (
+                      <div key={i} className="rounded-lg border p-2.5 space-y-2 bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Transakcija {i + 1}</span>
+                          {rows.length > 1 && (
+                            <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive hover:text-destructive" title="Ukloni"
+                              onClick={() => setRows(rows.filter((_, idx) => idx !== i))}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="grid gap-1">
+                            <Label className="text-xs">Iznos (RSD)</Label>
+                            <Input type="number" placeholder="3000" value={r.gross}
+                              onChange={e => setRows(rows.map((x, idx) => idx === i ? { ...x, gross: e.target.value } : x))} />
+                          </div>
+                          <div className="grid gap-1">
+                            <Label className="text-xs">Provizija (RSD)</Label>
+                            <Input type="number" step="0.01" placeholder="45" value={r.provizija}
+                              onChange={e => setRows(rows.map((x, idx) => idx === i ? { ...x, provizija: e.target.value } : x))} />
+                          </div>
+                          <div className="grid gap-1">
+                            <Label className="text-xs">Datum</Label>
+                            <Input type="date" value={r.date}
+                              onChange={e => setRows(rows.map((x, idx) => idx === i ? { ...x, date: e.target.value } : x))} />
+                          </div>
+                        </div>
+                        {g > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Za uplatu: <span className="font-semibold text-green-600">{fmt(g - p)}</span>
+                            <span className="ml-1">({((p / g) * 100).toFixed(2)}%)</span>
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <Button type="button" variant="outline" size="sm" className="mt-1"
+                  onClick={() => setRows([...rows, newRow(rows[rows.length - 1]?.date ?? todayStr)])}>
+                  <Plus className="h-4 w-4 mr-1" />Dodaj transakciju
+                </Button>
+              </div>
+
+              {validRows.length > 0 && (
                 <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-3 gap-2 text-center text-sm">
-                  <div><p className="text-xs text-muted-foreground">Iznos transakcije</p><p className="font-semibold">{fmt(grossNum)}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Provizija ({pctCalc.toFixed(2)}%)</p><p className="font-semibold text-red-500">−{fmt(provizijaNum)}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Za uplatu</p><p className="font-bold text-green-600">{fmt(netNum)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Ukupno ({validRows.length})</p><p className="font-semibold">{fmt(sumGross)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Provizija</p><p className="font-semibold text-red-500">−{fmt(sumProv)}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Za uplatu</p><p className="font-bold text-green-600">{fmt(sumNet)}</p></div>
                 </div>
               )}
-              <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
               <div className="grid gap-1.5"><Label>Napomena</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>
               <Button
-                disabled={driverId === "none" || !gross || !provizija || saving}
+                disabled={driverId === "none" || validRows.length === 0 || saving}
                 onClick={async () => {
                   setSaving(true);
                   try {
                     const paymentLabel = PAYMENT_METHODS.find(m => m.value === paymentMethod)?.label ?? paymentMethod;
                     const combinedType = cardType ? `${paymentLabel} · ${cardType}` : paymentLabel;
-                    await addReport({
-                      driver_id: driverId,
-                      vehicle_id: vehicleId === "none" ? null : vehicleId,
-                      card_type: combinedType,
-                      gross_amount: grossNum,
-                      deduction_pct: Number(pctCalc.toFixed(2)),
-                      deduction_amount: provizijaNum,
-                      net_amount: netNum,
-                      date,
-                      period_from: date,
-                      period_to: date,
-                      paid_out: false,
-                      received_by: "",
-                      notes,
-                    });
-                    toast.success("Kartica izvod unesen");
+                    for (const r of validRows) {
+                      const g = Number(r.gross) || 0;
+                      const p = Number(r.provizija) || 0;
+                      const pct = g > 0 ? Number(((p / g) * 100).toFixed(2)) : 0;
+                      await addReport({
+                        driver_id: driverId,
+                        vehicle_id: vehicleId === "none" ? null : vehicleId,
+                        card_type: combinedType,
+                        gross_amount: g,
+                        deduction_pct: pct,
+                        deduction_amount: p,
+                        net_amount: g - p,
+                        date: r.date,
+                        period_from: r.date,
+                        period_to: r.date,
+                        paid_out: false,
+                        received_by: "",
+                        notes,
+                      });
+                    }
+                    toast.success(validRows.length > 1 ? `${validRows.length} transakcije unete` : "Kartica izvod unesen");
                     setAddOpen(false);
                     reset();
                   } catch (e) {
