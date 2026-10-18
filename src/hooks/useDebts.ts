@@ -62,6 +62,14 @@ export function useDebts() {
       await supabase.from("driver_debts").update({ paid_amount: newPaid, status: newStatus }).eq("id", debt.id);
       setDebts(prev => prev.map(d => d.id === debt.id ? { ...d, paid_amount: newPaid, status: newStatus } : d));
     }
+    // Direktna uplata duga (van obračuna) — upiši i u kasu da bude vidljiva kroz Kasu.
+    // (Uplata kroz obračun ovo radi posebno, pa nema dupliranja.)
+    await supabase.from("cash_entries").insert({
+      type: "dugovanje", direction: "in", driver_id: payment.driver_id,
+      amount: payment.amount, date: payment.date,
+      description: `Uplata dugovanja${debt ? ": " + (debt.description || debt.type) : ""}`,
+      received_by: payment.received_by || "", notes: payment.notes || "",
+    });
     return data;
   }
 
