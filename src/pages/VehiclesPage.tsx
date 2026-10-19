@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
+import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Vehicle, DocStatus } from "@/hooks/useVehicles";
 import { Input } from "@/components/ui/input";
@@ -170,16 +171,20 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
 }
 
 function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | null; open: boolean; onClose: () => void }) {
-  const { drivers, updateDriver } = useApp();
-  const { getByVehicle, closeAssignment } = useAssignments();
-  const { forVehicle, addLink, removeLink } = useVehicleDrivers();
+  const { drivers, updateDriver, displayName } = useApp();
+  const { getByVehicle, getByDriver, closeAssignment, assignVehicle } = useAssignments();
+  const { forVehicle, forDriver: forDriverLinks, addLink, removeLink } = useVehicleDrivers();
+  const { addLog, forVehicle: logsForVehicle } = useVehicleDriverLog();
   useCurrentUser();
+  const today = new Date().toISOString().split("T")[0];
 
   const [saving, setSaving]           = useState(false);
   const [editId, setEditId]           = useState<string | null>(null);
   const [editDateTo, setEditDateTo]   = useState("");
   const [addDrvId, setAddDrvId]       = useState("none");
   const [addRole, setAddRole]         = useState<"operativni" | "papiroloski">("operativni");
+  // Potvrda sklanjanja vozača (samo sa ovog vozila ILI potpuna deaktivacija)
+  const [removeTarget, setRemoveTarget] = useState<{ linkId: string | null; driver: typeof drivers[number]; role: string } | null>(null);
 
   if (!vehicle) return null;
 
@@ -201,20 +206,59 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
 
   const addDriverToVehicle = async () => {
     if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
+    const drv = drivers.find(d => d.id === addDrvId);
     setSaving(true);
     try {
       await addLink(vehicle.id, addDrvId, addRole);
+      if (addRole === "operativni") {
+        // Operativni vozač stvarno vozi auto → otvori period dodele (snapshot rente) i sinhronizuj staro polje.
+        const snapRate = (drv?.daily_rate ?? 0) > 0 ? drv!.daily_rate : (vehicle.daily_rate || 0);
+        await assignVehicle(addDrvId, vehicle.id, today, {
+          daily_rate: snapRate,
+          weekly_membership: drv?.weekly_membership ?? 0,
+          weekly_membership_own: drv?.weekly_membership_own ?? 0,
+          pos_monthly_fee: drv?.pos_monthly_fee ?? 0,
+          komunalni_monthly: drv?.komunalni_monthly ?? 0,
+          doprinosi_monthly: drv?.doprinosi_monthly ?? 0,
+        }, "Dodeljeno na vozilu");
+        await updateDriver(addDrvId, { vehicle_id: vehicle.id });
+      }
+      await addLog({ vehicle_id: vehicle.id, driver_id: addDrvId, role: addRole, action: "added", date: today, performed_by: displayName, note: null });
       toast.success("Vozač dodat na vozilo");
       setAddDrvId("none");
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
     finally { setSaving(false); }
   };
-  const removeDriverFromVehicle = async (row: { linkId: string | null; driver: typeof drivers[number] }) => {
+
+  // Skloni vozača SAMO sa ovog vozila (ostaje aktivan — npr. prelazi na drugo vozilo)
+  const removeFromThisVehicle = async (row: { linkId: string | null; driver: typeof drivers[number]; role: string }) => {
     setSaving(true);
     try {
       if (row.linkId) await removeLink(row.linkId);
-      else await updateDriver(row.driver.id, { vehicle_id: null });  // legacy veza preko vehicle_id
+      if (row.driver.vehicle_id === vehicle.id) await updateDriver(row.driver.id, { vehicle_id: null });
+      // Zatvori otvoreni period dodele ovog vozača na ovom vozilu
+      const openA = getByDriver(row.driver.id).find(a => a.vehicle_id === vehicle.id && !a.date_to);
+      if (openA) await closeAssignment(openA.id, today);
+      await addLog({ vehicle_id: vehicle.id, driver_id: row.driver.id, role: row.role, action: "removed", date: today, performed_by: displayName, note: null });
       toast.success("Vozač uklonjen sa vozila");
+      setRemoveTarget(null);
+    } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+    finally { setSaving(false); }
+  };
+
+  // Vozač više ne radi → skini sa SVIH vozila, zatvori sve periode, status neaktivan.
+  // Dugovi ostaju vidljivi dok se ne izmire.
+  const deactivateDriver = async (row: { driver: typeof drivers[number] }) => {
+    setSaving(true);
+    try {
+      // skini sve veze vozač–vozilo
+      for (const l of forDriverLinks(row.driver.id)) await removeLink(l.id);
+      // zatvori sve otvorene periode
+      for (const a of getByDriver(row.driver.id).filter(a => !a.date_to)) await closeAssignment(a.id, today);
+      await updateDriver(row.driver.id, { status: "inactive", vehicle_id: null });
+      await addLog({ vehicle_id: vehicle.id, driver_id: row.driver.id, role: row.driver.role, action: "deactivated", date: today, performed_by: displayName, note: "Vozač više ne radi" });
+      toast.success("Vozač deaktiviran i sklonjen sa svih vozila");
+      setRemoveTarget(null);
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
     finally { setSaving(false); }
   };
@@ -233,7 +277,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{vehicle.brand} {vehicle.model} — Istorija vozača</DialogTitle>
           <DialogDescription>{vehicle.taxi_license_number} · {vehicle.license_plate}</DialogDescription>
@@ -253,7 +297,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
                     <span className="text-sm font-medium">{row.driver.full_name}</span>
                     <Badge variant="outline" className="text-[10px]">{row.role === "operativni" ? "operativni" : "papirološki"}</Badge>
                   </div>
-                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={saving} title="Ukloni sa vozila" onClick={() => removeDriverFromVehicle(row)}>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={saving} title="Ukloni sa vozila" onClick={() => setRemoveTarget(row)}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -334,10 +378,69 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
           </>
         )}
 
+        {/* TRAG PROMENA — ko/kada/koja uloga (dodat/sklonjen/deaktiviran) */}
+        {logsForVehicle(vehicle.id).length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              <p className="text-xs font-semibold text-muted-foreground uppercase">Trag promena</p>
+              {logsForVehicle(vehicle.id).map(l => {
+                const drv = drivers.find(d => d.id === l.driver_id);
+                const actLabel = l.action === "added" ? "dodat" : l.action === "removed" ? "sklonjen" : "deaktiviran";
+                const actColor = l.action === "added" ? "text-green-600" : l.action === "removed" ? "text-orange-600" : "text-red-600";
+                return (
+                  <div key={l.id} className="flex items-center justify-between rounded-md bg-muted/20 px-3 py-1.5 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`font-medium ${actColor}`}>{actLabel}</span>
+                      <span className="font-medium truncate">{drv?.full_name ?? "—"}</span>
+                      {l.role && <Badge variant="outline" className="text-[10px]">{l.role === "operativni" ? "operativni" : "papirološki"}</Badge>}
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground flex-shrink-0">
+                      <span>{l.date}</span>
+                      {l.performed_by && <span>· {l.performed_by}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Zatvori</Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Potvrda sklanjanja vozača — izbor: samo sa ovog vozila ILI potpuna deaktivacija */}
+      <Dialog open={!!removeTarget} onOpenChange={v => { if (!v) setRemoveTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Ukloni vozača</DialogTitle>
+            <DialogDescription>
+              {removeTarget?.driver.full_name} — {vehicle.brand} {vehicle.model} ({vehicle.taxi_license_number})
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <button
+              className="w-full text-left rounded-lg border p-3 hover:bg-muted/40 transition-colors"
+              disabled={saving}
+              onClick={() => removeTarget && removeFromThisVehicle(removeTarget)}>
+              <p className="text-sm font-medium">Skloni samo sa ovog vozila</p>
+              <p className="text-xs text-muted-foreground">Vozač ostaje aktivan (npr. prelazi na drugo vozilo). Period na ovom vozilu se zatvara.</p>
+            </button>
+            <button
+              className="w-full text-left rounded-lg border border-red-200 bg-red-50/40 p-3 hover:bg-red-50 transition-colors"
+              disabled={saving}
+              onClick={() => removeTarget && deactivateDriver(removeTarget)}>
+              <p className="text-sm font-medium text-red-700">Vozač više ne radi — deaktiviraj</p>
+              <p className="text-xs text-muted-foreground">Skida se sa svih vozila, svi periodi se zatvaraju, status → neaktivan. Dugovi ostaju vidljivi dok se ne izmire.</p>
+            </button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)} disabled={saving}>Otkaži</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
