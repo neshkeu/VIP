@@ -19,6 +19,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/DocumentStatusBadge";
 import { useAssignments, type VehicleAssignment, type AssignmentFees } from "@/hooks/useAssignments";
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
+import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -537,7 +539,9 @@ const DriversPage = () => {
   const { drivers, loading, addDriver, updateDriver, deleteDriver } = useDrivers();
   const { vehicles } = useVehicles();
   const { assignVehicle, getByDriver, updateAssignment, deleteAssignment } = useAssignments();
-  const { links: vdLinks } = useVehicleDrivers();
+  const { links: vdLinks, addLink, removeLink, forDriver: forDriverLinks } = useVehicleDrivers();
+  const { addLog } = useVehicleDriverLog();
+  const { displayName } = useCurrentUser();
   const { debts } = useDebts();
   const { balanceFor } = useDeposits();
   const [search, setSearch]         = useState("");
@@ -648,6 +652,7 @@ const DriversPage = () => {
               weekly_membership_own: changeVehicleDriver.weekly_membership_own, pos_monthly_fee: changeVehicleDriver.pos_monthly_fee,
               komunalni_monthly: changeVehicleDriver.komunalni_monthly, doprinosi_monthly: changeVehicleDriver.doprinosi_monthly,
             };
+            const oldVehicleId = changeVehicleDriver.vehicle_id;
             await assignVehicle(changeVehicleDriver.id, vehicleId, dateFrom, fees, notes, prevFees);
             await updateDriver(changeVehicleDriver.id, {
               vehicle_id: vehicleId,
@@ -655,6 +660,14 @@ const DriversPage = () => {
               weekly_membership_own: fees.weekly_membership_own, pos_monthly_fee: fees.pos_monthly_fee,
               komunalni_monthly: fees.komunalni_monthly, doprinosi_monthly: fees.doprinosi_monthly,
             });
+            // Sinhronizuj vezu vozač–vozilo (operativni) i ostavi trag
+            const oldOperLink = forDriverLinks(changeVehicleDriver.id).find(l => l.role === "operativni" && l.vehicle_id !== vehicleId);
+            if (oldOperLink) {
+              await removeLink(oldOperLink.id);
+              await addLog({ vehicle_id: oldOperLink.vehicle_id, driver_id: changeVehicleDriver.id, role: "operativni", action: "removed", date: dateFrom, performed_by: displayName, note: "Prelazak na drugo vozilo" });
+            }
+            await addLink(vehicleId, changeVehicleDriver.id, "operativni");
+            await addLog({ vehicle_id: vehicleId, driver_id: changeVehicleDriver.id, role: "operativni", action: "added", date: dateFrom, performed_by: displayName, note: oldVehicleId ? "Prelazak sa drugog vozila" : null });
             toast.success("Vozilo promenjeno — stari period ostaje po staroj ceni");
           }}
           onClose={() => setChangeVehicleDriver(null)}
