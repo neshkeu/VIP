@@ -391,7 +391,7 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
 }
 
 // ─── PROMENI VOZILO ───────────────────────────────────────────
-function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAssignment, onClose }: {
+function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAssignment, onDeleteAssignment, onClose }: {
   driver: Driver;
   vehicles: Vehicle[];
   history: VehicleAssignment[];
