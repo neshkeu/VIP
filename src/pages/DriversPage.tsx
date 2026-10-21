@@ -249,9 +249,8 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   );
 }
 
-function DriversTable({ list, roleContext, vehicles, vdLinks, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
-  list: Driver[];
-  roleContext: "operativni" | "papiroloski" | "all";
+function DriversTable({ rows, vehicles, vdLinks, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
+  rows: { driver: Driver; role: "operativni" | "papiroloski" }[];
   vehicles: Vehicle[];
   vdLinks: { driver_id: string; vehicle_id: string; role: string }[];
   onEdit: (d: Driver) => void;
@@ -278,32 +277,24 @@ function DriversTable({ list, roleContext, vehicles, vdLinks, onEdit, onChangeVe
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.length === 0 ? (
+            {rows.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
-            ) : list.map((d, i) => {
-              // Veze vozač–vozilo za ovog vozača
+            ) : rows.map(({ driver: d, role }, i) => {
+              // Svaki red = jedna uloga vozača. Prikaži SAMO vozila za tu ulogu.
               const myLinks = vdLinks.filter(l => l.driver_id === d.id);
-              // Vozila koja se prikazuju zavise od taba (uloge). U "Svi" prikaži sva.
-              const relevantLinks = roleContext === "all" ? myLinks : myLinks.filter(l => l.role === roleContext);
-              let vehiclesForDriver = relevantLinks
+              let vehiclesForDriver = myLinks.filter(l => l.role === role)
                 .map(l => vehicles.find(v => v.id === l.vehicle_id)).filter(Boolean) as Vehicle[];
               // Fallback na staro vehicle_id (kad nema veza u join tabeli)
-              if (vehiclesForDriver.length === 0 && myLinks.length === 0 && d.vehicle_id
-                  && (roleContext === "all" || d.role === roleContext)) {
+              if (vehiclesForDriver.length === 0 && myLinks.length === 0 && d.vehicle_id && d.role === role) {
                 const v = vehicles.find(v => v.id === d.vehicle_id); if (v) vehiclesForDriver = [v];
               }
-              // Uloge ovog vozača (za badge u "Svi")
-              const driverRoles = new Set(myLinks.map(l => l.role));
-              if (driverRoles.size === 0) driverRoles.add(d.role);
-              // Uloga u ovom redu: u tab-u uloge → ta uloga; u "Svi" → sve njegove uloge
-              const rowRoles = roleContext === "all" ? Array.from(driverRoles) : [roleContext];
-              // Da li se u ovom redu vozač ponaša kao papirološki (bez naknada)
-              const isPaperRow = roleContext === "papiroloski"
-                || (roleContext === "all" && !driverRoles.has("operativni"));
+              const rowRoles = [role];
+              // Papirološki red nema naknade (rente)
+              const isPaperRow = role === "papiroloski";
               // Efektivna dnevna renta: vozačeva cena (popust) ako je upisana, inače sa vozila
               const effRate  = (d.daily_rate || 0) || (vehiclesForDriver[0]?.daily_rate || 0);
               return (
-                <motion.tr key={d.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.015, 0.4) }}
+                <motion.tr key={`${d.id}-${role}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.015, 0.4) }}
                   className="border-b hover:bg-muted/30 transition-colors">
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -619,6 +610,12 @@ const DriversPage = () => {
   };
   const operativni = filtered.filter(d => rolesOf(d).has("operativni"));
   const papiroloski = filtered.filter(d => rolesOf(d).has("papiroloski"));
+  // Redovi tabele: jedan red po ulozi (dosledno u svim tabovima).
+  const operativniRows  = operativni.map(d => ({ driver: d, role: "operativni" as const }));
+  const papiroloskiRows = papiroloski.map(d => ({ driver: d, role: "papiroloski" as const }));
+  const allRows = filtered.flatMap(d =>
+    Array.from(rolesOf(d)).sort().map(r => ({ driver: d, role: r as "operativni" | "papiroloski" }))
+  );
 
   return (
     <div className="space-y-6">
@@ -742,13 +739,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} roleContext="operativni" vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable rows={operativniRows} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} roleContext="papiroloski" vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable rows={papiroloskiRows} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} roleContext="all" vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable rows={allRows} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
         </Tabs>
       )}
