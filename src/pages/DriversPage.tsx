@@ -249,8 +249,9 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   );
 }
 
-function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
+function DriversTable({ list, roleContext, vehicles, vdLinks, onEdit, onChangeVehicle, onDelete, debtByDriver, depositByDriver }: {
   list: Driver[];
+  roleContext: "operativni" | "papiroloski" | "all";
   vehicles: Vehicle[];
   vdLinks: { driver_id: string; vehicle_id: string; role: string }[];
   onEdit: (d: Driver) => void;
@@ -280,14 +281,25 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
             {list.length === 0 ? (
               <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozača</TableCell></TableRow>
             ) : list.map((d, i) => {
-              // Vozila iz nove veze vozač–vozilo (fallback na legacy vehicle_id)
-              let vehiclesForDriver = vdLinks.filter(l => l.driver_id === d.id)
+              // Veze vozač–vozilo za ovog vozača
+              const myLinks = vdLinks.filter(l => l.driver_id === d.id);
+              // Vozila koja se prikazuju zavise od taba (uloge). U "Svi" prikaži sva.
+              const relevantLinks = roleContext === "all" ? myLinks : myLinks.filter(l => l.role === roleContext);
+              let vehiclesForDriver = relevantLinks
                 .map(l => vehicles.find(v => v.id === l.vehicle_id)).filter(Boolean) as Vehicle[];
-              if (vehiclesForDriver.length === 0 && d.vehicle_id) {
+              // Fallback na staro vehicle_id (kad nema veza u join tabeli)
+              if (vehiclesForDriver.length === 0 && myLinks.length === 0 && d.vehicle_id
+                  && (roleContext === "all" || d.role === roleContext)) {
                 const v = vehicles.find(v => v.id === d.vehicle_id); if (v) vehiclesForDriver = [v];
               }
-              const roleCfg  = ROLE_CFG[d.role];
-              const RoleIcon = roleCfg.icon;
+              // Uloge ovog vozača (za badge u "Svi")
+              const driverRoles = new Set(myLinks.map(l => l.role));
+              if (driverRoles.size === 0) driverRoles.add(d.role);
+              // Uloga u ovom redu: u tab-u uloge → ta uloga; u "Svi" → sve njegove uloge
+              const rowRoles = roleContext === "all" ? Array.from(driverRoles) : [roleContext];
+              // Da li se u ovom redu vozač ponaša kao papirološki (bez naknada)
+              const isPaperRow = roleContext === "papiroloski"
+                || (roleContext === "all" && !driverRoles.has("operativni"));
               // Efektivna dnevna renta: vozačeva cena (popust) ako je upisana, inače sa vozila
               const effRate  = (d.daily_rate || 0) || (vehiclesForDriver[0]?.daily_rate || 0);
               return (
@@ -305,9 +317,17 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-xs gap-1 ${roleCfg.color}`}>
-                      <RoleIcon className="h-3 w-3" />{roleCfg.label}
-                    </Badge>
+                    <div className="flex flex-col gap-1">
+                      {rowRoles.map(r => {
+                        const cfg = ROLE_CFG[r as keyof typeof ROLE_CFG];
+                        const Icon = cfg.icon;
+                        return (
+                          <Badge key={r} variant="outline" className={`text-xs gap-1 ${cfg.color} w-fit`}>
+                            <Icon className="h-3 w-3" />{cfg.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {vehiclesForDriver.length > 0 ? (
@@ -329,7 +349,7 @@ function DriversTable({ list, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
                     ) : <span className="text-muted-foreground text-sm">—</span>}
                   </TableCell>
                   <TableCell>
-                    {d.role === "papiroloski" ? (
+                    {isPaperRow ? (
                       <span className="text-xs text-muted-foreground italic">—</span>
                     ) : d.driver_type === "renta" ? (
                       <div className="text-xs space-y-0.5">
@@ -589,8 +609,16 @@ const DriversPage = () => {
     return haystack.includes(q);
   });
 
-  const operativni = filtered.filter(d => d.role === "operativni");
-  const papiroloski = filtered.filter(d => d.role === "papiroloski");
+  // Uloge vozača po STVARNIM vezama vozilo–vozač (jedan vozač može biti
+  // operativni na jednom i papirološki na drugom vozilu). Fallback na staru d.role.
+  const rolesOf = (d: Driver): Set<string> => {
+    const links = vdLinks.filter(l => l.driver_id === d.id);
+    const roles = new Set(links.map(l => l.role));
+    if (roles.size === 0) roles.add(d.role);
+    return roles;
+  };
+  const operativni = filtered.filter(d => rolesOf(d).has("operativni"));
+  const papiroloski = filtered.filter(d => rolesOf(d).has("papiroloski"));
 
   return (
     <div className="space-y-6">
@@ -714,13 +742,13 @@ const DriversPage = () => {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="operativni" className="mt-4">
-            <DriversTable list={operativni} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={operativni} roleContext="operativni" vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="papiroloski" className="mt-4">
-            <DriversTable list={papiroloski} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={papiroloski} roleContext="papiroloski" vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
           <TabsContent value="all" className="mt-4">
-            <DriversTable list={filtered} vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
+            <DriversTable list={filtered} roleContext="all" vehicles={vehicles} vdLinks={vdLinks} onEdit={setEditDriver} onChangeVehicle={setChangeVehicleDriver} onDelete={setDeleteTarget} debtByDriver={debtByDriver} depositByDriver={balanceFor} />
           </TabsContent>
         </Tabs>
       )}
