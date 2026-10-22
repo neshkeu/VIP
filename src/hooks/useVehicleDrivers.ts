@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, createElement, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 export type VDRole = "operativni" | "papiroloski";
@@ -11,7 +11,7 @@ export interface VehicleDriver {
   created_at: string;
 }
 
-export function useVehicleDrivers() {
+function useVehicleDriversState() {
   const [links, setLinks] = useState<VehicleDriver[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -46,4 +46,19 @@ export function useVehicleDrivers() {
   const forDriver  = (driverId: string) => links.filter(l => l.driver_id === driverId);
 
   return { links, loading, addLink, removeLink, forVehicle, forDriver, refetch: fetchAll };
+}
+
+type VDApi = ReturnType<typeof useVehicleDriversState>;
+const Ctx = createContext<VDApi | null>(null);
+
+// Jedno deljeno stanje za celu aplikaciju → izmena u modalu je odmah vidljiva u listi.
+export function VehicleDriversProvider({ children }: { children: ReactNode }) {
+  const value = useVehicleDriversState();
+  return createElement(Ctx.Provider, { value }, children);
+}
+
+export function useVehicleDrivers(): VDApi {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useVehicleDrivers mora biti unutar VehicleDriversProvider");
+  return ctx;
 }

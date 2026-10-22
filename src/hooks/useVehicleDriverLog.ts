@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, createElement, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 export type VDLogAction = "added" | "removed" | "deactivated";
@@ -15,7 +15,7 @@ export interface VehicleDriverLog {
   created_at: string;
 }
 
-export function useVehicleDriverLog() {
+function useVehicleDriverLogState() {
   const [logs, setLogs] = useState<VehicleDriverLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,4 +51,19 @@ export function useVehicleDriverLog() {
   const forDriver  = (driverId: string)  => logs.filter(l => l.driver_id === driverId);
 
   return { logs, loading, addLog, forVehicle, forDriver, refetch: fetchAll };
+}
+
+type LogApi = ReturnType<typeof useVehicleDriverLogState>;
+const Ctx = createContext<LogApi | null>(null);
+
+// Jedno deljeno stanje → novi trag je odmah vidljiv bez refresha.
+export function VehicleDriverLogProvider({ children }: { children: ReactNode }) {
+  const value = useVehicleDriverLogState();
+  return createElement(Ctx.Provider, { value }, children);
+}
+
+export function useVehicleDriverLog(): LogApi {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useVehicleDriverLog mora biti unutar VehicleDriverLogProvider");
+  return ctx;
 }

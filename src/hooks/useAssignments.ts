@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, createElement, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface VehicleAssignment {
@@ -27,7 +27,7 @@ export interface AssignmentFees {
   doprinosi_monthly: number;
 }
 
-export function useAssignments() {
+function useAssignmentsState() {
   const [assignments, setAssignments] = useState<VehicleAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -113,4 +113,19 @@ export function useAssignments() {
   }
 
   return { assignments, loading, assignVehicle, closeAssignment, updateAssignment, deleteAssignment, getByVehicle, getActiveDriver, getByDriver, refetch: fetchAll };
+}
+
+type AssignApi = ReturnType<typeof useAssignmentsState>;
+const Ctx = createContext<AssignApi | null>(null);
+
+// Jedno deljeno stanje za celu aplikaciju → izmena je odmah vidljiva svuda.
+export function AssignmentsProvider({ children }: { children: ReactNode }) {
+  const value = useAssignmentsState();
+  return createElement(Ctx.Provider, { value }, children);
+}
+
+export function useAssignments(): AssignApi {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useAssignments mora biti unutar AssignmentsProvider");
+  return ctx;
 }
