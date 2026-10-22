@@ -464,15 +464,28 @@ const VehiclesPage = () => {
   const [historyVehicle, setHistoryVehicle] = useState<Vehicle | null>(null);
   const [detailVehicle, setDetailVehicle]   = useState<Vehicle | null>(null);
 
-  const filtered = vehicles.filter(v => {
-    const q = search.toLowerCase();
-    const matchSearch = [v.brand, v.model, v.taxi_license_number, v.license_plate, v.owner_name, v.udruzenje, v.vin]
-      .filter(Boolean).join(" ").toLowerCase().includes(q);
-    return matchSearch && (statusFilter === "all" || v.status === statusFilter);
-  });
-
   const statusColors = { active: "default", maintenance: "secondary", inactive: "outline" } as const;
   const statusLabels = { active: "Aktivno", maintenance: "Servis", inactive: "Neaktivno" };
+
+  const filtered = vehicles.filter(v => {
+    const q = search.trim().toLowerCase();
+    if (q) {
+      // Vozači vezani za ovo vozilo (nova veza + staro polje) — da se traži i po imenu/broju vozača
+      const vehDrivers = drivers.filter(d =>
+        vdLinks.some(l => l.vehicle_id === v.id && l.driver_id === d.id) || d.vehicle_id === v.id
+      );
+      const driverBits = vehDrivers.flatMap(d => [d.full_name, d.phone, d.komunalni_broj, d.license_number]);
+      const haystack = [
+        v.brand, v.model, v.year, v.license_plate, v.taxi_license_number, v.vin,
+        v.pos_terminal_id, v.owner_name, v.owner_phone, v.udruzenje,
+        v.komunalni_amount, v.komunalni_currency, v.daily_rate, v.notes,
+        statusLabels[v.status],
+        ...driverBits,
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return statusFilter === "all" || v.status === statusFilter;
+  });
 
   return (
     <div className="space-y-6">
@@ -484,7 +497,7 @@ const VehiclesPage = () => {
         <div className="flex gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input className="pl-8 w-56" placeholder="Marka, tablice, komunalni, VIN..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Input className="pl-8 w-56" placeholder="Marka, tablice, vozač, udruženje, broj..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
