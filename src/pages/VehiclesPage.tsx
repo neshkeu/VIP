@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
+import { DriverCombobox } from "@/components/DriverCombobox";
 import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Vehicle, DocStatus } from "@/hooks/useVehicles";
@@ -171,7 +172,7 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
 }
 
 function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | null; open: boolean; onClose: () => void }) {
-  const { drivers, updateDriver, displayName } = useApp();
+  const { drivers, vehicles, updateDriver, displayName } = useApp();
   const { getByVehicle, getByDriver, closeAssignment, assignVehicle } = useAssignments();
   const { forVehicle, forDriver: forDriverLinks, addLink, removeLink } = useVehicleDrivers();
   const { addLog, forVehicle: logsForVehicle } = useVehicleDriverLog();
@@ -198,11 +199,10 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
     .map(d => ({ linkId: null as string | null, driver: d, role: d.role }));
   const vehicleDriverRows = [...linkRows, ...legacyRows];
   const onVehicleIds = new Set(vehicleDriverRows.map(r => r.driver.id));
-  // Jedinstveni vozači za padajuću listu (bez duplih imena, bez onih već na vozilu)
-  const addOptions = Array.from(
-    new Map(drivers.filter(d => d.status === "active" && !onVehicleIds.has(d.id))
-      .map(d => [d.full_name.trim().toLowerCase(), d])).values()
-  ).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  // Svi aktivni vozači koji NISU na ovom vozilu (bez dedupa po imenu — da niko ne bude sakriven)
+  const addOptions = drivers
+    .filter(d => d.status === "active" && !onVehicleIds.has(d.id))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const addDriverToVehicle = async () => {
     if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
@@ -314,13 +314,19 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
           <div className="flex items-end gap-2 pt-1">
             <div className="grid gap-1 flex-1">
               <Label className="text-[11px]">Dodaj vozača</Label>
-              <Select value={addDrvId} onValueChange={setAddDrvId}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="izaberi" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">—</SelectItem>
-                  {addOptions.map(d => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <DriverCombobox
+                value={addDrvId === "none" ? "" : addDrvId}
+                onChange={v => setAddDrvId(v || "none")}
+                placeholder="pretraži vozača..."
+                options={addOptions.map(d => {
+                  const veh = vehicles.find(ve => ve.id === d.vehicle_id);
+                  return {
+                    value: d.id,
+                    label: d.full_name,
+                    sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : (d.phone || "bez vozila"),
+                  };
+                })}
+              />
             </div>
             <Select value={addRole} onValueChange={v => setAddRole(v as "operativni" | "papiroloski")}>
               <SelectTrigger className="h-8 text-sm w-32"><SelectValue /></SelectTrigger>
