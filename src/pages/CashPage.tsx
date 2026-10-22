@@ -553,13 +553,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const isplataVozacu = surplusRounded;
   const manjak        = Math.max(0, obligTotal - totalCovered);
 
-  // BREAKDOWN — koliko dela source-a pokriva obaveze, koliko ide u kes.
-  // Proporcionalno prema udelu obaveza u ukupnom uzetom.
-  const obligCoverPct = takenTotal > 0 ? Math.min(1, obligTotal / takenTotal) : 0;
+  // BREAKDOWN — koliko dela source-a pokriva obaveze, koliko ide u keš.
+  // "u keš" se prikazuje SAMO kad stvarno ima viška za vozača (cashToDriver > 0).
+  // Odnos se računa prema STVARNOM višku (uzeto − pokriveno), ne prema obavezama,
+  // da ne bi pisalo "u keš" kad vozač u stvari sve plaća.
+  const cashRatio = takenTotal > 0 ? Math.max(0, cashToDriver) / takenTotal : 0;
   const splitLabel = (amt: number): string => {
     if (amt <= 0) return "";
-    const oblig = Math.round(amt * obligCoverPct);
-    const cash = amt - oblig;
+    if (cashToDriver < 1) return `na obaveze`;        // nema viška → sve ide na obaveze
+    const cash = Math.round(amt * cashRatio);
+    const oblig = amt - cash;
     if (cash <= 0) return `na obaveze`;
     if (oblig <= 0) return `u keš vozaču`;
     return `${fmt(oblig)} na obaveze, ${fmt(cash)} u keš`;
@@ -1251,8 +1254,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
                       {autoSources > 0 && (() => {
                         const splitRow = (label: string, amt: number) => {
-                          const oblig = Math.round(amt * obligCoverPct);
-                          const cash = amt - oblig;
+                          const cash = cashToDriver < 1 ? 0 : Math.round(amt * cashRatio);
+                          const oblig = amt - cash;
                           return (
                             <div key={label} className="flex flex-wrap items-baseline justify-between text-xs gap-x-2">
                               <span className="text-purple-700">{label} <strong>+{fmt(amt)}</strong></span>
@@ -1283,8 +1286,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                           <Input type="number" className="h-8 text-sm text-right" placeholder="0" value={keshAmt} onChange={e=>setKeshAmt(e.target.value)}/>
                         </div>
                         {kesTake > 0 && (() => {
-                          const oblig = Math.round(kesTake * obligCoverPct);
-                          const cash = kesTake - oblig;
+                          const cash = cashToDriver < 1 ? 0 : Math.round(kesTake * cashRatio);
+                          const oblig = kesTake - cash;
                           return (
                             <div className="text-[11px] flex items-center gap-3 pt-0.5">
                               {oblig > 0 && <span className="text-red-700">→ obaveze: <strong>{fmt(oblig)}</strong></span>}
