@@ -211,6 +211,13 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
     try {
       await addLink(vehicle.id, addDrvId, addRole);
       if (addRole === "operativni") {
+        // ZAŠTITA: ako vozač ima staru 'legacy' papirološku vezu preko polja vehicle_id
+        // (na drugom vozilu) koja NIJE prava veza, sačuvaj je kao pravu vezu PRE nego što
+        // prepišemo vehicle_id — da se papirološko vozilo ne izgubi.
+        if (drv?.vehicle_id && drv.vehicle_id !== vehicle.id && drv.role === "papiroloski"
+            && !forDriverLinks(drv.id).some(l => l.vehicle_id === drv.vehicle_id)) {
+          await addLink(drv.vehicle_id, drv.id, "papiroloski");
+        }
         // Operativni vozač stvarno vozi auto → otvori period dodele (snapshot rente) i sinhronizuj staro polje.
         const snapRate = (drv?.daily_rate ?? 0) > 0 ? drv!.daily_rate : (vehicle.daily_rate || 0);
         await assignVehicle(addDrvId, vehicle.id, today, {

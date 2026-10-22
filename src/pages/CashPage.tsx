@@ -419,8 +419,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   //  - TEKUĆI/otvoreni period → trenutna cena vozača (važi i popust)
   // Vozilo služi samo kao default koji se prepiše na vozača pri dodeli.
   const driverAssignments = driverId ? getDriverAssignments(driverId) : [];
-  // Vozilo na kom vozač trenutno radi (operativno preko vdLinks, pa fallback na vehicle_id)
-  const driverVehId = vdLinks.find(l => l.driver_id === driverId)?.vehicle_id ?? driver?.vehicle_id;
+  // Vozilo na kom vozač trenutno radi: prvo OPERATIVNA veza, pa bilo koja veza, pa staro polje.
+  const driverVehId =
+    vdLinks.find(l => l.driver_id === driverId && l.role === "operativni")?.vehicle_id
+    ?? vdLinks.find(l => l.driver_id === driverId)?.vehicle_id
+    ?? driver?.vehicle_id;
   const driverVehRate = vehicles.find(v => v.id === driverVehId)?.daily_rate ?? 0;
   // Efektivna dnevna renta vozača: njegova cena (popust) ako je upisana, inače sa vozila
   const effRate = (driver?.daily_rate ?? 0) || driverVehRate;
