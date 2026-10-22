@@ -7,6 +7,9 @@ import { AppLayout } from "@/components/AppLayout";
 import { AuthGuard } from "@/components/AuthGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppProvider } from "@/context/AppContext";
+import { VehicleDriversProvider } from "@/hooks/useVehicleDrivers";
+import { AssignmentsProvider } from "@/hooks/useAssignments";
+import { VehicleDriverLogProvider } from "@/hooks/useVehicleDriverLog";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import DriversPage from "./pages/DriversPage";
@@ -38,31 +41,37 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AppProvider>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route
-                path="/*"
-                element={
-                  <AuthGuard>
-                    <AppLayout>
-                      <Routes>
-                        <Route path="/" element={<Dashboard />} />
-                        <Route path="/vehicles" element={<VehiclesPage />} />
-                        <Route path="/drivers" element={<DriversPage />} />
-                        <Route path="/calendar" element={<CalendarPage />} />
-                        <Route path="/cash" element={<CashPage />} />
-                        <Route path="/debts" element={<DebtsPage />} />
-                        <Route path="/yandex" element={<YandexPage />} />
-                        <Route path="/cards" element={<CardsPage />} />
-                        <Route path="/neoplanta" element={<NeoplantaPage />} />
-                        <Route path="/kazne" element={<KaznePage />} />
-                        <Route path="*" element={<NotFound />} />
-                      </Routes>
-                    </AppLayout>
-                  </AuthGuard>
-                }
-              />
-            </Routes>
+            <VehicleDriversProvider>
+              <AssignmentsProvider>
+                <VehicleDriverLogProvider>
+                  <Routes>
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route
+                      path="/*"
+                      element={
+                        <AuthGuard>
+                          <AppLayout>
+                            <Routes>
+                              <Route path="/" element={<Dashboard />} />
+                              <Route path="/vehicles" element={<VehiclesPage />} />
+                              <Route path="/drivers" element={<DriversPage />} />
+                              <Route path="/calendar" element={<CalendarPage />} />
+                              <Route path="/cash" element={<CashPage />} />
+                              <Route path="/debts" element={<DebtsPage />} />
+                              <Route path="/yandex" element={<YandexPage />} />
+                              <Route path="/cards" element={<CardsPage />} />
+                              <Route path="/neoplanta" element={<NeoplantaPage />} />
+                              <Route path="/kazne" element={<KaznePage />} />
+                              <Route path="*" element={<NotFound />} />
+                            </Routes>
+                          </AppLayout>
+                        </AuthGuard>
+                      }
+                    />
+                  </Routes>
+                </VehicleDriverLogProvider>
+              </AssignmentsProvider>
+            </VehicleDriversProvider>
           </AppProvider>
         </BrowserRouter>
       </TooltipProvider>
