@@ -557,13 +557,19 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const manjak        = Math.max(0, obligTotal - totalCovered);
 
   const cashRatio = takenTotal > 0 ? Math.max(0, cashToDriver) / takenTotal : 0;
-  // Vaučeri i PDV goriva su "čvrst" novac koji pokriva OBAVEZE (firma), nisu vozačev keš.
-  // Zato njihov natpis uvek ide "na obaveze"; jedino ako obaveza uopšte nema, idu vozaču.
-  // (Vozačev keš se vidi na novčanim izvorima — Yandex/kartica/keš — i u ukupnom 'Prima'.)
-  const splitLabel = (_amt: number): string => {
-    if (_amt <= 0) return "";
-    if (obligTotal <= 0.01) return `u keš vozaču`;
-    return `na obaveze`;
+  // Vaučeri/PDV (i keš donet) pokrivaju obaveze KOJE NISU već pokrivene novčanim izvorima
+  // (Yandex/kartica/neoplanta — ručno raspoređeni). Ono što od njih NIJE trebalo za obaveze
+  // ide vozaču u keš. Npr. ako Yandex pokrije sve obaveze → vaučeri i PDV idu u keš.
+  const autoPoolTotal    = kesTake + vaucerTotal + vaucerMbTotal + pdvTotal;
+  const autoPoolLeftover = Math.max(0, autoBudget);                 // deo koji NIJE trebao za obaveze → keš
+  const poolCashRatio    = autoPoolTotal > 0 ? autoPoolLeftover / autoPoolTotal : 0;
+  const splitLabel = (amt: number): string => {
+    if (amt <= 0) return "";
+    if (poolCashRatio >= 0.999) return `u keš vozaču`;   // obaveze već pokrivene → ide vozaču
+    if (poolCashRatio <= 0.001) return `na obaveze`;      // sve trebalo za obaveze
+    const cash  = Math.round(amt * poolCashRatio);
+    const oblig = amt - cash;
+    return `${fmt(oblig)} na obaveze, ${fmt(cash)} u keš`;
   };
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
@@ -1252,8 +1258,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
                       {autoSources > 0 && (() => {
                         const splitRow = (label: string, amt: number) => {
-                          // Vaučeri/PDV: čvrst novac → na obaveze (u keš samo ako nema obaveza)
-                          const cash = obligTotal <= 0.01 ? amt : 0;
+                          // Vaučeri/PDV: ono što NIJE trebalo za obaveze (pokrio ih drugi izvor) → keš
+                          const cash = Math.round(amt * poolCashRatio);
                           const oblig = amt - cash;
                           return (
                             <div key={label} className="flex flex-wrap items-baseline justify-between text-xs gap-x-2">
