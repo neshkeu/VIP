@@ -34,9 +34,10 @@ interface VehicleFormProps {
   onSave: (data: Omit<Vehicle, "id" | "created_at">) => Promise<void>;
   onClose: () => void;
   title: string;
+  embedded?: boolean;
 }
 
-function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
+function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormProps) {
   const [brand, setBrand]         = useState(initial?.brand ?? "");
   const [model, setModel]         = useState(initial?.model ?? "");
   const [year, setYear]           = useState(String(initial?.year ?? ""));
@@ -84,10 +85,12 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>Podaci o vozilu — lična karta</DialogDescription>
-      </DialogHeader>
+      {!embedded && (
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>Podaci o vozilu — lična karta</DialogDescription>
+        </DialogHeader>
+      )}
 
       <Tabs defaultValue="basic" className="mt-2">
         <TabsList className="grid grid-cols-4 w-full">
@@ -171,7 +174,7 @@ function VehicleForm({ initial, onSave, onClose, title }: VehicleFormProps) {
   );
 }
 
-function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | null; open: boolean; onClose: () => void }) {
+function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
   const { drivers, vehicles, updateDriver, displayName } = useApp();
   const { getByVehicle, getByDriver, closeAssignment, assignVehicle } = useAssignments();
   const { forVehicle, forDriver: forDriverLinks, addLink, removeLink } = useVehicleDrivers();
@@ -186,8 +189,6 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
   const [addRole, setAddRole]         = useState<"operativni" | "papiroloski">("operativni");
   // Potvrda sklanjanja vozača (samo sa ovog vozila ILI potpuna deaktivacija)
   const [removeTarget, setRemoveTarget] = useState<{ linkId: string | null; driver: typeof drivers[number]; role: string } | null>(null);
-
-  if (!vehicle) return null;
 
   const history = getByVehicle(vehicle.id);
   // Vozači na vozilu iz join tabele (+ legacy vehicle_id fallback)
@@ -286,13 +287,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
   };
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{vehicle.brand} {vehicle.model} — Istorija vozača</DialogTitle>
-          <DialogDescription>{vehicle.taxi_license_number} · {vehicle.license_plate}</DialogDescription>
-        </DialogHeader>
-
+    <div className="space-y-3">
         {/* VOZAČI NA VOZILU — operativni + papirološki, dodavanje/uklanjanje */}
         <div className="rounded-lg border p-3 space-y-2">
           <p className="text-xs font-semibold text-muted-foreground uppercase">Vozači na vozilu</p>
@@ -423,11 +418,6 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
           </>
         )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Zatvori</Button>
-        </DialogFooter>
-      </DialogContent>
-
       {/* Potvrda sklanjanja vozača — izbor: samo sa ovog vozila ILI potpuna deaktivacija */}
       <Dialog open={!!removeTarget} onOpenChange={v => { if (!v) setRemoveTarget(null); }}>
         <DialogContent className="max-w-sm">
@@ -458,7 +448,7 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Dialog>
+    </div>
   );
 }
 
@@ -471,7 +461,7 @@ const VehiclesPage = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [addOpen, setAddOpen]           = useState(false);
   const [editVehicle, setEditVehicle]   = useState<Vehicle | null>(null);
-  const [historyVehicle, setHistoryVehicle] = useState<Vehicle | null>(null);
+  const [editTab, setEditTab]           = useState<"vozilo" | "vozaci">("vozilo");
   const [detailVehicle, setDetailVehicle]   = useState<Vehicle | null>(null);
 
   const statusColors = { active: "default", maintenance: "secondary", inactive: "outline" } as const;
@@ -501,8 +491,8 @@ const VehiclesPage = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold">Vozila</h1>
-          <p className="text-muted-foreground text-sm">{vehicles.filter(v => v.status === "active").length} aktivnih vozila</p>
+          <h1 className="text-2xl font-display font-bold">Komunalni broj</h1>
+          <p className="text-muted-foreground text-sm">{vehicles.filter(v => v.status === "active").length} aktivnih · vozilo, vozači i istorija na jednom mestu</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <div className="relative">
@@ -530,34 +520,51 @@ const VehiclesPage = () => {
       </div>
 
       <Dialog open={!!editVehicle} onOpenChange={v => { if (!v) setEditVehicle(null); }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
           {editVehicle && (
-            <VehicleForm initial={editVehicle} title="Uredi vozilo"
-              onSave={async (data) => {
-                const oldRate = editVehicle.daily_rate || 0;
-                const newRate = data.daily_rate || 0;
-                await updateVehicle(editVehicle.id, data);
-                // Nova renta vozila se primenjuje i na vozače koji su trenutno na tom
-                // vozilu i voze po STANDARDNOJ ceni (renta == stara renta vozila).
-                // Vozača sa posebnom/popust cenom NE diramo.
-                let applied = 0;
-                if (newRate !== oldRate) {
-                  const affected = drivers.filter(d =>
-                    d.vehicle_id === editVehicle.id &&
-                    d.driver_type === "renta" &&
-                    (d.daily_rate || 0) === oldRate
-                  );
-                  for (const d of affected) {
-                    await updateDriver(d.id, { daily_rate: newRate });
-                  }
-                  applied = affected.length;
-                }
-                toast.success(applied > 0
-                  ? `Vozilo ažurirano — renta primenjena i na ${applied} vozača`
-                  : "Vozilo ažurirano");
-                setEditVehicle(null);
-              }}
-              onClose={() => setEditVehicle(null)} />
+            <>
+              <DialogHeader>
+                <DialogTitle>Komunalni {editVehicle.taxi_license_number || "—"} — {editVehicle.brand} {editVehicle.model}</DialogTitle>
+                <DialogDescription>Vozilo, vozači i istorija — sve na jednom mestu</DialogDescription>
+              </DialogHeader>
+              <Tabs value={editTab} onValueChange={v => setEditTab(v as "vozilo" | "vozaci")}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="vozilo">Vozilo</TabsTrigger>
+                  <TabsTrigger value="vozaci">Vozači i istorija</TabsTrigger>
+                </TabsList>
+                <TabsContent value="vozilo" className="mt-3">
+                  <VehicleForm embedded initial={editVehicle} title="Uredi vozilo"
+                    onSave={async (data) => {
+                      const oldRate = editVehicle.daily_rate || 0;
+                      const newRate = data.daily_rate || 0;
+                      await updateVehicle(editVehicle.id, data);
+                      // Nova renta vozila se primenjuje i na vozače koji su trenutno na tom
+                      // vozilu i voze po STANDARDNOJ ceni (renta == stara renta vozila).
+                      // Vozača sa posebnom/popust cenom NE diramo.
+                      let applied = 0;
+                      if (newRate !== oldRate) {
+                        const affected = drivers.filter(d =>
+                          d.vehicle_id === editVehicle.id &&
+                          d.driver_type === "renta" &&
+                          (d.daily_rate || 0) === oldRate
+                        );
+                        for (const d of affected) {
+                          await updateDriver(d.id, { daily_rate: newRate });
+                        }
+                        applied = affected.length;
+                      }
+                      toast.success(applied > 0
+                        ? `Vozilo ažurirano — renta primenjena i na ${applied} vozača`
+                        : "Vozilo ažurirano");
+                      setEditVehicle(null);
+                    }}
+                    onClose={() => setEditVehicle(null)} />
+                </TabsContent>
+                <TabsContent value="vozaci" className="mt-3">
+                  <VehicleDriversPanel vehicle={editVehicle} />
+                </TabsContent>
+              </Tabs>
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -571,14 +578,13 @@ const VehiclesPage = () => {
           {detailVehicle && <VehicleDetailsCard vehicle={detailVehicle} drivers={drivers} />}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailVehicle(null)}>Zatvori</Button>
-            <Button onClick={() => { setEditVehicle(detailVehicle); setDetailVehicle(null); }}>
+            <Button onClick={() => { setEditTab("vozilo"); setEditVehicle(detailVehicle); setDetailVehicle(null); }}>
               <Pencil className="mr-2 h-4 w-4" />Uredi
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <VehicleHistoryModal vehicle={historyVehicle} open={!!historyVehicle} onClose={() => setHistoryVehicle(null)} />
 
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
@@ -675,10 +681,10 @@ const VehiclesPage = () => {
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setDetailVehicle(v)} title="Lična karta">
                               <IdCard className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setHistoryVehicle(v)} title="Istorija vozača">
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditTab("vozaci"); setEditVehicle(v); }} title="Vozači i istorija">
                               <History className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditVehicle(v)} title="Uredi">
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditTab("vozilo"); setEditVehicle(v); }} title="Uredi">
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </div>
