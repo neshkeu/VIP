@@ -556,19 +556,14 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const isplataVozacu = surplusRounded;
   const manjak        = Math.max(0, obligTotal - totalCovered);
 
-  // BREAKDOWN — koliko dela source-a pokriva obaveze, koliko ide u keš.
-  // "u keš" se prikazuje SAMO kad stvarno ima viška za vozača (cashToDriver > 0).
-  // Odnos se računa prema STVARNOM višku (uzeto − pokriveno), ne prema obavezama,
-  // da ne bi pisalo "u keš" kad vozač u stvari sve plaća.
   const cashRatio = takenTotal > 0 ? Math.max(0, cashToDriver) / takenTotal : 0;
-  const splitLabel = (amt: number): string => {
-    if (amt <= 0) return "";
-    if (cashToDriver < 1) return `na obaveze`;        // nema viška → sve ide na obaveze
-    const cash = Math.round(amt * cashRatio);
-    const oblig = amt - cash;
-    if (cash <= 0) return `na obaveze`;
-    if (oblig <= 0) return `u keš vozaču`;
-    return `${fmt(oblig)} na obaveze, ${fmt(cash)} u keš`;
+  // Vaučeri i PDV goriva su "čvrst" novac koji pokriva OBAVEZE (firma), nisu vozačev keš.
+  // Zato njihov natpis uvek ide "na obaveze"; jedino ako obaveza uopšte nema, idu vozaču.
+  // (Vozačev keš se vidi na novčanim izvorima — Yandex/kartica/keš — i u ukupnom 'Prima'.)
+  const splitLabel = (_amt: number): string => {
+    if (_amt <= 0) return "";
+    if (obligTotal <= 0.01) return `u keš vozaču`;
+    return `na obaveze`;
   };
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
@@ -1257,7 +1252,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
                       {autoSources > 0 && (() => {
                         const splitRow = (label: string, amt: number) => {
-                          const cash = cashToDriver < 1 ? 0 : Math.round(amt * cashRatio);
+                          // Vaučeri/PDV: čvrst novac → na obaveze (u keš samo ako nema obaveza)
+                          const cash = obligTotal <= 0.01 ? amt : 0;
                           const oblig = amt - cash;
                           return (
                             <div key={label} className="flex flex-wrap items-baseline justify-between text-xs gap-x-2">
