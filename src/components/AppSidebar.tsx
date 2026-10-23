@@ -11,7 +11,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const navItems = [
   { title: "Kontrolna tabla", url: "/",         icon: LayoutDashboard },
-  { title: "Vozila",          url: "/vehicles",  icon: Car             },
+  { title: "Komunalni broj",  url: "/vehicles",  icon: Car             },
   { title: "Vozači",          url: "/drivers",   icon: Users           },
   { title: "Kalendar",        url: "/calendar",  icon: CalendarDays    },
   { title: "Kasa",            url: "/cash",      icon: Banknote        },
