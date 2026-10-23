@@ -693,7 +693,6 @@ const VehiclesPage = () => {
                   <TableHead>Udruženje</TableHead>
                   <TableHead>Operativni</TableHead>
                   <TableHead>Papirološki</TableHead>
-                  <TableHead>Registracija</TableHead>
                   <TableHead>Dokumenti</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Akcije</TableHead>
@@ -701,7 +700,7 @@ const VehiclesPage = () => {
               </TableHeader>
               <TableBody>
                 {roleFiltered.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
                   roleFiltered.map((v, i) => {
                     // Vozači na vozilu = iz join tabele (vozač–vozilo+uloga); fallback na legacy vehicle_id+role
@@ -759,12 +758,6 @@ const VehiclesPage = () => {
                               ))}
                             </div>
                           ) : <span className="text-muted-foreground text-xs">—</span>}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 text-xs">
-                            {v.registration_expiry && (isExpired(v.registration_expiry) || isExpiringSoon(v.registration_expiry)) && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
-                            <span className={isExpired(v.registration_expiry) ? "text-red-500" : isExpiringSoon(v.registration_expiry) ? "text-amber-600" : ""}>{v.registration_expiry || "—"}</span>
-                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1 flex-wrap">
