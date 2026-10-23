@@ -20,6 +20,7 @@ import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/Document
 import { useAssignments, type VehicleAssignment, type AssignmentFees } from "@/hooks/useAssignments";
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
+import { DriverCombobox } from "@/components/DriverCombobox";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
@@ -132,7 +133,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">— Bez vozila —</SelectItem>
-                {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number}</SelectItem>)}
+                {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.taxi_license_number || "—"} · {v.brand} {v.model}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -460,15 +461,17 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
         <div className="grid gap-3 py-2">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label className="text-xs">Novo vozilo</Label>
-              <Select value={vehicleId} onValueChange={setVehicleId}>
-                <SelectTrigger><SelectValue placeholder="Izaberi vozilo" /></SelectTrigger>
-                <SelectContent>
-                  {vehicles.filter(v => v.id !== driver.vehicle_id).map(v => (
-                    <SelectItem key={v.id} value={v.id}>{v.brand} {v.model} — {v.taxi_license_number}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Novo vozilo (komunalni broj)</Label>
+              <DriverCombobox
+                value={vehicleId}
+                onChange={setVehicleId}
+                placeholder="pretraži po broju/marki..."
+                options={vehicles.filter(v => v.id !== driver.vehicle_id).map(v => ({
+                  value: v.id,
+                  label: `${v.taxi_license_number || "—"} · ${v.brand} ${v.model}`,
+                  sublabel: v.license_plate || undefined,
+                }))}
+              />
             </div>
             <div className="grid gap-1.5"><Label className="text-xs">Datum prelaska</Label><Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
           </div>
