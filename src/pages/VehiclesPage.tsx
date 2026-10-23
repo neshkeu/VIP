@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, AlertTriangle, Loader2, Pencil, History, User, X, IdCard, RefreshCw } from "lucide-react";
+import { Plus, Search, AlertTriangle, Loader2, Pencil, User, X, IdCard, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/DocumentStatusBadge";
@@ -666,8 +666,7 @@ const VehiclesPage = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Vozilo</TableHead>
-                  <TableHead>Komunalni</TableHead>
+                  <TableHead>Komunalni broj / Vozilo</TableHead>
                   <TableHead>Udruženje</TableHead>
                   <TableHead>Operativni</TableHead>
                   <TableHead>Papirološki</TableHead>
@@ -679,7 +678,7 @@ const VehiclesPage = () => {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
                   filtered.map((v, i) => {
                     // Vozači na vozilu = iz join tabele (vozač–vozilo+uloga); fallback na legacy vehicle_id+role
@@ -695,7 +694,8 @@ const VehiclesPage = () => {
                       <motion.tr key={v.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.5) }}
                         className="border-b hover:bg-muted/30 transition-colors">
                         <TableCell>
-                          <p className="font-medium">{v.brand} {v.model} {v.year > 0 && <span className="text-muted-foreground text-xs">({v.year})</span>}</p>
+                          <p className="font-bold font-mono text-base leading-tight">{v.taxi_license_number || "—"}</p>
+                          <p className="text-sm">{v.brand} {v.model} {v.year > 0 && <span className="text-muted-foreground text-xs">({v.year})</span>}</p>
                           <p className="text-xs text-muted-foreground font-mono">{v.license_plate}</p>
                           {v.daily_rate > 0 && (
                             <p className="text-xs mt-0.5 font-medium text-green-700">Renta: {v.daily_rate.toLocaleString("sr-RS")} RSD/dan</p>
@@ -704,7 +704,6 @@ const VehiclesPage = () => {
                             <p className="text-xs text-blue-600 mt-0.5">💰 {v.komunalni_amount} {v.komunalni_currency}/mj.</p>
                           )}
                         </TableCell>
-                        <TableCell><Badge variant="secondary" className="font-mono text-xs">{v.taxi_license_number || "—"}</Badge></TableCell>
                         <TableCell>
                           {v.udruzenje ? (
                             <p className="text-sm">{v.udruzenje}</p>
@@ -752,9 +751,6 @@ const VehiclesPage = () => {
                           <div className="flex items-center justify-end gap-0.5">
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setDetailVehicle(v)} title="Lična karta">
                               <IdCard className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditTab("vozaci"); setEditVehicle(v); }} title="Vozači i istorija">
-                              <History className="h-4 w-4" />
                             </Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditTab("vozilo"); setEditVehicle(v); }} title="Uredi">
                               <Pencil className="h-4 w-4" />
