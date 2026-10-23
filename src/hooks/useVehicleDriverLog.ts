@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, createElement, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
-export type VDLogAction = "added" | "removed" | "deactivated";
+export type VDLogAction = "added" | "removed" | "deactivated" | "vehicle_swapped";
 
 export interface VehicleDriverLog {
   id: string;

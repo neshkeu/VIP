@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Search, AlertTriangle, Loader2, Pencil, History, User, X, IdCard } from "lucide-react";
+import { Plus, Search, AlertTriangle, Loader2, Pencil, History, User, X, IdCard, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { DocumentStatusBadge, DocumentStatusSelect } from "@/components/DocumentStatusBadge";
@@ -171,6 +171,76 @@ function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormP
         </Button>
       </DialogFooter>
     </>
+  );
+}
+
+// Zameni vozilo: komunalni broj + vozači ostaju; staro vozilo ide u trag/istoriju.
+function ReplaceVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
+  const { updateVehicle } = useApp();
+  const { addLog } = useVehicleDriverLog();
+  const { displayName } = useCurrentUser();
+  const today = new Date().toISOString().split("T")[0];
+  const [open, setOpen]   = useState(false);
+  const [brand, setBrand] = useState("");
+  const [model, setModel] = useState("");
+  const [year, setYear]   = useState("");
+  const [plate, setPlate] = useState("");
+  const [vin, setVin]     = useState("");
+  const [reg, setReg]     = useState("");
+  const [ins, setIns]     = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const reset = () => { setBrand(""); setModel(""); setYear(""); setPlate(""); setVin(""); setReg(""); setIns(""); };
+
+  const confirm = async () => {
+    setSaving(true);
+    try {
+      const oldDesc = `${vehicle.brand} ${vehicle.model}${vehicle.year ? " " + vehicle.year : ""} · ${vehicle.license_plate || "—"}`;
+      const newDesc = `${brand} ${model}${year ? " " + year : ""} · ${plate || "—"}`;
+      await updateVehicle(vehicle.id, {
+        brand, model, year: Number(year) || 0,
+        license_plate: plate, vin: vin || null,
+        registration_expiry: reg || null, insurance_expiry: ins || null,
+      });
+      await addLog({ vehicle_id: vehicle.id, driver_id: null, role: null, action: "vehicle_swapped", date: today, performed_by: displayName, note: `Staro: ${oldDesc} → Novo: ${newDesc}` });
+      toast.success("Vozilo zamenjeno — komunalni broj i vozači ostaju");
+      setOpen(false); reset();
+    } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="w-full"><RefreshCw className="h-4 w-4 mr-1.5" />Zameni vozilo (zadrži komunalni broj i vozače)</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Zameni vozilo</DialogTitle>
+          <DialogDescription>Komunalni broj {vehicle.taxi_license_number || "—"} ostaje. Staro vozilo ide u trag, vozači ostaju.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">Staro vozilo: {vehicle.brand} {vehicle.model} · {vehicle.license_plate || "—"}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5"><Label>Marka</Label><Input value={brand} onChange={e=>setBrand(e.target.value)} /></div>
+            <div className="grid gap-1.5"><Label>Model</Label><Input value={model} onChange={e=>setModel(e.target.value)} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5"><Label>Godina</Label><Input type="number" value={year} onChange={e=>setYear(e.target.value)} /></div>
+            <div className="grid gap-1.5"><Label>Tablice</Label><Input value={plate} onChange={e=>setPlate(e.target.value)} /></div>
+          </div>
+          <div className="grid gap-1.5"><Label>VIN (opciono)</Label><Input value={vin} onChange={e=>setVin(e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5"><Label>Registracija do</Label><Input type="date" value={reg} onChange={e=>setReg(e.target.value)} /></div>
+            <div className="grid gap-1.5"><Label>Osiguranje do</Label><Input type="date" value={ins} onChange={e=>setIns(e.target.value)} /></div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpen(false)}>Otkaži</Button>
+          <Button disabled={!brand || !plate || saving} onClick={confirm}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Zameni</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -398,14 +468,15 @@ function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
               <p className="text-xs font-semibold text-muted-foreground uppercase">Trag promena</p>
               {logsForVehicle(vehicle.id).map(l => {
                 const drv = drivers.find(d => d.id === l.driver_id);
-                const actLabel = l.action === "added" ? "dodat" : l.action === "removed" ? "sklonjen" : "deaktiviran";
-                const actColor = l.action === "added" ? "text-green-600" : l.action === "removed" ? "text-orange-600" : "text-red-600";
+                const isSwap = l.action === "vehicle_swapped";
+                const actLabel = isSwap ? "vozilo zamenjeno" : l.action === "added" ? "dodat" : l.action === "removed" ? "sklonjen" : "deaktiviran";
+                const actColor = isSwap ? "text-blue-600" : l.action === "added" ? "text-green-600" : l.action === "removed" ? "text-orange-600" : "text-red-600";
                 return (
                   <div key={l.id} className="flex items-center justify-between rounded-md bg-muted/20 px-3 py-1.5 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`font-medium ${actColor}`}>{actLabel}</span>
-                      <span className="font-medium truncate">{drv?.full_name ?? "—"}</span>
-                      {l.role && <Badge variant="outline" className="text-[10px]">{l.role === "operativni" ? "operativni" : "papirološki"}</Badge>}
+                      <span className={`font-medium ${actColor} flex-shrink-0`}>{actLabel}</span>
+                      <span className="truncate text-muted-foreground">{isSwap ? (l.note ?? "") : (drv?.full_name ?? "—")}</span>
+                      {!isSwap && l.role && <Badge variant="outline" className="text-[10px]">{l.role === "operativni" ? "operativni" : "papirološki"}</Badge>}
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground flex-shrink-0">
                       <span>{l.date}</span>
@@ -532,7 +603,8 @@ const VehiclesPage = () => {
                   <TabsTrigger value="vozilo">Vozilo</TabsTrigger>
                   <TabsTrigger value="vozaci">Vozači i istorija</TabsTrigger>
                 </TabsList>
-                <TabsContent value="vozilo" className="mt-3">
+                <TabsContent value="vozilo" className="mt-3 space-y-3">
+                  <ReplaceVehicleDialog vehicle={editVehicle} />
                   <VehicleForm embedded initial={editVehicle} title="Uredi vozilo"
                     onSave={async (data) => {
                       const oldRate = editVehicle.daily_rate || 0;
