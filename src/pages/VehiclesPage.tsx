@@ -530,6 +530,7 @@ const VehiclesPage = () => {
 
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [roleTab, setRoleTab]           = useState<"sva" | "operativni" | "papiroloski">("sva");
   const [addOpen, setAddOpen]           = useState(false);
   const [editVehicle, setEditVehicle]   = useState<Vehicle | null>(null);
   const [editTab, setEditTab]           = useState<"vozilo" | "vozaci">("vozilo");
@@ -557,6 +558,19 @@ const VehiclesPage = () => {
     }
     return statusFilter === "all" || v.status === statusFilter;
   });
+
+  // Da li vozilo (komunalni broj) ima vozača date uloge (nova veza + staro polje)
+  const vehicleHasRole = (v: Vehicle, role: string) =>
+    vdLinks.some(l => l.vehicle_id === v.id && l.role === role) ||
+    drivers.some(d => d.vehicle_id === v.id && d.role === role && !vdLinks.some(l => l.vehicle_id === v.id && l.driver_id === d.id));
+
+  const opsCount  = filtered.filter(v => vehicleHasRole(v, "operativni")).length;
+  const papsCount = filtered.filter(v => vehicleHasRole(v, "papiroloski")).length;
+  const roleFiltered = filtered.filter(v =>
+    roleTab === "operativni" ? vehicleHasRole(v, "operativni")
+    : roleTab === "papiroloski" ? vehicleHasRole(v, "papiroloski")
+    : true
+  );
 
   return (
     <div className="space-y-6">
@@ -658,6 +672,14 @@ const VehiclesPage = () => {
       </Dialog>
 
 
+      <Tabs value={roleTab} onValueChange={v => setRoleTab(v as "sva" | "operativni" | "papiroloski")}>
+        <TabsList>
+          <TabsTrigger value="sva">Sva <Badge variant="secondary" className="ml-2 text-xs">{filtered.length}</Badge></TabsTrigger>
+          <TabsTrigger value="operativni">Operativni <Badge variant="secondary" className="ml-2 text-xs">{opsCount}</Badge></TabsTrigger>
+          <TabsTrigger value="papiroloski">Papirološki <Badge variant="secondary" className="ml-2 text-xs">{papsCount}</Badge></TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
@@ -666,7 +688,8 @@ const VehiclesPage = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Komunalni broj / Vozilo</TableHead>
+                  <TableHead className="font-bold">Komunalni broj</TableHead>
+                  <TableHead>Vozilo</TableHead>
                   <TableHead>Udruženje</TableHead>
                   <TableHead>Operativni</TableHead>
                   <TableHead>Papirološki</TableHead>
@@ -677,10 +700,10 @@ const VehiclesPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
+                {roleFiltered.length === 0 ? (
+                  <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
-                  filtered.map((v, i) => {
+                  roleFiltered.map((v, i) => {
                     // Vozači na vozilu = iz join tabele (vozač–vozilo+uloga); fallback na legacy vehicle_id+role
                     const linkRows = vdLinks.filter(l => l.vehicle_id === v.id)
                       .map(l => ({ driver: drivers.find(d => d.id === l.driver_id), role: l.role }))
@@ -694,8 +717,12 @@ const VehiclesPage = () => {
                       <motion.tr key={v.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.5) }}
                         className="border-b hover:bg-muted/30 transition-colors">
                         <TableCell>
-                          <p className="font-bold font-mono text-base leading-tight">{v.taxi_license_number || "—"}</p>
-                          <p className="text-sm">{v.brand} {v.model} {v.year > 0 && <span className="text-muted-foreground text-xs">({v.year})</span>}</p>
+                          <Badge className="font-mono text-sm font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/10">
+                            {v.taxi_license_number || "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm font-medium">{v.brand} {v.model} {v.year > 0 && <span className="text-muted-foreground text-xs">({v.year})</span>}</p>
                           <p className="text-xs text-muted-foreground font-mono">{v.license_plate}</p>
                           {v.daily_rate > 0 && (
                             <p className="text-xs mt-0.5 font-medium text-green-700">Renta: {v.daily_rate.toLocaleString("sr-RS")} RSD/dan</p>
