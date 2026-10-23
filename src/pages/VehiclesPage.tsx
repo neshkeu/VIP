@@ -199,10 +199,11 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
     .map(d => ({ linkId: null as string | null, driver: d, role: d.role }));
   const vehicleDriverRows = [...linkRows, ...legacyRows];
   const onVehicleIds = new Set(vehicleDriverRows.map(r => r.driver.id));
-  // Svi aktivni vozači koji NISU na ovom vozilu (bez dedupa po imenu — da niko ne bude sakriven)
+  // Svi vozači koji NISU na ovom vozilu (uklj. neaktivne — da se mogu naći i ponovo dodati).
+  // Aktivni prvo, pa po imenu.
   const addOptions = drivers
-    .filter(d => d.status === "active" && !onVehicleIds.has(d.id))
-    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    .filter(d => !onVehicleIds.has(d.id))
+    .sort((a, b) => (a.status === b.status ? a.full_name.localeCompare(b.full_name) : a.status === "active" ? -1 : 1));
 
   const addDriverToVehicle = async () => {
     if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
@@ -210,6 +211,8 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
     setSaving(true);
     try {
       await addLink(vehicle.id, addDrvId, addRole);
+      // Ako je vozač bio neaktivan, dodavanje na vozilo ga ponovo aktivira.
+      if (drv?.status === "inactive") await updateDriver(addDrvId, { status: "active" });
       if (addRole === "operativni") {
         // ZAŠTITA: ako vozač ima staru 'legacy' papirološku vezu preko polja vehicle_id
         // (na drugom vozilu) koja NIJE prava veza, sačuvaj je kao pravu vezu PRE nego što
@@ -320,10 +323,11 @@ function VehicleHistoryModal({ vehicle, open, onClose }: { vehicle: Vehicle | nu
                 placeholder="pretraži vozača..."
                 options={addOptions.map(d => {
                   const veh = vehicles.find(ve => ve.id === d.vehicle_id);
+                  const base = veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : (d.phone || "bez vozila");
                   return {
                     value: d.id,
                     label: d.full_name,
-                    sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : (d.phone || "bez vozila"),
+                    sublabel: d.status === "inactive" ? `⚠ neaktivan · ${base}` : base,
                   };
                 })}
               />
