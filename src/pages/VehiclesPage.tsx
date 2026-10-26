@@ -530,7 +530,6 @@ const VehiclesPage = () => {
 
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [roleTab, setRoleTab]           = useState<"sva" | "operativni" | "papiroloski">("sva");
   const [addOpen, setAddOpen]           = useState(false);
   const [editVehicle, setEditVehicle]   = useState<Vehicle | null>(null);
   const [editTab, setEditTab]           = useState<"vozilo" | "vozaci">("vozilo");
@@ -558,19 +557,6 @@ const VehiclesPage = () => {
     }
     return statusFilter === "all" || v.status === statusFilter;
   });
-
-  // Da li vozilo (komunalni broj) ima vozača date uloge (nova veza + staro polje)
-  const vehicleHasRole = (v: Vehicle, role: string) =>
-    vdLinks.some(l => l.vehicle_id === v.id && l.role === role) ||
-    drivers.some(d => d.vehicle_id === v.id && d.role === role && !vdLinks.some(l => l.vehicle_id === v.id && l.driver_id === d.id));
-
-  const opsCount  = filtered.filter(v => vehicleHasRole(v, "operativni")).length;
-  const papsCount = filtered.filter(v => vehicleHasRole(v, "papiroloski")).length;
-  const roleFiltered = filtered.filter(v =>
-    roleTab === "operativni" ? vehicleHasRole(v, "operativni")
-    : roleTab === "papiroloski" ? vehicleHasRole(v, "papiroloski")
-    : true
-  );
 
   return (
     <div className="space-y-6">
@@ -613,9 +599,9 @@ const VehiclesPage = () => {
                 <DialogDescription>Vozilo, vozači i istorija — sve na jednom mestu</DialogDescription>
               </DialogHeader>
               <Tabs value={editTab} onValueChange={v => setEditTab(v as "vozilo" | "vozaci")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="vozilo">Vozilo</TabsTrigger>
-                  <TabsTrigger value="vozaci">Vozači i istorija</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-2 bg-primary/10 border border-primary/20">
+                  <TabsTrigger value="vozilo" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold">Vozilo</TabsTrigger>
+                  <TabsTrigger value="vozaci" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-semibold">Vozači i istorija</TabsTrigger>
                 </TabsList>
                 <TabsContent value="vozilo" className="mt-3 space-y-3">
                   <ReplaceVehicleDialog vehicle={editVehicle} />
@@ -672,14 +658,6 @@ const VehiclesPage = () => {
       </Dialog>
 
 
-      <Tabs value={roleTab} onValueChange={v => setRoleTab(v as "sva" | "operativni" | "papiroloski")}>
-        <TabsList>
-          <TabsTrigger value="sva">Sva <Badge variant="secondary" className="ml-2 text-xs">{filtered.length}</Badge></TabsTrigger>
-          <TabsTrigger value="operativni">Operativni <Badge variant="secondary" className="ml-2 text-xs">{opsCount}</Badge></TabsTrigger>
-          <TabsTrigger value="papiroloski">Papirološki <Badge variant="secondary" className="ml-2 text-xs">{papsCount}</Badge></TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
       ) : (
@@ -699,10 +677,10 @@ const VehiclesPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {roleFiltered.length === 0 ? (
+                {filtered.length === 0 ? (
                   <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Nema vozila</TableCell></TableRow>
                 ) : (
-                  roleFiltered.map((v, i) => {
+                  filtered.map((v, i) => {
                     // Vozači na vozilu = iz join tabele (vozač–vozilo+uloga); fallback na legacy vehicle_id+role
                     const linkRows = vdLinks.filter(l => l.vehicle_id === v.id)
                       .map(l => ({ driver: drivers.find(d => d.id === l.driver_id), role: l.role }))
@@ -716,7 +694,7 @@ const VehiclesPage = () => {
                       <motion.tr key={v.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.02, 0.5) }}
                         className="border-b hover:bg-muted/30 transition-colors">
                         <TableCell>
-                          <Badge className="font-mono text-sm font-bold px-2.5 py-1 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/10">
+                          <Badge className="font-mono text-lg font-bold px-3.5 py-1.5 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/10">
                             {v.taxi_license_number || "—"}
                           </Badge>
                         </TableCell>
