@@ -24,6 +24,7 @@ const DEBT_TYPES = [
   { value: "steta",     label: "Šteta",     color: "text-red-700",    bg: "bg-red-50 border-red-200"    },
   { value: "kazna",     label: "Kazna",     color: "text-orange-700", bg: "bg-orange-50 border-orange-200" },
   { value: "pozajmica", label: "Pozajmica", color: "text-blue-700",   bg: "bg-blue-50 border-blue-200"  },
+  { value: "doprinosi", label: "Doprinosi", color: "text-purple-700", bg: "bg-purple-50 border-purple-200" },
   { value: "ostalo",    label: "Ostalo",    color: "text-gray-700",   bg: "bg-gray-50 border-gray-200"  },
 ];
 

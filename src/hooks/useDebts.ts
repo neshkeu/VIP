@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 export interface DriverDebt {
   id: string;
   driver_id: string;
-  type: "steta" | "kazna" | "pozajmica" | "ostalo";
+  type: "steta" | "kazna" | "pozajmica" | "doprinosi" | "ostalo";
   amount: number;
   paid_amount: number;
   date: string;
