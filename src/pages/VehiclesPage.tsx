@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useAssignments } from "@/hooks/useAssignments";
-import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
+import { useVehicleDrivers, type VDRole } from "@/hooks/useVehicleDrivers";
 import { DriverCombobox } from "@/components/DriverCombobox";
 import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -29,15 +29,55 @@ function isExpiringSoon(date: string) {
 }
 function isExpired(date: string) { return date ? new Date(date) < new Date() : false; }
 
+// Zajednička logika: poveži vozača sa vozilom (operativni/papirološki) —
+// veza, reaktivacija, period dodele (renta), staro polje i trag promena.
+function useAttachDriver() {
+  const { drivers, updateDriver, displayName } = useApp();
+  const { assignVehicle } = useAssignments();
+  const { addLink, forDriver: forDriverLinks } = useVehicleDrivers();
+  const { addLog } = useVehicleDriverLog();
+  return async (vehicle: Vehicle, driverId: string, role: VDRole) => {
+    const today = new Date().toISOString().split("T")[0];
+    const drv = drivers.find(d => d.id === driverId);
+    await addLink(vehicle.id, driverId, role);
+    // Ako je vozač bio neaktivan, dodavanje na vozilo ga ponovo aktivira.
+    if (drv?.status === "inactive") await updateDriver(driverId, { status: "active" });
+    if (role === "operativni") {
+      // ZAŠTITA: stara 'legacy' papirološka veza (preko vehicle_id) na drugom vozilu
+      // se sačuva kao prava veza PRE nego što prepišemo vehicle_id.
+      if (drv?.vehicle_id && drv.vehicle_id !== vehicle.id && drv.role === "papiroloski"
+          && !forDriverLinks(drv.id).some(l => l.vehicle_id === drv.vehicle_id)) {
+        await addLink(drv.vehicle_id, drv.id, "papiroloski");
+      }
+      // Operativni vozač stvarno vozi auto → period dodele (snapshot rente) + staro polje.
+      const snapRate = (drv?.daily_rate ?? 0) > 0 ? drv!.daily_rate : (vehicle.daily_rate || 0);
+      await assignVehicle(driverId, vehicle.id, today, {
+        daily_rate: snapRate,
+        weekly_membership: drv?.weekly_membership ?? 0,
+        weekly_membership_own: drv?.weekly_membership_own ?? 0,
+        pos_monthly_fee: drv?.pos_monthly_fee ?? 0,
+        komunalni_monthly: drv?.komunalni_monthly ?? 0,
+        doprinosi_monthly: drv?.doprinosi_monthly ?? 0,
+      }, "Dodeljeno na vozilu");
+      await updateDriver(driverId, { vehicle_id: vehicle.id });
+    }
+    await addLog({ vehicle_id: vehicle.id, driver_id: driverId, role, action: "added", date: today, performed_by: displayName, note: null });
+  };
+}
+
 interface VehicleFormProps {
   initial?: Partial<Vehicle>;
-  onSave: (data: Omit<Vehicle, "id" | "created_at">) => Promise<void>;
+  onSave: (data: Omit<Vehicle, "id" | "created_at">, extra?: { opDriverId?: string; papDriverId?: string }) => Promise<void>;
   onClose: () => void;
   title: string;
   embedded?: boolean;
+  withDrivers?: boolean;   // novo vozilo: odmah izbor operativnog i papirološkog vozača
 }
 
-function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormProps) {
+function VehicleForm({ initial, onSave, onClose, title, embedded, withDrivers }: VehicleFormProps) {
+  const { drivers, vehicles } = useApp();
+  const [opDrv, setOpDrv]         = useState("");
+  const [papDrv, setPapDrv]       = useState("");
   const [brand, setBrand]         = useState(initial?.brand ?? "");
   const [model, setModel]         = useState(initial?.model ?? "");
   const [year, setYear]           = useState(String(initial?.year ?? ""));
@@ -59,7 +99,20 @@ function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormP
   const [notes, setNotes]         = useState(initial?.notes ?? "");
   const [saving, setSaving]       = useState(false);
 
+  // Opcije za izbor vozača (aktivni prvo; sublabel = trenutno vozilo)
+  const driverOpts = [...drivers]
+    .sort((a, b) => (a.status === b.status ? a.full_name.localeCompare(b.full_name) : a.status === "active" ? -1 : 1))
+    .map(d => {
+      const veh = vehicles.find(ve => ve.id === d.vehicle_id);
+      const base = veh ? `${veh.taxi_license_number || "?"} · ${veh.brand} ${veh.model}` : (d.phone || "bez vozila");
+      return { value: d.id, label: d.full_name, sublabel: d.status === "inactive" ? `⚠ neaktivan · ${base}` : base };
+    });
+
   const handleSave = async () => {
+    if (withDrivers && opDrv && opDrv === papDrv) {
+      toast.error("Isti vozač ne može biti i operativni i papirološki na istom vozilu");
+      return;
+    }
     setSaving(true);
     try {
       await onSave({
@@ -76,7 +129,7 @@ function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormP
         inspekcijski_status: inspekcijski,
         saobracajna_status: saobracajna,
         status: status as Vehicle["status"], notes,
-      });
+      }, withDrivers ? { opDriverId: opDrv || undefined, papDriverId: papDrv || undefined } : undefined);
       onClose();
     } catch (e) {
       toast.error("Greška: " + (e instanceof Error ? e.message : String(e)));
@@ -101,6 +154,23 @@ function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormP
         </TabsList>
 
         <TabsContent value="basic" className="space-y-3 pt-3">
+          <div className="grid gap-1.5">
+            <Label className="text-xs font-semibold">Komunalni broj (krovna oznaka){withDrivers && " *"}</Label>
+            <Input className="font-mono text-lg font-bold" placeholder="npr. 1280" value={taxiNum} onChange={e => setTaxiNum(e.target.value)} />
+          </div>
+          {withDrivers && (
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs"><span className="inline-block h-2 w-2 rounded-full bg-green-500 mr-1.5" />Operativni vozač</Label>
+                <DriverCombobox value={opDrv} onChange={setOpDrv} placeholder="izaberi (opciono)" options={driverOpts} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs"><span className="inline-block h-2 w-2 rounded-full bg-orange-500 mr-1.5" />Papirološki vozač</Label>
+                <DriverCombobox value={papDrv} onChange={setPapDrv} placeholder="izaberi (opciono)" options={driverOpts} />
+              </div>
+              <p className="col-span-2 text-[11px] text-muted-foreground">Operativnom se otvara period i renta se vuče sa vozila. Može i kasnije, u „Vozači i istorija".</p>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-3">
             <div className="grid gap-1.5"><Label className="text-xs">Marka</Label><Input value={brand} onChange={e => setBrand(e.target.value)} /></div>
             <div className="grid gap-1.5"><Label className="text-xs">Model</Label><Input value={model} onChange={e => setModel(e.target.value)} /></div>
@@ -108,12 +178,9 @@ function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormP
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5"><Label className="text-xs">Tablice</Label><Input value={plate} onChange={e => setPlate(e.target.value)} /></div>
-            <div className="grid gap-1.5"><Label className="text-xs">Komunalni broj (krovna oznaka)</Label><Input value={taxiNum} onChange={e => setTaxiNum(e.target.value)} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5"><Label className="text-xs">VIN (broj šasije)</Label><Input value={vin} onChange={e => setVin(e.target.value)} /></div>
-            <div className="grid gap-1.5"><Label className="text-xs">POS terminal ID</Label><Input value={posId} onChange={e => setPosId(e.target.value)} /></div>
           </div>
+          <div className="grid gap-1.5"><Label className="text-xs">POS terminal ID</Label><Input value={posId} onChange={e => setPosId(e.target.value)} /></div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Dnevna renta (RSD)</Label>
             <Input type="number" placeholder="npr. 3900" value={dailyRate} onChange={e => setDailyRate(e.target.value)} />
@@ -166,7 +233,7 @@ function VehicleForm({ initial, onSave, onClose, title, embedded }: VehicleFormP
 
       <DialogFooter className="mt-4">
         <Button variant="outline" onClick={onClose}>Otkazi</Button>
-        <Button disabled={!brand || !model || saving} onClick={handleSave}>
+        <Button disabled={!brand || !model || (withDrivers && !taxiNum.trim()) || saving} onClick={handleSave}>
           {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Sačuvaj
         </Button>
       </DialogFooter>
@@ -245,6 +312,7 @@ function ReplaceVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
 }
 
 function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
+  const attachDriver = useAttachDriver();
   const { drivers, vehicles, updateDriver, displayName } = useApp();
   const { getByVehicle, getByDriver, closeAssignment, assignVehicle } = useAssignments();
   const { forVehicle, forDriver: forDriverLinks, addLink, removeLink } = useVehicleDrivers();
@@ -278,33 +346,9 @@ function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
 
   const addDriverToVehicle = async () => {
     if (addDrvId === "none") { toast.error("Izaberi vozača"); return; }
-    const drv = drivers.find(d => d.id === addDrvId);
     setSaving(true);
     try {
-      await addLink(vehicle.id, addDrvId, addRole);
-      // Ako je vozač bio neaktivan, dodavanje na vozilo ga ponovo aktivira.
-      if (drv?.status === "inactive") await updateDriver(addDrvId, { status: "active" });
-      if (addRole === "operativni") {
-        // ZAŠTITA: ako vozač ima staru 'legacy' papirološku vezu preko polja vehicle_id
-        // (na drugom vozilu) koja NIJE prava veza, sačuvaj je kao pravu vezu PRE nego što
-        // prepišemo vehicle_id — da se papirološko vozilo ne izgubi.
-        if (drv?.vehicle_id && drv.vehicle_id !== vehicle.id && drv.role === "papiroloski"
-            && !forDriverLinks(drv.id).some(l => l.vehicle_id === drv.vehicle_id)) {
-          await addLink(drv.vehicle_id, drv.id, "papiroloski");
-        }
-        // Operativni vozač stvarno vozi auto → otvori period dodele (snapshot rente) i sinhronizuj staro polje.
-        const snapRate = (drv?.daily_rate ?? 0) > 0 ? drv!.daily_rate : (vehicle.daily_rate || 0);
-        await assignVehicle(addDrvId, vehicle.id, today, {
-          daily_rate: snapRate,
-          weekly_membership: drv?.weekly_membership ?? 0,
-          weekly_membership_own: drv?.weekly_membership_own ?? 0,
-          pos_monthly_fee: drv?.pos_monthly_fee ?? 0,
-          komunalni_monthly: drv?.komunalni_monthly ?? 0,
-          doprinosi_monthly: drv?.doprinosi_monthly ?? 0,
-        }, "Dodeljeno na vozilu");
-        await updateDriver(addDrvId, { vehicle_id: vehicle.id });
-      }
-      await addLog({ vehicle_id: vehicle.id, driver_id: addDrvId, role: addRole, action: "added", date: today, performed_by: displayName, note: null });
+      await attachDriver(vehicle, addDrvId, addRole);
       toast.success("Vozač dodat na vozilo");
       setAddDrvId("none");
     } catch (e) { toast.error("Greška: " + (e instanceof Error ? e.message : String(e))); }
@@ -527,6 +571,7 @@ const VehiclesPage = () => {
   const { vehicles, drivers, loading, addVehicle, updateVehicle, updateDriver } = useApp();
   const { links: vdLinks } = useVehicleDrivers();
   const { getActiveDriver } = useAssignments();
+  const attachDriver = useAttachDriver();
 
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -581,9 +626,16 @@ const VehiclesPage = () => {
           </Select>
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" />Novo vozilo</Button></DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <VehicleForm title="Dodaj novo vozilo"
-                onSave={async (data) => { await addVehicle(data); toast.success("Vozilo dodano"); }}
+            <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+              <VehicleForm withDrivers title="Novi komunalni broj / vozilo"
+                onSave={async (data, extra) => {
+                  const created = await addVehicle(data);
+                  // Odmah poveži izabrane vozače (ista logika kao u 'Vozači i istorija')
+                  if (extra?.opDriverId)  await attachDriver(created, extra.opDriverId, "operativni");
+                  if (extra?.papDriverId) await attachDriver(created, extra.papDriverId, "papiroloski");
+                  const n = (extra?.opDriverId ? 1 : 0) + (extra?.papDriverId ? 1 : 0);
+                  toast.success(n > 0 ? `Vozilo dodato i povezano ${n} vozač${n === 1 ? "" : "a"}` : "Vozilo dodato");
+                }}
                 onClose={() => setAddOpen(false)} />
             </DialogContent>
           </Dialog>
