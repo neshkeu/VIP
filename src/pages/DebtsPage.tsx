@@ -20,6 +20,8 @@ import { fmtD } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
+const MONTH_NAMES = ["januar", "februar", "mart", "april", "maj", "jun", "jul", "avgust", "septembar", "oktobar", "novembar", "decembar"];
+
 const DEBT_TYPES = [
   { value: "steta",     label: "Šteta",     color: "text-red-700",    bg: "bg-red-50 border-red-200"    },
   { value: "kazna",     label: "Kazna",     color: "text-orange-700", bg: "bg-orange-50 border-orange-200" },
@@ -170,8 +172,42 @@ const DebtsPage = () => {
   const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
   const [createdBy, setCreatedBy] = useState("");
   const [saving, setSaving]       = useState(false);
+  // Doprinosi se vode po mesecima: od–do meseca, po jedno dugovanje za svaki mesec
+  const curYM = new Date().toISOString().slice(0, 7);
+  const [monthFrom, setMonthFrom] = useState(curYM);
+  const [monthTo, setMonthTo]     = useState(curYM);
+  const isDopr = type === "doprinosi";
 
-  const reset = () => { setDriverId("none"); setType("steta"); setAmount(""); setDesc(""); setCreatedBy(""); setDate(new Date().toISOString().split("T")[0]); };
+  const reset = () => { setDriverId("none"); setType("steta"); setAmount(""); setDesc(""); setCreatedBy(""); setDate(new Date().toISOString().split("T")[0]); setMonthFrom(curYM); setMonthTo(curYM); };
+
+  // Lista meseci "YYYY-MM" od–do (max 24)
+  const monthsInRange = (from: string, to: string): string[] => {
+    if (!from) return [];
+    const end = to && to >= from ? to : from;
+    const out: string[] = [];
+    let [y, m] = from.split("-").map(Number);
+    while (out.length < 24) {
+      const ym = `${y}-${String(m).padStart(2, "0")}`;
+      out.push(ym);
+      if (ym >= end) break;
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return out;
+  };
+  const doprLabel = (ym: string) => `Doprinosi za ${MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+  const doprMonths = isDopr ? monthsInRange(monthFrom, monthTo) : [];
+  // Meseci za koje vozač već ima dugovanje za doprinose (da nema duplih)
+  const doprExisting = new Set(
+    debts.filter(d => d.driver_id === driverId && d.type === "doprinosi")
+      .flatMap(d => doprMonths.filter(ym => d.description?.startsWith(doprLabel(ym))))
+  );
+
+  // Predlog iznosa iz vozačevih mesečnih doprinosa
+  const prefillDopr = (drvId: string, t: string) => {
+    if (t !== "doprinosi") return;
+    const drv = drivers.find(d => d.id === drvId);
+    if (drv && (drv.doprinosi_monthly ?? 0) > 0) setAmount(String(drv.doprinosi_monthly));
+  };
 
   const openDebts   = debts.filter(d => d.status !== "closed");
   const closedDebts = debts.filter(d => d.status === "closed");
@@ -182,7 +218,7 @@ const DebtsPage = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Dugovanja</h1>
-          <p className="text-muted-foreground text-sm">Štete, kazne, pozajmice</p>
+          <p className="text-muted-foreground text-sm">Štete, kazne, pozajmice, doprinosi</p>
         </div>
         <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) reset(); }}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novo dugovanje</Button></DialogTrigger>
@@ -192,33 +228,73 @@ const DebtsPage = () => {
               <div className="grid gap-1.5"><Label>Vozač</Label>
                 <DriverCombobox
                   value={driverId === "none" ? "" : driverId}
-                  onChange={setDriverId}
+                  onChange={v => { setDriverId(v); prefillDopr(v, type); }}
                   options={drivers
-                    .filter(d => d.role === "operativni" && d.status === "active")
+                    // Doprinose mogu imati i papirološki vozači
+                    .filter(d => d.status === "active" && (isDopr || d.role === "operativni"))
                     .sort((a, b) => a.full_name.localeCompare(b.full_name))
                     .map(d => ({ value: d.id, label: d.full_name }))}
                 />
               </div>
               <div className="grid gap-1.5"><Label>Tip</Label>
-                <Select value={type} onValueChange={setType}>
+                <Select value={type} onValueChange={v => { setType(v); prefillDopr(driverId, v); }}>
                   <SelectTrigger><SelectValue/></SelectTrigger>
                   <SelectContent>{DEBT_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e => setAmount(e.target.value)}/></div>
-                <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
-              </div>
-              <div className="grid gap-1.5"><Label>Opis</Label><Input value={desc} onChange={e => setDesc(e.target.value)}/></div>
+              {isDopr ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5"><Label>Za mesec od</Label><Input type="month" value={monthFrom} onChange={e => { setMonthFrom(e.target.value); if (!monthTo || monthTo < e.target.value) setMonthTo(e.target.value); }}/></div>
+                    <div className="grid gap-1.5"><Label>do meseca</Label><Input type="month" value={monthTo} min={monthFrom} onChange={e => setMonthTo(e.target.value)}/></div>
+                  </div>
+                  <div className="grid gap-1.5"><Label>Iznos po mesecu (RSD)</Label><Input type="number" value={amount} onChange={e => setAmount(e.target.value)}/></div>
+                  {doprMonths.length > 0 && (
+                    <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-2.5 text-xs space-y-1">
+                      <p className="font-medium text-purple-800">Biće evidentirano {doprMonths.length - doprExisting.size} {doprMonths.length - doprExisting.size === 1 ? "dugovanje" : "dugovanja"}{Number(amount) > 0 && ` · ukupno ${fmt(Number(amount) * (doprMonths.length - doprExisting.size))}`}:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {doprMonths.map(ym => (
+                          <span key={ym} className={`rounded px-1.5 py-0.5 border ${doprExisting.has(ym) ? "line-through text-muted-foreground bg-white" : "bg-white text-purple-800 border-purple-200"}`}>
+                            {MONTH_NAMES[Number(ym.slice(5, 7)) - 1]} {ym.slice(0, 4)}
+                          </span>
+                        ))}
+                      </div>
+                      {doprExisting.size > 0 && <p className="text-muted-foreground">Precrtani meseci već postoje za ovog vozača — preskaču se.</p>}
+                    </div>
+                  )}
+                  <div className="grid gap-1.5"><Label>Napomena (opciono)</Label><Input value={desc} onChange={e => setDesc(e.target.value)}/></div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" value={amount} onChange={e => setAmount(e.target.value)}/></div>
+                    <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)}/></div>
+                  </div>
+                  <div className="grid gap-1.5"><Label>Opis</Label><Input value={desc} onChange={e => setDesc(e.target.value)}/></div>
+                </>
+              )}
               <div className="grid gap-1.5"><Label>Kreirao/la</Label><Input value={createdBy} onChange={e => setCreatedBy(e.target.value)}/></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Otkazi</Button>
-              <Button disabled={driverId==="none"||!amount||!desc||!createdBy||saving} onClick={async () => {
+              <Button disabled={driverId==="none"||!amount||(!isDopr && !desc)||(isDopr && doprMonths.length - doprExisting.size === 0)||!createdBy||saving} onClick={async () => {
                 setSaving(true);
                 try {
-                  await addDebt({ driver_id: driverId, type: type as any, amount: Number(amount), date, description: desc, created_by: createdBy });
-                  toast.success("Dugovanje evidentirano");
+                  if (isDopr) {
+                    // Po jedno dugovanje za svaki mesec (datum = 1. u mesecu), bez duplih
+                    const toCreate = doprMonths.filter(ym => !doprExisting.has(ym));
+                    for (const ym of toCreate) {
+                      await addDebt({
+                        driver_id: driverId, type: "doprinosi", amount: Number(amount), date: `${ym}-01`,
+                        description: doprLabel(ym) + (desc.trim() ? ` — ${desc.trim()}` : ""),
+                        created_by: createdBy,
+                      });
+                    }
+                    toast.success(`Doprinosi evidentirani za ${toCreate.length} ${toCreate.length === 1 ? "mesec" : "meseci"}`);
+                  } else {
+                    await addDebt({ driver_id: driverId, type: type as any, amount: Number(amount), date, description: desc, created_by: createdBy });
+                    toast.success("Dugovanje evidentirano");
+                  }
                   setAddOpen(false); reset();
                 } catch(e: any) { toast.error("Greška: " + e.message); }
                 finally { setSaving(false); }
