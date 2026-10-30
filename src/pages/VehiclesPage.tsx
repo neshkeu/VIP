@@ -74,7 +74,18 @@ function VehicleForm({ initial, onSave, onClose, title, embedded, withDrivers }:
       return { value: d.id, label: d.full_name, sublabel: d.status === "inactive" ? `⚠ neaktivan · ${base}` : base };
     });
 
+  // Komunalni broj je jedinstven: na jednom komunalnom broju može biti samo jedno vozilo
+  const dupKom = taxiNum.trim()
+    ? vehicles.find(v => v.id !== initial?.id && (v.taxi_license_number || "").trim().toLowerCase() === taxiNum.trim().toLowerCase())
+    : undefined;
+
+  const komChanged = !initial?.id || taxiNum.trim() !== (initial.taxi_license_number || "").trim();
+
   const handleSave = async () => {
+    if (dupKom && komChanged) {   // stari duplikati ne blokiraju čuvanje ostalih izmena
+      toast.error(`Komunalni broj ${taxiNum.trim()} već ima vozilo ${dupKom.brand} ${dupKom.model}. Za zamenu vozila koristi „Zameni vozilo".`);
+      return;
+    }
     if (withDrivers && opDrv && opDrv === papDrv) {
       toast.error("Isti vozač ne može biti i operativni i papirološki na istom vozilu");
       return;
@@ -122,7 +133,8 @@ function VehicleForm({ initial, onSave, onClose, title, embedded, withDrivers }:
         <TabsContent value="basic" className="space-y-3 pt-3">
           <div className="grid gap-1.5">
             <Label className="text-xs font-semibold">Komunalni broj (krovna oznaka){withDrivers && " *"}</Label>
-            <Input className="font-mono text-lg font-bold" placeholder="npr. 1280" value={taxiNum} onChange={e => setTaxiNum(e.target.value)} />
+            <Input className={`font-mono text-lg font-bold ${dupKom ? "border-red-400" : ""}`} placeholder="npr. 1280" value={taxiNum} onChange={e => setTaxiNum(e.target.value)} />
+            {dupKom && <p className="text-xs text-red-600">Ovaj komunalni broj već ima vozilo {dupKom.brand} {dupKom.model} ({dupKom.license_plate || "—"}). Jedan komunalni broj = jedno vozilo.</p>}
           </div>
           {withDrivers && (
             <div className="grid grid-cols-2 gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
@@ -556,7 +568,7 @@ const VehiclesPage = () => {
       const vehDrivers = drivers.filter(d =>
         vdLinks.some(l => l.vehicle_id === v.id && l.driver_id === d.id) || d.vehicle_id === v.id
       );
-      const driverBits = vehDrivers.flatMap(d => [d.full_name, d.phone, d.komunalni_broj, d.license_number]);
+      const driverBits = vehDrivers.flatMap(d => [d.full_name, d.phone, d.license_number]);
       const haystack = [
         v.brand, v.model, v.year, v.license_plate, v.taxi_license_number, v.vin,
         v.pos_terminal_id, v.owner_name, v.owner_phone, v.udruzenje,
