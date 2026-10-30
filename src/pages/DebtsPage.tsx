@@ -223,7 +223,7 @@ const DebtsPage = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Dugovanja</h1>
-          <p className="text-muted-foreground text-sm">Štete, kazne, pozajmice, doprinosi</p>
+          <p className="text-muted-foreground text-sm">Štete, pozajmice, doprinosi · kazne (sa stranice Kazne)</p>
         </div>
         <Dialog open={addOpen} onOpenChange={v => { setAddOpen(v); if (!v) reset(); }}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4"/>Novo dugovanje</Button></DialogTrigger>
@@ -244,8 +244,10 @@ const DebtsPage = () => {
               <div className="grid gap-1.5"><Label>Tip</Label>
                 <Select value={type} onValueChange={v => { setType(v); prefillDopr(driverId, v); }}>
                   <SelectTrigger><SelectValue/></SelectTrigger>
-                  <SelectContent>{DEBT_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+                  {/* Kazne se unose SAMO na stranici Kazne (broj kazne + vozilo, dug se pravi sam) */}
+                  <SelectContent>{DEBT_TYPES.filter(t => t.value !== "kazna").map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
                 </Select>
+                <p className="text-[11px] text-muted-foreground">Saobraćajne kazne se unose na stranici <strong>Kazne</strong> — tamo imaju broj kazne i vozilo, a dug se napravi automatski.</p>
               </div>
               {isDopr ? (
                 <>
