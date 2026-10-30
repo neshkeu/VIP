@@ -2,8 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/StatCard";
 import { ExpiryAlerts } from "@/components/ExpiryAlerts";
 import { Users, Car, Wallet, TrendingUp, Loader2 } from "lucide-react";
-import { useDrivers } from "@/hooks/useDrivers";
-import { useVehicles } from "@/hooks/useVehicles";
+import { useApp } from "@/context/AppContext";
 import { useCash } from "@/hooks/useCash";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { motion } from "framer-motion";
@@ -14,8 +13,8 @@ const filterMonth = `${today.getFullYear()}-${String(today.getMonth()+1).padStar
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const Dashboard = () => {
-  const { drivers, loading: loadingDrivers } = useDrivers();
-  const { vehicles, loading: loadingVehicles } = useVehicles();
+  const { drivers, vehicles, loading: loadingApp } = useApp();
+  const loadingDrivers = loadingApp, loadingVehicles = loadingApp;
   const { entries, total_in, total_out, balance, loading: loadingCash } = useCash(filterMonth);
 
   const loading = loadingDrivers || loadingVehicles || loadingCash;

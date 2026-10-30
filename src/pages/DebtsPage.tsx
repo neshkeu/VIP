@@ -1,6 +1,6 @@
 import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useApp } from "@/context/AppContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDebts } from "@/hooks/useDebts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,8 +51,8 @@ function DebtCard({ debt }: { debt: any }) {
   const driver   = drivers.find(d => d.id === debt.driver_id);
   const payments = getPaymentsForDebt(debt.id);
   const remaining = debt.amount - debt.paid_amount;
-  const progress  = Math.round((debt.paid_amount / debt.amount) * 100);
-  const typeCfg   = DEBT_TYPES.find(t => t.value === debt.type)!;
+  const progress  = debt.amount > 0 ? Math.round((debt.paid_amount / debt.amount) * 100) : 100;
+  const typeCfg   = DEBT_TYPES.find(t => t.value === debt.type) ?? DEBT_TYPES[DEBT_TYPES.length - 1]; // nepoznat tip → "Ostalo" (ne obara stranicu)
   const statusCfg = STATUS_CFG[debt.status as keyof typeof STATUS_CFG];
 
   return (
@@ -164,7 +164,10 @@ function DebtCard({ debt }: { debt: any }) {
 const DebtsPage = () => {
   const { drivers, displayName } = useApp();
   const { isOperativni } = useDriverRoles();
-  const { debts, loading, addDebt } = useDebts();
+  const { debts, loading, addDebt, refetch: refetchDebts } = useDebts();
+  useEffect(() => { refetchDebts(); // sveže pri otvaranju (dugove upisuju i Kazne/Kasa)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const [addOpen, setAddOpen]     = useState(false);
   const [driverId, setDriverId]   = useState("none");

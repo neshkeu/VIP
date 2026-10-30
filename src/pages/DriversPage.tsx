@@ -1,7 +1,8 @@
 import { todayISO } from "@/lib/date";
-import { useState } from "react";
-import { useDrivers, type Driver, type DriverRole } from "@/hooks/useDrivers";
-import { useVehicles, type DocStatus, type Vehicle } from "@/hooks/useVehicles";
+import { useState, useEffect } from "react";
+import { type Driver, type DriverRole } from "@/hooks/useDrivers";
+import { useApp } from "@/context/AppContext";
+import { type DocStatus, type Vehicle } from "@/hooks/useVehicles";
 import { useDebts } from "@/hooks/useDebts";
 import { useDeposits } from "@/hooks/useDeposits";
 import { Card, CardContent } from "@/components/ui/card";
@@ -551,13 +552,15 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
 }
 
 const DriversPage = () => {
-  const { drivers, loading, addDriver, updateDriver, deleteDriver } = useDrivers();
-  const { vehicles } = useVehicles();
+  // Isto (deljeno) stanje kao Kasa, Komunalni broj, Dugovanja — izmene se odmah vide svuda
+  const { drivers, vehicles, loading, addDriver, updateDriver, deleteDriver } = useApp();
   const { assignVehicle, getByDriver, updateAssignment, deleteAssignment } = useAssignments();
   const { links: vdLinks, addLink, removeLink, forDriver: forDriverLinks } = useVehicleDrivers();
   const { addLog } = useVehicleDriverLog();
   const { displayName } = useCurrentUser();
-  const { debts } = useDebts();
+  const { debts, refetch: refetchDebts } = useDebts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refetchDebts(); }, []);
   const { balanceFor } = useDeposits();
   const [search, setSearch]         = useState("");
   const [addOpen, setAddOpen]       = useState(false);
