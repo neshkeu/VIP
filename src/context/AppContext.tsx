@@ -41,6 +41,7 @@ interface AppContextType {
   error: string | null;
   addDriver: (d: Omit<Driver, "id" | "created_at">) => Promise<Driver>;
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<Driver>;
+  deleteDriver: (id: string) => Promise<void>;
   addVehicle: (v: Omit<Vehicle, "id" | "created_at">) => Promise<Vehicle>;
   updateVehicle: (id: string, updates: Partial<Vehicle>) => Promise<Vehicle>;
   addYandex: (r: Omit<YandexReport, "id" | "created_at">) => Promise<YandexReport>;
@@ -139,6 +140,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDrivers(prev => prev.map(d => d.id === id ? data : d));
     return data;
   }
+  // Bez toasta — pozivalac prikazuje poruku (npr. kad vozač ima vezane zapise)
+  async function deleteDriver(id: string) {
+    const { error } = await supabase.from("drivers").delete().eq("id", id);
+    if (error) throw error;
+    setDrivers(prev => prev.filter(d => d.id !== id));
+  }
   async function addVehicle(vehicle: Omit<Vehicle, "id" | "created_at">) {
     const { data, error } = await supabase.from("vehicles").insert(vehicle).select().single();
     if (error) { toast.error("Greška: " + error.message); throw error; }
@@ -230,7 +237,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={{
       drivers, vehicles, yandexReports, cardReports, neoplantaRides, displayName, user, loading, error,
-      addDriver, updateDriver, addVehicle, updateVehicle,
+      addDriver, updateDriver, deleteDriver, addVehicle, updateVehicle,
       addYandex, markYandexPaid, updateYandex, deleteYandex,
       addCard, markCardPaid, updateCard, deleteCard,
       addNeoplanta, updateNeoplanta, deleteNeoplanta,

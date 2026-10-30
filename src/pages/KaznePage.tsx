@@ -1,7 +1,8 @@
 import { useDriverRoles } from "@/hooks/useDriverRoles";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import { useKazne, type Penalty } from "@/hooks/useKazne";
+import { useDebts } from "@/hooks/useDebts";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,11 @@ const KaznePage = () => {
   const { vehicles, drivers } = useApp();
   const { isOperativni, operativeVehicleId, operativniForVehicle } = useDriverRoles();
   const { penalties, loading, addPenalty, deletePenalty } = useKazne();
+  // Status kazne prati stvarnu uplatu na vezanom dugu (Kasa/Dugovanja), ne zastareo status kazne
+  const { debts, refetch: refetchDebts } = useDebts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { refetchDebts(); }, []);
+  const statusOf = (p: Penalty) => debts.find(d => d.id === p.debt_id)?.status ?? p.status;
   const { displayName } = useCurrentUser();
 
   const [search, setSearch]           = useState("");
@@ -56,7 +62,7 @@ const KaznePage = () => {
       .filter(Boolean).join(" ").toLowerCase().includes(q);
   });
 
-  const totalOpen = penalties.filter(p => p.status !== "closed").reduce((s, p) => s + p.amount, 0);
+  const totalOpen = penalties.filter(p => statusOf(p) !== "closed").reduce((s, p) => s + p.amount, 0);
 
   return (
     <div className="space-y-6">
@@ -150,7 +156,7 @@ const KaznePage = () => {
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard title="Ukupno otvorenih kazni" value={fmt(totalOpen)} icon={Gavel} />
         <StatCard title="Broj kazni" value={penalties.length} icon={Gavel} />
-        <StatCard title="Neplaćenih" value={penalties.filter(p => p.status !== "closed").length} icon={Gavel} />
+        <StatCard title="Neplaćenih" value={penalties.filter(p => statusOf(p) !== "closed").length} icon={Gavel} />
       </div>
 
       {loading ? (
@@ -202,8 +208,8 @@ const KaznePage = () => {
                       <TableCell className="text-sm">{p.description || "—"}</TableCell>
                       <TableCell className="font-bold text-red-600">{fmt(p.amount)}</TableCell>
                       <TableCell>
-                        <Badge variant={p.status === "closed" ? "default" : p.status === "partial" ? "secondary" : "destructive"} className="text-xs">
-                          {p.status === "closed" ? "Plaćeno" : p.status === "partial" ? "Djelimično" : "Otvoreno"}
+                        <Badge variant={statusOf(p) === "closed" ? "default" : statusOf(p) === "partial" ? "secondary" : "destructive"} className="text-xs">
+                          {statusOf(p) === "closed" ? "Plaćeno" : statusOf(p) === "partial" ? "Djelimično" : "Otvoreno"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">

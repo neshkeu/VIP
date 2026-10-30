@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Car, FileText, User, Building2, Calendar, Hash } from "lucide-react";
 import { fmtD } from "@/lib/date";
+import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 
 function fmtDate(d: string | null | undefined) {
   return d ? fmtD(d) : "—";
@@ -62,6 +63,7 @@ function DateCell({ date }: { date: string | null | undefined }) {
 }
 
 export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle; drivers?: Driver[] }) {
+  const { links } = useVehicleDrivers();
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -159,8 +161,15 @@ export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle
       </div>
 
       {(() => {
-        const ops = drivers.filter(d => d.vehicle_id === vehicle.id && d.role === "operativni");
-        const paps = drivers.filter(d => d.vehicle_id === vehicle.id && d.role === "papiroloski");
+        // Vozači po STVARNIM vezama vozač↔vozilo (isto kao tabela), staro polje kao rezerva
+        const linked = links.filter(l => l.vehicle_id === vehicle.id);
+        const all = [
+          ...linked.map(l => ({ d: drivers.find(x => x.id === l.driver_id), role: l.role as string })),
+          ...drivers.filter(d => d.vehicle_id === vehicle.id && !linked.some(l => l.driver_id === d.id))
+            .map(d => ({ d, role: d.role as string })),
+        ].filter((x): x is { d: Driver; role: string } => !!x.d);
+        const ops  = all.filter(x => x.role === "operativni").map(x => x.d);
+        const paps = all.filter(x => x.role === "papiroloski").map(x => x.d);
         return (
           <>
             {ops.length > 0 && (
@@ -177,7 +186,7 @@ export function VehicleDetailsCard({ vehicle, drivers = [] }: { vehicle: Vehicle
                       </Badge>
                     } />
                     {d.driver_type === "renta" && (
-                      <Row label="Dnevna renta" value={d.daily_rate.toLocaleString("sr-RS") + " RSD"} />
+                      <Row label="Dnevna renta" value={((d.daily_rate || 0) || (vehicle.daily_rate || 0)).toLocaleString("sr-RS") + " RSD"} />
                     )}
                   </div>
                 ))}

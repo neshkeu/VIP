@@ -880,7 +880,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   };
 
   return (
-    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (v) refetchDebts(); if (!v) reset(); }}>
       <DialogTrigger asChild>
         <Button><Plus className="mr-2 h-4 w-4"/>Novi obračun</Button>
       </DialogTrigger>
