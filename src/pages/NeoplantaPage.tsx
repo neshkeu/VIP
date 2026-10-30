@@ -1,3 +1,4 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import { Plus, Loader2, CheckCircle2, Clock, Truck, Pencil, Trash2, ChevronDown,
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
-import { fmtD } from "@/lib/date";
+import { fmtD, todayISO } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -103,11 +104,12 @@ function NeoplantaUnpaidGrouped({ unpaid, drivers, onEdit, onDelete }: {
 
 const NeoplantaPage = () => {
   const { drivers, vehicles, displayName, neoplantaRides: rides, addNeoplanta, updateNeoplanta, deleteNeoplanta, loading } = useApp();
+  const { isOperativni, operativeVehicleId } = useDriverRoles();
 
   const [addOpen, setAddOpen]       = useState(false);
   const [driverId, setDriverId]     = useState("none");
   const [vehicleId, setVehicleId]   = useState<string | null>(null);
-  const [date, setDate]             = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate]             = useState(todayISO());
   const [route, setRoute]           = useState("");
   const [amount, setAmount]         = useState("");
   const [notes, setNotes]           = useState("");
@@ -121,7 +123,7 @@ const NeoplantaPage = () => {
   const [editNotes, setEditNotes]   = useState("");
 
   const reset = () => {
-    setDriverId("none"); setVehicleId(null); setDate(new Date().toISOString().split("T")[0]);
+    setDriverId("none"); setVehicleId(null); setDate(todayISO());
     setRoute(""); setAmount(""); setNotes("");
   };
 
@@ -151,14 +153,14 @@ const NeoplantaPage = () => {
                   onChange={v => {
                     setDriverId(v);
                     const d = drivers.find(dr => dr.id === v);
-                    const veh = vehicles.find(ve => ve.id === d?.vehicle_id);
+                    const veh = vehicles.find(ve => ve.id === (d ? operativeVehicleId(d) : null));
                     if (veh) setVehicleId(veh.id);
                   }}
                   options={drivers
-                    .filter(d => d.role === "operativni" && d.status === "active")
+                    .filter(d => isOperativni(d) && d.status === "active")
                     .sort((a, b) => a.full_name.localeCompare(b.full_name))
                     .map(d => {
-                      const veh = vehicles.find(v => v.id === d.vehicle_id);
+                      const veh = vehicles.find(v => v.id === operativeVehicleId(d));
                       return { value: d.id, label: d.full_name, sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : "bez vozila" };
                     })}
                 />

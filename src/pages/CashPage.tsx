@@ -1,3 +1,4 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useApp } from "@/context/AppContext";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -8,7 +9,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useFuelPdv } from "@/hooks/useFuelPdv";
 import { useObracuni } from "@/hooks/useObracuni";
 import { ClanarinaKalendar } from "@/components/ClanarinaKalendar";
-import { useDebts } from "@/hooks/useDebts";
+import { useDebts, applyDebtPayment } from "@/hooks/useDebts";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useDeposits } from "@/hooks/useDeposits";
@@ -29,7 +30,7 @@ import html2canvas from "html2canvas";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
-import { fmtD, fmtRange } from "@/lib/date";
+import { fmtD, fmtRange, todayISO, localISO } from "@/lib/date";
 
 const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
 const DAYS_SR   = ["Ned","Pon","Uto","Sri","Čet","Pet","Sub"];
@@ -264,8 +265,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   onAdd: (e: any) => Promise<void>; currentUser: string; obracunDate: string;
 }) {
   const { drivers, vehicles } = useApp();
+  const { isOperativni, operativeVehicleId } = useDriverRoles();
   const { yandexReports, cardReports, neoplantaRides, updateYandex, updateCard, updateNeoplanta } = useApp();
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
   const curMonthStr = today.slice(0,7);
 
   const [open, setOpen]         = useState(false);
@@ -335,7 +337,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const cal    = useCalendar(calYear, calMonth);
   const membership = useMembership(driverId);
   const fuelPdv = useFuelPdv(driverId, curMonthStr);
-  const { debts } = useDebts();
+  const { debts, refetch: refetchDebts } = useDebts();
   const { getByDriver: getDriverAssignments } = useAssignments();
   const { links: vdLinks } = useVehicleDrivers();
   const { saveObracun } = useObracuni();
@@ -708,11 +710,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         await onAdd({ type:"dugovanje", direction:"in", driver_id:driverId, amount:amt, date:saveDate,
           description:`Uplata dugovanja: ${debt.description}${amt < remaining ? " (delimično)" : ""}`,
           received_by:currentUser, notes:"" });
-        const newPaid = debt.paid_amount + amt;
-        const newStatus = newPaid >= debt.amount ? "closed" : "partial";
-        await supabase.from("driver_debts").update({
-          paid_amount: newPaid, status: newStatus
-        }).eq("id", debt.id);
+        // Plaćeno se računa iz SVEŽEG stanja u bazi (ne iz prikaza) — nema dvostruke uplate.
+        await applyDebtPayment(debt.id, amt);
         // Evidencija u debt_payments (za istoriju)
         await supabase.from("debt_payments").insert({
           debt_id: debt.id, driver_id: driverId,
@@ -873,7 +872,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
       setOpen(false); reset();
     } catch (e: any) { toast.error("Greška: " + e.message); }
-    finally { setSaving(false); }
+    finally {
+      setSaving(false);
+      // Osveži dugove (plaćeni/novi iz manjka) — da sledeći obračun vidi tačno stanje
+      refetchDebts();
+    }
   };
 
   return (
@@ -895,10 +898,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
               value={driverId === "none" ? "" : driverId}
               onChange={changeDriver}
               options={drivers
-                .filter(d => d.role === "operativni" && d.status === "active")
+                .filter(d => isOperativni(d) && d.status === "active")
                 .sort((a, b) => a.full_name.localeCompare(b.full_name))
                 .map(d => {
-                  const vehId = vdLinks.find(l => l.driver_id === d.id)?.vehicle_id ?? d.vehicle_id;
+                  const vehId = operativeVehicleId(d);
                   const veh = vehicles.find(v => v.id === vehId);
                   return {
                     value: d.id,
@@ -1997,7 +2000,7 @@ const CashPage = () => {
   const byDate=entries.reduce((acc,e)=>{if(!acc[e.date])acc[e.date]=[];acc[e.date].push(e);return acc;},{} as Record<string,any[]>);
   const [year,month]=filterMonth.split("-").map(Number);
   const daysInMonth=new Date(year,month,0).getDate();
-  const todayStr=today.toISOString().split("T")[0];
+  const todayStr=localISO(today);
   // Obračunski dan = SVAKI dan (ne više samo pon/sri/pet)
   const obracunDates:string[]=[];
   for(let d=1;d<=daysInMonth;d++)obracunDates.push(`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`);

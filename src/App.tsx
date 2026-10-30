@@ -10,6 +10,7 @@ import { AppProvider } from "@/context/AppContext";
 import { VehicleDriversProvider } from "@/hooks/useVehicleDrivers";
 import { AssignmentsProvider } from "@/hooks/useAssignments";
 import { VehicleDriverLogProvider } from "@/hooks/useVehicleDriverLog";
+import { DebtsProvider } from "@/hooks/useDebts";
 import LoginPage from "./pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import DriversPage from "./pages/DriversPage";
@@ -44,6 +45,7 @@ const App = () => (
             <VehicleDriversProvider>
               <AssignmentsProvider>
                 <VehicleDriverLogProvider>
+                 <DebtsProvider>
                   <Routes>
                     <Route path="/login" element={<LoginPage />} />
                     <Route
@@ -69,6 +71,7 @@ const App = () => (
                       }
                     />
                   </Routes>
+                 </DebtsProvider>
                 </VehicleDriverLogProvider>
               </AssignmentsProvider>
             </VehicleDriversProvider>

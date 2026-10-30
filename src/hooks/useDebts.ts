@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, createElement, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface DriverDebt {
@@ -24,7 +24,21 @@ export interface DebtPayment {
   notes: string;
 }
 
-export function useDebts() {
+// Uplata na dug — paid_amount se računa iz SVEŽEG stanja u bazi (ne iz prikaza),
+// da zastareo prikaz nikad ne pregazi stvarno plaćeno (dvostruka uplata).
+export async function applyDebtPayment(debtId: string, amount: number) {
+  const { data: cur, error } = await supabase.from("driver_debts")
+    .select("amount, paid_amount").eq("id", debtId).single();
+  if (error) throw error;
+  const newPaid   = (cur.paid_amount || 0) + amount;
+  const newStatus = newPaid >= cur.amount - 0.01 ? "closed" : newPaid > 0 ? "partial" : "open";
+  const { error: ue } = await supabase.from("driver_debts")
+    .update({ paid_amount: newPaid, status: newStatus }).eq("id", debtId);
+  if (ue) throw ue;
+  return { paid_amount: newPaid, status: newStatus as DriverDebt["status"] };
+}
+
+function useDebtsState() {
   const [debts, setDebts]       = useState<DriverDebt[]>([]);
   const [payments, setPayments] = useState<DebtPayment[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -54,14 +68,9 @@ export function useDebts() {
     const { data, error } = await supabase.from("debt_payments").insert(payment).select().single();
     if (error) throw error;
     setPayments(prev => [data, ...prev]);
-    // Ažuriraj paid_amount i status na dugu
     const debt = debts.find(d => d.id === payment.debt_id);
-    if (debt) {
-      const newPaid  = debt.paid_amount + payment.amount;
-      const newStatus = newPaid >= debt.amount ? "closed" : newPaid > 0 ? "partial" : "open";
-      await supabase.from("driver_debts").update({ paid_amount: newPaid, status: newStatus }).eq("id", debt.id);
-      setDebts(prev => prev.map(d => d.id === debt.id ? { ...d, paid_amount: newPaid, status: newStatus } : d));
-    }
+    const upd = await applyDebtPayment(payment.debt_id, payment.amount);
+    setDebts(prev => prev.map(d => d.id === payment.debt_id ? { ...d, ...upd } : d));
     // Direktna uplata duga (van obračuna) — upiši i u kasu da bude vidljiva kroz Kasu.
     // (Uplata kroz obračun ovo radi posebno, pa nema dupliranja.)
     await supabase.from("cash_entries").insert({
@@ -82,4 +91,20 @@ export function useDebts() {
   }
 
   return { debts, payments, loading, addDebt, addPayment, getPaymentsForDebt, getDebtsByDriver, refetch: fetchAll };
+}
+
+type DebtsApi = ReturnType<typeof useDebtsState>;
+const Ctx = createContext<DebtsApi | null>(null);
+
+// Jedno deljeno stanje dugovanja za celu aplikaciju (Dugovanja, Kasa, Vozači) —
+// uplata na jednom mestu je odmah vidljiva svuda, bez refresha.
+export function DebtsProvider({ children }: { children: ReactNode }) {
+  const value = useDebtsState();
+  return createElement(Ctx.Provider, { value }, children);
+}
+
+export function useDebts(): DebtsApi {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useDebts mora biti unutar DebtsProvider");
+  return ctx;
 }

@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/date";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -51,7 +52,7 @@ export function useKazne() {
         amount: p.amount,
         paid_amount: 0,
         status: "open",
-        date: p.violation_date ?? new Date().toISOString().split("T")[0],
+        date: p.violation_date ?? todayISO(),
         description: `Kazna${p.penalty_number ? " #" + p.penalty_number : ""}${p.description ? " — " + p.description : ""}`,
         created_by: p.created_by,
       }).select().single();
