@@ -23,6 +23,7 @@ import { useAssignments, type VehicleAssignment, type AssignmentFees } from "@/h
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
 import { DriverCombobox } from "@/components/DriverCombobox";
+import { useAttachDriver } from "@/hooks/useAttachDriver";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
@@ -40,17 +41,25 @@ const ROLE_CFG = {
 interface DriverFormProps {
   initial?: Partial<Driver>;
   vehicles: Vehicle[];
-  onSave: (data: Omit<Driver, "id" | "created_at">) => Promise<void>;
+  onSave: (data: Omit<Driver, "id" | "created_at">, extra?: { vehicleId?: string; role?: DriverRole }) => Promise<void>;
   onClose: () => void;
   title: string;
 }
 
 function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormProps) {
+  // Vozač se za vozilo vezuje SAMO preko komunalnog broja (veze vozač↔vozilo).
+  // Izmena: vozila se ovde samo prikazuju. Novi vozač: bira se komunalni broj + uloga.
+  const isEdit = !!initial?.id;
+  const { links } = useVehicleDrivers();
+  const myLinks = isEdit ? links.filter(l => l.driver_id === initial!.id) : [];
+  const memberships = myLinks.length > 0
+    ? myLinks.map(l => ({ veh: vehicles.find(v => v.id === l.vehicle_id), role: l.role as string }))
+    : (isEdit && initial?.vehicle_id ? [{ veh: vehicles.find(v => v.id === initial.vehicle_id), role: (initial.role ?? "operativni") as string }] : []);
   const [name, setName]           = useState(initial?.full_name ?? "");
   const [phone, setPhone]         = useState(initial?.phone ?? "");
   const [licNum, setLicNum]       = useState(initial?.license_number ?? "");
   const [komBroj, setKomBroj]     = useState(initial?.komunalni_broj ?? "");
-  const [vehicleId, setVehicleId] = useState(initial?.vehicle_id ?? "none");
+  const [vehicleId, setVehicleId] = useState("");   // samo za novog vozača (komunalni broj)
   const [role, setRole]           = useState<DriverRole>(initial?.role ?? "operativni");
   const [type, setType]           = useState<"renta" | "vlastito_vozilo">(initial?.driver_type ?? "renta");
   const [paysSunday, setPaysSunday] = useState<boolean>(initial?.pays_sunday ?? (initial?.driver_type === "vlastito_vozilo"));
@@ -76,13 +85,19 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   const [notes, setNotes]   = useState(initial?.notes ?? "");
   const [saving, setSaving] = useState(false);
 
+  // Da li je operativni (izmena: po vezama ili staroj ulozi; novi: izabrana uloga)
+  const isOp = isEdit
+    ? (myLinks.some(l => l.role === "operativni") || initial?.role === "operativni")
+    : role === "operativni";
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await onSave({
         full_name: name, phone, license_number: licNum, komunalni_broj: komBroj.trim() || null, status: "active",
-        role, driver_type: type, pays_sunday: paysSunday,
-        vehicle_id: vehicleId === "none" ? null : vehicleId,
+        role: isEdit ? (initial?.role ?? role) : role,
+        driver_type: type, pays_sunday: paysSunday,
+        vehicle_id: isEdit ? (initial?.vehicle_id ?? null) : null,
         daily_rate: Number(dailyRate) || 0,
         weekly_membership: Number(weekly) || 0,
         pos_monthly_fee: Number(posFee) || 0,
@@ -94,7 +109,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
         diploma_status: diploma, cpc_status: cpc, uverenje_grad_status: uverenje,
         sst_status: sst, dipl_cpc_sst: dcs || null,
         notes,
-      });
+      }, isEdit ? undefined : { vehicleId: vehicleId || undefined, role });
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -129,34 +144,52 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
             <div className="grid gap-2"><Label className="text-xs">Broj vozačke</Label><Input value={licNum} onChange={e => setLicNum(e.target.value)} /></div>
             <div className="grid gap-2"><Label className="text-xs">Komunalni broj</Label><Input value={komBroj} onChange={e => setKomBroj(e.target.value)} placeholder="jedinstven" /><p className="text-xs text-muted-foreground">Jedinstven — sprečava duplikat</p></div>
           </div>
-          <div className="grid gap-2">
-            <Label className="text-xs">Vozilo</Label>
-            <Select value={vehicleId ?? "none"} onValueChange={setVehicleId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">— Bez vozila —</SelectItem>
-                {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.taxi_license_number || "—"} · {v.brand} {v.model}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label className="text-xs">Uloga vozača</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["operativni", "papiroloski"] as const).map(r => {
-                const cfg = ROLE_CFG[r]; const Icon = cfg.icon;
-                return (
-                  <button key={r} type="button" onClick={() => setRole(r)}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${role === r ? `${cfg.color} border-current` : "hover:bg-muted border-border"}`}>
-                    <Icon className="h-4 w-4" />{cfg.label}
-                  </button>
-                );
-              })}
+          {isEdit ? (
+            <div className="grid gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <Label className="text-xs font-semibold">Komunalni brojevi (vozila)</Label>
+              {memberships.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nije vezan ni za jedan komunalni broj.</p>
+              ) : (
+                <div className="space-y-1">
+                  {memberships.map((m, k) => (
+                    <div key={k} className="flex items-center gap-2 text-sm">
+                      <span className={`h-2 w-2 rounded-full ${m.role === "operativni" ? "bg-green-500" : "bg-orange-500"}`} />
+                      <span className="font-mono font-bold">{m.veh?.taxi_license_number || "—"}</span>
+                      <span>{m.veh ? `${m.veh.brand} ${m.veh.model}` : "—"}</span>
+                      <Badge variant="outline" className="text-[10px]">{m.role === "operativni" ? "operativni" : "papirološki"}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">Vozilo i uloga se menjaju na stranici <strong>Komunalni broj</strong> (Vozači i istorija) ili dugmetom ⇄ <strong>Promeni vozilo</strong> — tako ostaju period, renta i trag.</p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {role === "operativni" ? "Vozi vozilo — plaća rentu/članarinu" : "Pokriva vozilo papirološki (dokumenti)"}
-            </p>
-          </div>
-          {role === "operativni" && (
+          ) : (
+            <div className="grid gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <Label className="text-xs font-semibold">Komunalni broj (vozilo) — opciono</Label>
+              <DriverCombobox
+                value={vehicleId}
+                onChange={setVehicleId}
+                placeholder="pretraži po broju/marki..."
+                options={vehicles.map(v => ({ value: v.id, label: `${v.taxi_license_number || "—"} · ${v.brand} ${v.model}`, sublabel: v.license_plate || undefined }))}
+              />
+              <Label className="text-xs mt-1">Uloga na tom komunalnom broju</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["operativni", "papiroloski"] as const).map(r => {
+                  const cfg = ROLE_CFG[r]; const Icon = cfg.icon;
+                  return (
+                    <button key={r} type="button" onClick={() => setRole(r)}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${role === r ? `${cfg.color} border-current` : "hover:bg-muted border-border"}`}>
+                      <Icon className="h-4 w-4" />{cfg.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {role === "operativni" ? "Vozi vozilo — plaća rentu/članarinu (otvara se period, renta sa vozila)" : "Pokriva vozilo papirološki (dokumenti)"}
+              </p>
+            </div>
+          )}
+          {isOp && (
             <div className="grid gap-2">
               <Label className="text-xs">Tip vozača (način obračuna)</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -183,7 +216,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
         </TabsContent>
 
         <TabsContent value="fees" className="space-y-3 pt-3">
-          {role === "papiroloski" ? (
+          {!isOp ? (
             <p className="text-sm text-muted-foreground italic">Papirološki vozač nema naknade (samo pokriva vozilo).</p>
           ) : (
             <AnimatePresence mode="wait">
@@ -554,6 +587,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
 const DriversPage = () => {
   // Isto (deljeno) stanje kao Kasa, Komunalni broj, Dugovanja — izmene se odmah vide svuda
   const { drivers, vehicles, loading, addDriver, updateDriver, deleteDriver } = useApp();
+  const attachDriver = useAttachDriver();
   const { assignVehicle, getByDriver, updateAssignment, deleteAssignment } = useAssignments();
   const { links: vdLinks, addLink, removeLink, forDriver: forDriverLinks } = useVehicleDrivers();
   const { addLog } = useVehicleDriverLog();
@@ -647,7 +681,13 @@ const DriversPage = () => {
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DriverForm
                 vehicles={vehicles} title="Dodaj novog vozača"
-                onSave={async (data) => { await addDriver(data); toast.success("Vozač dodan"); }}
+                onSave={async (data, extra) => {
+                  const created = await addDriver(data);
+                  // Vezivanje za komunalni broj — ista logika kao na stranici Komunalni broj
+                  const veh = extra?.vehicleId ? vehicles.find(v => v.id === extra.vehicleId) : undefined;
+                  if (veh) await attachDriver(veh, created.id, extra?.role ?? "operativni", created);
+                  toast.success(veh ? `Vozač dodan i vezan za komunalni ${veh.taxi_license_number || ""}` : "Vozač dodan");
+                }}
                 onClose={() => setAddOpen(false)}
               />
             </DialogContent>

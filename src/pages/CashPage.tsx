@@ -9,7 +9,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useFuelPdv } from "@/hooks/useFuelPdv";
 import { useObracuni } from "@/hooks/useObracuni";
 import { ClanarinaKalendar } from "@/components/ClanarinaKalendar";
-import { useDebts, applyDebtPayment } from "@/hooks/useDebts";
+import { useDebts, applyDebtPayment, revertDebtPaymentForCashEntry, adjustDebtPaymentForCashEntry } from "@/hooks/useDebts";
 import { useAssignments } from "@/hooks/useAssignments";
 import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useDeposits } from "@/hooks/useDeposits";
@@ -709,7 +709,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
         const remaining = debt.amount - debt.paid_amount;
         await onAdd({ type:"dugovanje", direction:"in", driver_id:driverId, amount:amt, date:saveDate,
           description:`Uplata dugovanja: ${debt.description}${amt < remaining ? " (delimično)" : ""}`,
-          received_by:currentUser, notes:"" });
+          received_by:currentUser, notes:`debt:${debt.id}` });   // veza ka dugu (za brisanje/ispravku)
         // Plaćeno se računa iz SVEŽEG stanja u bazi (ne iz prikaza) — nema dvostruke uplate.
         await applyDebtPayment(debt.id, amt);
         // Evidencija u debt_payments (za istoriju)
@@ -1767,7 +1767,7 @@ function ObracunCard({ date, entries, obracun, onDeleteEntry, onUpdateEntry }: {
               {delEntry && <>Obrisati <strong>{CASH_TYPE_LABELS[delEntry.type]??delEntry.type}</strong> ({delEntry.direction==="in"?"+":"−"}{fmt(delEntry.amount)})?</>}
             </DialogDescription>
           </DialogHeader>
-          <p className="text-xs text-muted-foreground">Briše se samo ova stavka iz kase. Ako je vezana za izvod/dug (yandex, kartica, dugovanje), ručno proveri taj saldo.</p>
+          <p className="text-xs text-muted-foreground">Briše se ova stavka iz kase. Ako je „Uplata dugovanja", iznos se automatski vraća na dug. Za yandex/karticu/neoplantu ručno proveri saldo izvoda.</p>
           <DialogFooter>
             <Button variant="outline" onClick={()=>setDelEntry(null)}>Otkazi</Button>
             <Button variant="destructive" disabled={saving} onClick={async()=>{
@@ -1996,6 +1996,33 @@ const CashPage = () => {
   const {entries,loading,addEntry,deleteEntry,updateEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
   const { drivers: allDrivers, displayName }=useApp();
+  const { refetch: refetchDebts } = useDebts();
+
+  // Brisanje stavke "Uplata dugovanja" → iznos se vraća na dug (opet otvoren/delimičan)
+  const handleDeleteEntry = async (id: string) => {
+    const e = entries.find(x => x.id === id);
+    await deleteEntry(id);
+    if (e?.type === "dugovanje") {
+      try {
+        const ok = await revertDebtPaymentForCashEntry(e);
+        toast[ok ? "info" : "warning"](ok ? "Uplata vraćena na dug — dug je ponovo otvoren" : "Stavka obrisana, ali vezani dug nije pronađen — proveri ga u Dugovanjima");
+      } catch (err: any) { toast.error("Stavka obrisana, ali dug nije vraćen: " + err.message); }
+      refetchDebts();
+    }
+  };
+  // Ispravka iznosa stavke "Uplata dugovanja" → dug se ispravlja za razliku
+  const handleUpdateEntry = async (id: string, u: any) => {
+    const e = entries.find(x => x.id === id);
+    const res = await updateEntry(id, u);
+    if (e?.type === "dugovanje" && typeof u?.amount === "number" && u.amount !== e.amount) {
+      try {
+        const ok = await adjustDebtPaymentForCashEntry(e, u.amount);
+        if (!ok) toast.warning("Stavka ispravljena, ali vezani dug nije pronađen — proveri ga u Dugovanjima");
+      } catch (err: any) { toast.error("Stavka ispravljena, ali dug nije ispravljen: " + err.message); }
+      refetchDebts();
+    }
+    return res;
+  };
 
   const byDate=entries.reduce((acc,e)=>{if(!acc[e.date])acc[e.date]=[];acc[e.date].push(e);return acc;},{} as Record<string,any[]>);
   const [year,month]=filterMonth.split("-").map(Number);
@@ -2035,11 +2062,11 @@ const CashPage = () => {
           <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="istorija">Istorija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
           <TabsContent value="tekuci" className="mt-4 space-y-3">
             <p className="text-xs text-muted-foreground">Današnji obračun: <strong>{fmtDate(currentObracun)}</strong></p>
-            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun} onDeleteEntry={deleteEntry} onUpdateEntry={updateEntry}/>
+            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun} onDeleteEntry={handleDeleteEntry} onUpdateEntry={handleUpdateEntry}/>
           </TabsContent>
           <TabsContent value="istorija" className="mt-4 space-y-3">
             {historyDates.length===0?<Card><CardContent className="py-10 text-center text-muted-foreground">Nema zatvorenih obračuna</CardContent></Card>
-              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun} onDeleteEntry={deleteEntry} onUpdateEntry={updateEntry}/>)}
+              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun} onDeleteEntry={handleDeleteEntry} onUpdateEntry={handleUpdateEntry}/>)}
           </TabsContent>
           <TabsContent value="sve" className="mt-4">
             <Card><CardContent className="p-0">

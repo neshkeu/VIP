@@ -38,6 +38,38 @@ export async function applyDebtPayment(debtId: string, amount: number) {
   return { paid_amount: newPaid, status: newStatus as DriverDebt["status"] };
 }
 
+// Nađi uplatu duga koja odgovara stavci u kasi ("Uplata dugovanja").
+// Nove stavke nose "debt:<id>" u napomeni; za stare se traži po vozaču, iznosu i datumu.
+async function findDebtPaymentForCashEntry(e: { driver_id: string | null; amount: number; date: string; notes?: string | null }) {
+  if (!e.driver_id) return null;
+  const m = /debt:([0-9a-f-]{36})/i.exec(e.notes || "");
+  let q = supabase.from("debt_payments").select("id, debt_id")
+    .eq("driver_id", e.driver_id).eq("amount", e.amount).eq("date", e.date);
+  if (m) q = q.eq("debt_id", m[1]);
+  const { data } = await q.limit(1);
+  const p = data?.[0] ?? null;
+  const debtId = p?.debt_id ?? m?.[1] ?? null;
+  return debtId ? { paymentId: p?.id ?? null, debtId } : null;
+}
+
+// Brisanje stavke "Uplata dugovanja" u kasi → iznos se vraća na dug (opet otvoren/delimičan).
+export async function revertDebtPaymentForCashEntry(e: { driver_id: string | null; amount: number; date: string; notes?: string | null }) {
+  const found = await findDebtPaymentForCashEntry(e);
+  if (!found) return false;
+  await applyDebtPayment(found.debtId, -e.amount);
+  if (found.paymentId) await supabase.from("debt_payments").delete().eq("id", found.paymentId);
+  return true;
+}
+
+// Ispravka iznosa stavke "Uplata dugovanja" u kasi → dug se ispravlja za razliku.
+export async function adjustDebtPaymentForCashEntry(e: { driver_id: string | null; amount: number; date: string; notes?: string | null }, newAmount: number) {
+  const found = await findDebtPaymentForCashEntry(e);
+  if (!found) return false;
+  await applyDebtPayment(found.debtId, newAmount - e.amount);
+  if (found.paymentId) await supabase.from("debt_payments").update({ amount: newAmount }).eq("id", found.paymentId);
+  return true;
+}
+
 function useDebtsState() {
   const [debts, setDebts]       = useState<DriverDebt[]>([]);
   const [payments, setPayments] = useState<DebtPayment[]>([]);
@@ -77,7 +109,8 @@ function useDebtsState() {
       type: "dugovanje", direction: "in", driver_id: payment.driver_id,
       amount: payment.amount, date: payment.date,
       description: `Uplata dugovanja${debt ? ": " + (debt.description || debt.type) : ""}`,
-      received_by: payment.received_by || "", notes: payment.notes || "",
+      received_by: payment.received_by || "",
+      notes: `debt:${payment.debt_id}${payment.notes ? " · " + payment.notes : ""}`,   // veza ka dugu (za brisanje/ispravku)
     });
     return data;
   }
