@@ -1,3 +1,4 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { useDebts } from "@/hooks/useDebts";
@@ -16,7 +17,7 @@ import { DriverCombobox } from "@/components/DriverCombobox";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
-import { fmtD } from "@/lib/date";
+import { fmtD, todayISO, thisMonthISO } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -119,7 +120,7 @@ function DebtCard({ debt }: { debt: any }) {
                     <Button disabled={!payAmount || !payBy || saving} onClick={async () => {
                       setSaving(true);
                       try {
-                        await addPayment({ debt_id: debt.id, driver_id: debt.driver_id, amount: Number(payAmount), date: new Date().toISOString().split("T")[0], received_by: payBy, notes: payNote });
+                        await addPayment({ debt_id: debt.id, driver_id: debt.driver_id, amount: Number(payAmount), date: todayISO(), received_by: payBy, notes: payNote });
                         toast.success(`Uplata evidentirana — ${payBy}`);
                         setPayOpen(false); setPayAmount(""); setPayBy(""); setPayNote("");
                       } catch(e: any) { toast.error("Greška: " + e.message); }
@@ -162,6 +163,7 @@ function DebtCard({ debt }: { debt: any }) {
 
 const DebtsPage = () => {
   const { drivers, displayName } = useApp();
+  const { isOperativni } = useDriverRoles();
   const { debts, loading, addDebt } = useDebts();
   
   const [addOpen, setAddOpen]     = useState(false);
@@ -169,16 +171,16 @@ const DebtsPage = () => {
   const [type, setType]           = useState("steta");
   const [amount, setAmount]       = useState("");
   const [desc, setDesc]           = useState("");
-  const [date, setDate]           = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate]           = useState(todayISO());
   const [createdBy, setCreatedBy] = useState("");
   const [saving, setSaving]       = useState(false);
   // Doprinosi se vode po mesecima: od–do meseca, po jedno dugovanje za svaki mesec
-  const curYM = new Date().toISOString().slice(0, 7);
+  const curYM = thisMonthISO();
   const [monthFrom, setMonthFrom] = useState(curYM);
   const [monthTo, setMonthTo]     = useState(curYM);
   const isDopr = type === "doprinosi";
 
-  const reset = () => { setDriverId("none"); setType("steta"); setAmount(""); setDesc(""); setCreatedBy(""); setDate(new Date().toISOString().split("T")[0]); setMonthFrom(curYM); setMonthTo(curYM); };
+  const reset = () => { setDriverId("none"); setType("steta"); setAmount(""); setDesc(""); setCreatedBy(""); setDate(todayISO()); setMonthFrom(curYM); setMonthTo(curYM); };
 
   // Lista meseci "YYYY-MM" od–do (max 24)
   const monthsInRange = (from: string, to: string): string[] => {
@@ -231,7 +233,7 @@ const DebtsPage = () => {
                   onChange={v => { setDriverId(v); prefillDopr(v, type); }}
                   options={drivers
                     // Doprinose mogu imati i papirološki vozači
-                    .filter(d => d.status === "active" && (isDopr || d.role === "operativni"))
+                    .filter(d => d.status === "active" && (isDopr || isOperativni(d)))
                     .sort((a, b) => a.full_name.localeCompare(b.full_name))
                     .map(d => ({ value: d.id, label: d.full_name }))}
                 />

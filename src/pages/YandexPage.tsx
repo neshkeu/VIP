@@ -1,3 +1,4 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { TrendingUp } from "lucide-react";
 import { DriverCombobox, type ComboOption } from "@/components/DriverCombobox";
-import { fmtD, fmtRange } from "@/lib/date";
+import { fmtD, fmtRange, todayISO } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -23,6 +24,7 @@ const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust",
 // ─── 3% ODBITAK PRETHODNI MJESEC (dialog) ──────────────────
 function ThreePercentDialog() {
   const { drivers, vehicles, displayName, addYandex } = useApp();
+  const { isOperativni, operativeVehicleId } = useDriverRoles();
   const today = new Date();
   const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
 
@@ -34,14 +36,14 @@ function ThreePercentDialog() {
   const [saving, setSaving] = useState(false);
 
   const ops = drivers
-    .filter(d => d.role === "operativni" && d.status === "active")
+    .filter(d => isOperativni(d) && d.status === "active")
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const [y, m] = ym.split("-").map(Number);
   const monthLabel = `${MONTHS_SR[m-1]} ${y}`;
 
   const options: ComboOption[] = ops.map(d => {
-    const veh = vehicles.find(v => v.id === d.vehicle_id);
+    const veh = vehicles.find(v => v.id === operativeVehicleId(d));
     return { value: d.id, label: d.full_name, sublabel: veh ? veh.taxi_license_number : "bez vozila" };
   });
 
@@ -55,7 +57,7 @@ function ThreePercentDialog() {
       // Vodi se kroz Yandex evidenciju kao ODBITAK — vozač to duguje (neto negativno)
       await addYandex({
         driver_id: driverId,
-        vehicle_id: d?.vehicle_id ?? null,
+        vehicle_id: d ? operativeVehicleId(d) : null,
         gross_amount: 0,
         deduction_pct: 0,
         deduction_amount: amt,
@@ -223,6 +225,7 @@ function YandexUnpaidGrouped({ unpaid, drivers, onEdit, onDelete }: {
 
 const YandexPage = () => {
   const { drivers, vehicles, displayName } = useApp();
+  const { isOperativni, operativeVehicleId } = useDriverRoles();
   const { yandexReports: reports, addYandex: addReport, markYandexPaid: markPaidOut, updateYandex, deleteYandex, loading } = useApp();
   
   
@@ -234,7 +237,7 @@ const YandexPage = () => {
   const [deductPct, setDeductPct]   = useState("10");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo]     = useState("");
-  const [date, setDate]             = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate]             = useState(todayISO());
   const [notes, setNotes]           = useState("");
   const [saving, setSaving]         = useState(false);
 
@@ -247,7 +250,7 @@ const YandexPage = () => {
   const [editDate, setEditDate]       = useState("");
   const [editNotes, setEditNotes]     = useState("");
 
-  const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(new Date().toISOString().split("T")[0]); };
+  const reset = () => { setDriverId("none"); setVehicleId("none"); setGross(""); setDeductPct("10"); setPeriodFrom(""); setPeriodTo(""); setNotes(""); setDate(todayISO()); };
 
   const grossNum    = Number(gross) || 0;
   const totalPct    = Number(deductPct);
@@ -277,12 +280,12 @@ const YandexPage = () => {
                 <div className="grid gap-1.5"><Label>Vozač</Label>
                   <DriverCombobox
                     value={driverId === "none" ? "" : driverId}
-                    onChange={v => { setDriverId(v); const d = drivers.find(dr => dr.id === v); const veh = vehicles.find(ve => ve.id === d?.vehicle_id); if (veh) setVehicleId(veh.id); }}
+                    onChange={v => { setDriverId(v); const d = drivers.find(dr => dr.id === v); const veh = vehicles.find(ve => ve.id === (d ? operativeVehicleId(d) : null)); if (veh) setVehicleId(veh.id); }}
                     options={drivers
-                      .filter(d => d.role === "operativni" && d.status === "active")
+                      .filter(d => isOperativni(d) && d.status === "active")
                       .sort((a, b) => a.full_name.localeCompare(b.full_name))
                       .map(d => {
-                        const veh = vehicles.find(v => v.id === d.vehicle_id);
+                        const veh = vehicles.find(v => v.id === operativeVehicleId(d));
                         return { value: d.id, label: d.full_name, sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : "bez vozila" };
                       })}
                   />

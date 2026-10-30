@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/date";
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useAssignments } from "@/hooks/useAssignments";
@@ -37,7 +38,7 @@ function useAttachDriver() {
   const { addLink, forDriver: forDriverLinks } = useVehicleDrivers();
   const { addLog } = useVehicleDriverLog();
   return async (vehicle: Vehicle, driverId: string, role: VDRole) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayISO();
     const drv = drivers.find(d => d.id === driverId);
     await addLink(vehicle.id, driverId, role);
     // Ako je vozač bio neaktivan, dodavanje na vozilo ga ponovo aktivira.
@@ -246,7 +247,7 @@ function ReplaceVehicleDialog({ vehicle }: { vehicle: Vehicle }) {
   const { updateVehicle } = useApp();
   const { addLog } = useVehicleDriverLog();
   const { displayName } = useCurrentUser();
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
   const [open, setOpen]   = useState(false);
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -318,7 +319,7 @@ function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
   const { forVehicle, forDriver: forDriverLinks, addLink, removeLink } = useVehicleDrivers();
   const { addLog, forVehicle: logsForVehicle } = useVehicleDriverLog();
   useCurrentUser();
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
 
   const [saving, setSaving]           = useState(false);
   const [editId, setEditId]           = useState<string | null>(null);

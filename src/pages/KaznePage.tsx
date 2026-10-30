@@ -1,3 +1,4 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useKazne, type Penalty } from "@/hooks/useKazne";
@@ -21,6 +22,7 @@ function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
 const KaznePage = () => {
   const { vehicles, drivers } = useApp();
+  const { isOperativni, operativeVehicleId, operativniForVehicle } = useDriverRoles();
   const { penalties, loading, addPenalty, deletePenalty } = useKazne();
   const { displayName } = useCurrentUser();
 
@@ -42,7 +44,7 @@ const KaznePage = () => {
   // Kad se izabere vozilo, predloži trenutnog operativnog vozača tog vozila
   const onVehicleChange = (v: string) => {
     setVehicleId(v);
-    const op = drivers.find(d => d.vehicle_id === v && d.role === "operativni");
+    const op = operativniForVehicle(drivers, v);
     if (op) setDriverId(op.id);
   };
 
@@ -98,10 +100,10 @@ const KaznePage = () => {
                     value={driverId === "none" ? "" : driverId}
                     onChange={setDriverId}
                     options={drivers
-                      .filter(d => d.role === "operativni")
+                      .filter(d => isOperativni(d))
                       .sort((a, b) => a.full_name.localeCompare(b.full_name))
                       .map(d => {
-                        const veh = vehicles.find(v => v.id === d.vehicle_id);
+                        const veh = vehicles.find(v => v.id === operativeVehicleId(d));
                         return { value: d.id, label: d.full_name, sublabel: veh ? veh.taxi_license_number : undefined };
                       })}
                   />

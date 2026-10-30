@@ -1,3 +1,5 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
+import { localISO } from "@/lib/date";
 import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { useCalendar } from "@/hooks/useCalendar";
@@ -162,9 +164,10 @@ const CalendarPage = () => {
   const [openDriver, setOpenDriver] = useState<any>(null);
 
   const { drivers, vehicles } = useApp();
+  const { isOperativni, operativeVehicleId } = useDriverRoles();
   const cal = useCalendar(year, month);
 
-  const activeDrivers = drivers.filter(d => d.status === "active" && d.role === "operativni");
+  const activeDrivers = drivers.filter(d => d.status === "active" && isOperativni(d));
   const daysInMonth = getDaysInMonth(year, month);
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); };
@@ -214,7 +217,7 @@ const CalendarPage = () => {
               {days.map(day => {
                 const dow = getDow(year, month, day);
                 const dateStr = getDateStr(year, month, day);
-                const isTod = dateStr === today.toISOString().split("T")[0];
+                const isTod = dateStr === localISO(today);
                 const isSun = dow === 0;
                 return (
                   <th key={day} className={`border px-0.5 py-1.5 text-center min-w-[44px] w-11 ${isTod ? "bg-primary/10 text-primary" : isSun ? "bg-gray-100 text-gray-500" : "bg-muted/40 text-muted-foreground"}`}>

@@ -1,3 +1,4 @@
+import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { useApp } from "@/context/AppContext";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { Plus, Loader2, CheckCircle2, Clock, CreditCard, Pencil, Trash2, Chevron
 import { toast } from "sonner";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
-import { fmtD } from "@/lib/date";
+import { fmtD, todayISO } from "@/lib/date";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
 
@@ -113,6 +114,7 @@ function CardsUnpaidGrouped({ unpaid, drivers, onEdit, onDelete }: {
 
 const CardsPage = () => {
   const { drivers, vehicles, displayName } = useApp();
+  const { isOperativni, operativeVehicleId } = useDriverRoles();
   const { cardReports: reports, addCard: addReport, updateCard, deleteCard, loading } = useApp();
 
   const PAYMENT_METHODS = [
@@ -122,7 +124,7 @@ const CardsPage = () => {
     { value: "aplikacija", label: "Aplikacija" },
   ];
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = todayISO();
   type TxRow = { gross: string; provizija: string; date: string };
   const newRow = (date = todayStr): TxRow => ({ gross: "", provizija: "", date });
 
@@ -180,14 +182,14 @@ const CardsPage = () => {
                   onChange={v => {
                     setDriverId(v);
                     const d = drivers.find(dr => dr.id === v);
-                    const veh = vehicles.find(ve => ve.id === d?.vehicle_id);
+                    const veh = vehicles.find(ve => ve.id === (d ? operativeVehicleId(d) : null));
                     if (veh) setVehicleId(veh.id);
                   }}
                   options={drivers
-                    .filter(d => d.role === "operativni" && d.status === "active")
+                    .filter(d => isOperativni(d) && d.status === "active")
                     .sort((a, b) => a.full_name.localeCompare(b.full_name))
                     .map(d => {
-                      const veh = vehicles.find(v => v.id === d.vehicle_id);
+                      const veh = vehicles.find(v => v.id === operativeVehicleId(d));
                       return { value: d.id, label: d.full_name, sublabel: veh ? `${veh.brand} ${veh.model} (${veh.taxi_license_number || "?"})` : "bez vozila" };
                     })}
                 />

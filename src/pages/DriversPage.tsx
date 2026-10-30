@@ -1,3 +1,4 @@
+import { todayISO } from "@/lib/date";
 import { useState } from "react";
 import { useDrivers, type Driver, type DriverRole } from "@/hooks/useDrivers";
 import { useVehicles, type DocStatus, type Vehicle } from "@/hooks/useVehicles";
@@ -412,7 +413,7 @@ function ChangeVehicleDialog({ driver, vehicles, history, onConfirm, onUpdateAss
   onDeleteAssignment: (id: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayISO();
   const [vehicleId, setVehicleId] = useState<string>("");
   const [dateFrom, setDateFrom]   = useState(today);
   const [notes, setNotes]         = useState("");
