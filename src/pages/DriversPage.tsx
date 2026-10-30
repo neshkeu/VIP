@@ -51,6 +51,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   // Izmena: vozila se ovde samo prikazuju. Novi vozač: bira se komunalni broj + uloga.
   const isEdit = !!initial?.id;
   const { links } = useVehicleDrivers();
+  const { drivers: allDrivers } = useApp();
   const myLinks = isEdit ? links.filter(l => l.driver_id === initial!.id) : [];
   const memberships = myLinks.length > 0
     ? myLinks.map(l => ({ veh: vehicles.find(v => v.id === l.vehicle_id), role: l.role as string }))
@@ -58,7 +59,10 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   const [name, setName]           = useState(initial?.full_name ?? "");
   const [phone, setPhone]         = useState(initial?.phone ?? "");
   const [licNum, setLicNum]       = useState(initial?.license_number ?? "");
-  const [komBroj, setKomBroj]     = useState(initial?.komunalni_broj ?? "");
+  // Novi vozač sa istim imenom kao postojeći → upozorenje (zaštita od duplikata)
+  const sameName = !isEdit && name.trim().length > 2
+    ? allDrivers.find(d => d.full_name.trim().toLowerCase() === name.trim().toLowerCase())
+    : undefined;
   const [vehicleId, setVehicleId] = useState("");   // samo za novog vozača (komunalni broj)
   const [role, setRole]           = useState<DriverRole>(initial?.role ?? "operativni");
   const [type, setType]           = useState<"renta" | "vlastito_vozilo">(initial?.driver_type ?? "renta");
@@ -94,7 +98,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
     setSaving(true);
     try {
       await onSave({
-        full_name: name, phone, license_number: licNum, komunalni_broj: komBroj.trim() || null, status: "active",
+        full_name: name, phone, license_number: licNum, komunalni_broj: initial?.komunalni_broj ?? null, status: "active",   // komunalni broj pripada VOZILU, ne vozaču
         role: isEdit ? (initial?.role ?? role) : role,
         driver_type: type, pays_sunday: paysSunday,
         vehicle_id: isEdit ? (initial?.vehicle_id ?? null) : null,
@@ -142,8 +146,10 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2"><Label className="text-xs">Broj vozačke</Label><Input value={licNum} onChange={e => setLicNum(e.target.value)} /></div>
-            <div className="grid gap-2"><Label className="text-xs">Komunalni broj</Label><Input value={komBroj} onChange={e => setKomBroj(e.target.value)} placeholder="jedinstven" /><p className="text-xs text-muted-foreground">Jedinstven — sprečava duplikat</p></div>
           </div>
+          {sameName && (
+            <p className="text-xs text-amber-700 rounded-md bg-amber-50 border border-amber-200 px-2 py-1.5">⚠ Već postoji vozač „{sameName.full_name}" — proveri da nije duplikat.</p>
+          )}
           {isEdit ? (
             <div className="grid gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
               <Label className="text-xs font-semibold">Komunalni brojevi (vozila)</Label>
@@ -339,7 +345,7 @@ function DriversTable({ rows, vehicles, vdLinks, onEdit, onChangeVehicle, onDele
                       </div>
                       <div>
                         <p className="font-medium text-sm">{d.full_name}</p>
-                        <p className="text-xs text-muted-foreground">{d.phone || "—"}{d.komunalni_broj ? ` · kom. ${d.komunalni_broj}` : ""}</p>
+                        <p className="text-xs text-muted-foreground">{d.phone || "—"}</p>
                       </div>
                     </div>
                   </TableCell>
@@ -630,13 +636,14 @@ const DriversPage = () => {
   const filtered = drivers.filter(d => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    const veh = vehicles.find(v => v.id === d.vehicle_id);
+    const vehIds = new Set([...vdLinks.filter(l => l.driver_id === d.id).map(l => l.vehicle_id), d.vehicle_id].filter(Boolean));
+    const vehBits = vehicles.filter(v => vehIds.has(v.id)).flatMap(v => [v.brand, v.model, v.license_plate, v.taxi_license_number]);
     const haystack = [
-      d.full_name, d.phone, d.komunalni_broj, d.license_number,
+      d.full_name, d.phone, d.license_number,
       d.role === "operativni" ? "operativni" : "papiroloski",
       d.driver_type === "renta" ? "renta" : "vlastito vozilo svoje",
       d.status === "active" ? "aktivan" : "neaktivan",
-      veh?.brand, veh?.model, veh?.license_plate, veh?.taxi_license_number,
+      ...vehBits,
     ].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(q);
   });
@@ -752,7 +759,7 @@ const DriversPage = () => {
             <DialogTitle>Obriši vozača</DialogTitle>
             <DialogDescription>
               Obrisati <strong>{deleteTarget?.full_name?.trim() || "(bez naziva)"}</strong>
-              {deleteTarget?.komunalni_broj ? ` — kom. ${deleteTarget.komunalni_broj}` : ""}?
+?
             </DialogDescription>
           </DialogHeader>
           <p className="text-xs text-muted-foreground">

@@ -9,7 +9,7 @@ export interface Driver {
   full_name: string;
   phone: string;
   license_number: string;
-  komunalni_broj: string | null;   // jedinstveni identifikator vozača (sprečava duplikate)
+  komunalni_broj: string | null;   // ZASTARELO: komunalni broj pripada vozilu (vehicles.taxi_license_number); ne koristi se
   status: "active" | "inactive";
   role: DriverRole;
   driver_type: "renta" | "vlastito_vozilo";
