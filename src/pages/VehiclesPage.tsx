@@ -5,6 +5,7 @@ import { useAssignments } from "@/hooks/useAssignments";
 import { useVehicleDrivers, type VDRole } from "@/hooks/useVehicleDrivers";
 import { DriverCombobox } from "@/components/DriverCombobox";
 import { useAttachDriver } from "@/hooks/useAttachDriver";
+import { DeleteDriverDialog } from "@/components/DeleteDriverDialog";
 import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Vehicle, DocStatus } from "@/hooks/useVehicles";
@@ -304,6 +305,7 @@ function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
   const [addDrvId, setAddDrvId]       = useState("none");
   const [addRole, setAddRole]         = useState<"operativni" | "papiroloski">("operativni");
   // Potvrda sklanjanja vozača (samo sa ovog vozila ILI potpuna deaktivacija)
+  const [deleteDriver, setDeleteDriver] = useState<typeof drivers[number] | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ linkId: string | null; driver: typeof drivers[number]; role: string } | null>(null);
 
   const history = getByVehicle(vehicle.id);
@@ -535,12 +537,20 @@ function VehicleDriversPanel({ vehicle }: { vehicle: Vehicle }) {
               <p className="text-sm font-medium text-red-700">Vozač više ne radi — deaktiviraj</p>
               <p className="text-xs text-muted-foreground">Skida se sa svih vozila, svi periodi se zatvaraju, status → neaktivan. Dugovi ostaju vidljivi dok se ne izmire.</p>
             </button>
+            <button
+              className="w-full text-left rounded-lg border border-dashed p-3 hover:bg-muted/40 transition-colors"
+              disabled={saving}
+              onClick={() => { if (removeTarget) { setDeleteDriver(removeTarget.driver); setRemoveTarget(null); } }}>
+              <p className="text-sm font-medium">Obriši vozača potpuno (test / greška)</p>
+              <p className="text-xs text-muted-foreground">Briše vozača i sve njegove zapise iz sistema. Samo za test ili pogrešno unete vozače.</p>
+            </button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemoveTarget(null)} disabled={saving}>Otkaži</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DeleteDriverDialog driver={deleteDriver} onClose={() => setDeleteDriver(null)} />
     </div>
   );
 }

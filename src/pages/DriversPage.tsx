@@ -24,6 +24,7 @@ import { useVehicleDrivers } from "@/hooks/useVehicleDrivers";
 import { useVehicleDriverLog } from "@/hooks/useVehicleDriverLog";
 import { DriverCombobox } from "@/components/DriverCombobox";
 import { useAttachDriver } from "@/hooks/useAttachDriver";
+import { DeleteDriverDialog } from "@/components/DeleteDriverDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 function fmt(n: number) { return n.toLocaleString("sr-RS") + " RSD"; }
@@ -607,24 +608,7 @@ const DriversPage = () => {
   const [editDriver, setEditDriver] = useState<Driver | null>(null);
   const [changeVehicleDriver, setChangeVehicleDriver] = useState<Driver | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Driver | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await deleteDriver(deleteTarget.id);
-      toast.success("Vozač obrisan");
-      setDeleteTarget(null);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/23503|foreign key|violates/i.test(msg)) {
-        toast.error("Vozač ima vezane zapise (obračuni/dugovanja) — ne može da se obriše. Spoji ga sa pravim vozačem umesto brisanja.");
-      } else {
-        toast.error("Greška: " + msg);
-      }
-    } finally { setDeleting(false); }
-  };
 
   const debtByDriver: Record<string, number> = {};
   debts.forEach(d => {
@@ -753,26 +737,7 @@ const DriversPage = () => {
         />
       )}
 
-      <Dialog open={!!deleteTarget} onOpenChange={v => { if (!v) setDeleteTarget(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Obriši vozača</DialogTitle>
-            <DialogDescription>
-              Obrisati <strong>{deleteTarget?.full_name?.trim() || "(bez naziva)"}</strong>
-?
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-xs text-muted-foreground">
-            Ako vozač ima vezane obračune/dugovanja, brisanje neće proći — tada ga spoji umesto brisanja.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Otkazi</Button>
-            <Button variant="destructive" disabled={deleting} onClick={confirmDelete}>
-              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Obriši
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteDriverDialog driver={deleteTarget} onClose={() => setDeleteTarget(null)} />
 
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
