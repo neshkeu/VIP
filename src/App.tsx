@@ -22,6 +22,7 @@ import YandexPage from "./pages/YandexPage";
 import CardsPage from "./pages/CardsPage";
 import NeoplantaPage from "./pages/NeoplantaPage";
 import KaznePage from "./pages/KaznePage";
+import ReportsPage from "./pages/ReportsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -64,6 +65,7 @@ const App = () => (
                               <Route path="/cards" element={<CardsPage />} />
                               <Route path="/neoplanta" element={<NeoplantaPage />} />
                               <Route path="/kazne" element={<KaznePage />} />
+                              <Route path="/reports" element={<ReportsPage />} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </AppLayout>
