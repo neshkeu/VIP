@@ -31,6 +31,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
 import { DriverCombobox } from "@/components/DriverCombobox";
 import { fmtD, fmtRange, todayISO, localISO } from "@/lib/date";
+import { TROSAK_KAT, PRIHOD_KAT } from "@/lib/cashCategories";
 
 const MONTHS_SR = ["Januar","Februar","Mart","April","Maj","Jun","Jul","Avgust","Septembar","Oktobar","Novembar","Decembar"];
 const DAYS_SR   = ["Ned","Pon","Uto","Sri","Čet","Pet","Sub"];
@@ -76,6 +77,7 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
   likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasi",
   vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",zaokruzivanje:"Zaokruživanje",
+  trosak:"Trošak firme",ostali_prihod:"Ostali prihod",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
@@ -83,6 +85,7 @@ const CASH_TYPE_COLORS: Record<string,string> = {
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",neoplanta:"text-emerald-700",
   vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
   vaučer_isplata:"text-red-700",bankarska_naknada:"text-green-700",zaokruzivanje:"text-gray-500",
+  trosak:"text-red-700",ostali_prihod:"text-green-700",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
@@ -416,6 +419,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // NEDELJA: za RENTA vozače besplatna (osim "radi"); za VLASTITO VOZILO se plaća kao normalan dan.
   const rentaDates  = driver && rentaEnabled && rentaFrom && rentaTo ? getDatesInRange(rentaFrom, rentaTo) : [];
   const ownVehicle  = (driver?.pays_sunday ?? false) || driver?.driver_type === "vlastito_vozilo";
+  // Posebna cena nedelje (npr. 4600 radnim danom, 1000 nedeljom) — tada se nedelja uvek naplaćuje po toj ceni
+  const sundayRate  = ownVehicle ? 0 : (driver?.sunday_rate ?? 0);
   // Cena rente po danu. Renta "živi" na vozaču (popust se menja na vozaču).
   //  - ZATVOREN period (stari auto) → istorijska cena (snapshot na dodeli)
   //  - TEKUĆI/otvoreni period → trenutna cena vozača (važi i popust)
@@ -430,6 +435,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // Efektivna dnevna renta vozača: njegova cena (popust) ako je upisana, inače sa vozila
   const effRate = (driver?.daily_rate ?? 0) || driverVehRate;
   const rateForDay = (dateStr: string): number => {
+    if (sundayRate > 0 && new Date(dateStr+"T00:00:00").getDay() === 0) return sundayRate;
     const a = driverAssignments.find(x => x.date_from <= dateStr && (!x.date_to || dateStr < x.date_to));
     if (a && a.date_to && (a.daily_rate ?? 0) > 0) return a.daily_rate;   // zatvoren period → snapshot
     // Tekući/otvoreni period: vozačeva cena (popust) ako postoji, inače renta sa vozila
@@ -437,6 +443,10 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   };
   const dayWeight = (d: string): number => {
     const dow = new Date(d+"T00:00:00").getDay();
+    if (dow === 0 && !ownVehicle && sundayRate > 0) {
+      const off = cal.getOffStatus(driverId, d);
+      return off === "pola" ? 0.5 : off ? 0 : 1;
+    }
     if (dow === 0 && !ownVehicle) {
       const sun = cal.getSundayStatus(driverId, d);
       return sun === "radi" ? 1 : 0;
@@ -675,8 +685,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
           for (const d of rentaDates) {
             const off = cal.getOffStatus(driverId, d);
             if (off === "nije_radio" || off === "servis" || off === "praznik") continue;
-            const amt = off === "pola" ? Math.round(rateForDay(d) / 2) : rateForDay(d);
-            await cal.saveAmount(driverId, d, "renta", amt, currentUser);
+            // Iznos dana = težina dana × cena (besplatna nedelja = 0 → bez iznosa, samo "izmireno")
+            const amt = Math.round(dayWeight(d) * rateForDay(d));
+            if (amt > 0) await cal.saveAmount(driverId, d, "renta", amt, currentUser);
             await cal.saveStatus(driverId, d, "izmireno", currentUser);
           }
         }
@@ -1531,7 +1542,7 @@ function ReceiptPreview({ open, onClose, title, bodyHtml }: {
 }
 
 // ─── OBRACUN KARTICA ──────────────────────────────────────────
-function ObracunCard({ date, entries, obracun, onDeleteEntry, onUpdateEntry }: { date: string; entries: any[]; obracun: any; onDeleteEntry?: (id: string) => Promise<void>; onUpdateEntry?: (id: string, u: any) => Promise<any> }) {
+function ObracunCard({ date, entries, carry, obracun, onDeleteEntry, onUpdateEntry }: { date: string; entries: any[]; carry?: number; obracun: any; onDeleteEntry?: (id: string) => Promise<void>; onUpdateEntry?: (id: string, u: any) => Promise<any> }) {
   const { drivers, displayName } = useApp();
   const [expanded,setExpanded]=useState(false);
   const [closeOpen,setCloseOpen]=useState(false);
@@ -1605,6 +1616,8 @@ function ObracunCard({ date, entries, obracun, onDeleteEntry, onUpdateEntry }: {
         <tr><td style="padding-top:8px">Ukupan ulaz</td><td style="padding-top:8px;text-align:right;color:#0a0;font-weight:600">+${fmt(total_in)}</td></tr>
         <tr><td>Ukupan izlaz</td><td style="text-align:right;color:#c00;font-weight:600">−${fmt(total_out)}</td></tr>
         <tr><td style="font-weight:800;font-size:17px;padding-top:4px">BILANS</td><td style="font-weight:800;font-size:17px;text-align:right;padding-top:4px">${fmt(total_in-total_out)}</td></tr>
+        ${carry!=null?`<tr><td style="padding-top:8px;color:#555">Preneto (stanje pre ovog dana)</td><td style="padding-top:8px;text-align:right;color:#555">${fmt(carry)}</td></tr>
+        <tr><td style="font-weight:800">STANJE KASE</td><td style="font-weight:800;text-align:right">${fmt(carry+total_in-total_out)}</td></tr>`:""}
       </table>`, `Obračun · ${fmtDate(date)}`);
   };
   return (
@@ -1623,6 +1636,7 @@ function ObracunCard({ date, entries, obracun, onDeleteEntry, onUpdateEntry }: {
               <div className="text-right hidden sm:block"><p className="text-xs text-muted-foreground">Ulaz</p><p className="font-semibold text-green-600">+{fmt(total_in)}</p></div>
               <div className="text-right hidden sm:block"><p className="text-xs text-muted-foreground">Izlaz</p><p className="font-semibold text-red-500">−{fmt(total_out)}</p></div>
               <div className="text-right"><p className="text-xs text-muted-foreground">Bilans</p><p className="font-bold">{fmt(total_in-total_out)}</p></div>
+              {carry!=null&&<div className="text-right hidden md:block border-l pl-3"><p className="text-xs text-muted-foreground" title={`Preneto: ${fmt(carry)}`}>Stanje kase</p><p className="font-bold text-blue-700">{fmt(carry+total_in-total_out)}</p></div>}
               <button onClick={()=>setExpanded(!expanded)} className="text-muted-foreground hover:text-foreground ml-1">{expanded?<ChevronUp className="h-4 w-4"/>:<ChevronDown className="h-4 w-4"/>}</button>
             </div>
           </div>
@@ -1989,11 +2003,108 @@ function BankarskaNaknadaDialog({ onAdd, currentUser, defaultDate }: {
   );
 }
 
+// ─── TROŠAK / OSTALI PRIHOD FIRME ─────────────────────────────
+// Troškovi firme (pranje, registracija, isplata vlasniku KB, plate...) i ostali prihodi
+// (refundacije, nalepnice, interne kazne...) — sa kategorijom i opciono komunalnim brojem/vozačem.
+function TrosakPrihodDialog({ onAdd, currentUser, defaultDate }: {
+  onAdd: (e: any) => Promise<any>; currentUser: string; defaultDate: string;
+}) {
+  const { drivers, vehicles } = useApp();
+  const [open, setOpen]         = useState(false);
+  const [kind, setKind]         = useState<"trosak" | "ostali_prihod">("trosak");
+  const [category, setCategory] = useState("");
+  const [vehicleId, setVehicleId] = useState("none");
+  const [driverId, setDriverId] = useState("");
+  const [amount, setAmount]     = useState("");
+  const [date, setDate]         = useState(defaultDate);
+  const [note, setNote]         = useState("");
+  const [saving, setSaving]     = useState(false);
+  useEffect(() => { if (open) setDate(defaultDate); }, [open, defaultDate]);
+  const cats = kind === "trosak" ? TROSAK_KAT : PRIHOD_KAT;
+  const reset = () => { setCategory(""); setVehicleId("none"); setDriverId(""); setAmount(""); setNote(""); };
+
+  const save = async () => {
+    if (!(Number(amount) > 0) || !category || saving) return;
+    setSaving(true);
+    try {
+      const v = vehicles.find((x: any) => x.id === vehicleId);
+      const d = drivers.find((x: any) => x.id === driverId);
+      await onAdd({
+        type: kind, direction: kind === "trosak" ? "out" : "in",
+        driver_id: driverId || null, vehicle_id: v?.id ?? null, category,
+        amount: Number(amount), date,
+        description: [cats[category], v ? `KB ${v.taxi_license_number}` : "", d ? d.full_name : "", note].filter(Boolean).join(" — "),
+        received_by: currentUser, notes: "",
+      });
+      toast.success(`${kind === "trosak" ? "Trošak" : "Prihod"}: ${fmt(Number(amount))}`);
+      setOpen(false); reset();
+    } catch (e: any) {
+      toast.error("Greška: " + e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) reset(); }}>
+      <DialogTrigger asChild>
+        <Button variant="outline"><Plus className="mr-2 h-4 w-4"/>Trošak / prihod</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{kind === "trosak" ? "Trošak firme" : "Ostali prihod"}</DialogTitle>
+          <DialogDescription>{kind === "trosak" ? "Novac izlazi iz kase (pranje, registracija, vlasnik KB, plate...)" : "Novac ulazi u kasu (refundacija, nalepnica, interna kazna...)"}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant={kind === "trosak" ? "default" : "outline"} onClick={() => { setKind("trosak"); setCategory(""); }}>
+              <ArrowUpRight className="h-4 w-4 mr-1.5"/>Trošak (izlaz)</Button>
+            <Button type="button" variant={kind === "ostali_prihod" ? "default" : "outline"} onClick={() => { setKind("ostali_prihod"); setCategory(""); }}>
+              <ArrowDownLeft className="h-4 w-4 mr-1.5"/>Prihod (ulaz)</Button>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Vrsta</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger><SelectValue placeholder="Izaberi vrstu..."/></SelectTrigger>
+              <SelectContent>{Object.entries(cats).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Komunalni broj (opciono)</Label>
+            <Select value={vehicleId} onValueChange={setVehicleId}>
+              <SelectTrigger><SelectValue/></SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectItem value="none">— bez komunalnog broja —</SelectItem>
+                {[...vehicles].sort((a: any, b: any) => (a.taxi_license_number || "").localeCompare(b.taxi_license_number || "", "sr", { numeric: true }))
+                  .map((v: any) => <SelectItem key={v.id} value={v.id}>{v.taxi_license_number || "?"} — {v.brand} {v.model}{v.owner_name ? ` (${v.owner_name})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Vozač (opciono)</Label>
+            <DriverCombobox value={driverId} onChange={setDriverId}
+              options={drivers.filter((d: any) => d.status === "active").sort((a: any, b: any) => a.full_name.localeCompare(b.full_name)).map((d: any) => ({ value: d.id, label: d.full_name }))}/>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" placeholder="0" value={amount} onChange={e=>setAmount(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") save(); }}/></div>
+            <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          </div>
+          <div className="grid gap-1.5"><Label>Opis</Label><Input placeholder={kind === "trosak" ? "npr. januar 500 €, 3 zateva, šlep..." : "npr. akumulator, guma..."} value={note} onChange={e=>setNote(e.target.value)}/></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
+          <Button disabled={!(Number(amount)>0)||!category||saving} onClick={save}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── GLAVNA STRANICA ─────────────────────────────────────────
 const CashPage = () => {
   const today = new Date();
   const [filterMonth,setFilterMonth]=useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
-  const {entries,loading,addEntry,deleteEntry,updateEntry,total_in,total_out,balance}=useCash(filterMonth);
+  const {entries,opening,loading,addEntry,deleteEntry,updateEntry,total_in,total_out,balance}=useCash(filterMonth);
   const obracun=useObracun(filterMonth);
   const { drivers: allDrivers, displayName }=useApp();
   const { refetch: refetchDebts } = useDebts();
@@ -2036,6 +2147,9 @@ const CashPage = () => {
   // Istorija: samo dani sa prometom ili zatvoreni (bez praznih kartica)
   const historyDates=obracunDates.filter(d=>d<currentObracun&&((byDate[d]?.length??0)>0||(obracun?.isConfirmed(d)??false))).sort().reverse();
   const currentEntries=byDate[currentObracun]??[];
+  // Stanje kase (kao "preneto" u Excelu): stanje pre meseca + sve stavke meseca pre tog dana
+  const carryFor=(d:string)=>opening+entries.filter(e=>e.date<d).reduce((s,e)=>s+(e.direction==="in"?e.amount:-e.amount),0);
+  const cashNow=opening+balance;
 
   return (
     <div className="space-y-6">
@@ -2046,15 +2160,21 @@ const CashPage = () => {
           <KasaDepozitDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
           <BankarskaNaknadaDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
           <IsplataVauceraDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
+          <TrosakPrihodDialog onAdd={addEntry} currentUser={displayName} defaultDate={currentObracun}/>
           <ObracunVozacDialog onAdd={addEntry} currentUser={displayName} obracunDate={currentObracun}/>
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Ulaz ovaj mj." value={fmt(total_in)} icon={ArrowDownLeft}/>
         <StatCard title="Izlaz ovaj mj." value={fmt(total_out)} icon={ArrowUpRight}/>
         <div className={`rounded-xl border p-4 flex flex-col gap-1 ${balance>=0?"bg-green-50 border-green-200":"bg-red-50 border-red-200"}`}>
           <p className="text-sm text-muted-foreground">Bilans ovaj mj.</p>
           <p className={`text-2xl font-bold font-display ${balance>=0?"text-green-600":"text-red-500"}`}>{balance>=0?"+":""}{fmt(balance)}</p>
+        </div>
+        <div className="rounded-xl border p-4 flex flex-col gap-1 bg-blue-50 border-blue-200">
+          <p className="text-sm text-muted-foreground">Stanje kase</p>
+          <p className={`text-2xl font-bold font-display ${cashNow>=0?"text-blue-700":"text-red-500"}`}>{fmt(cashNow)}</p>
+          <p className="text-xs text-muted-foreground">preneto iz prethodnog perioda: {fmt(opening)}</p>
         </div>
       </div>
       {loading?<div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>:(
@@ -2062,11 +2182,11 @@ const CashPage = () => {
           <TabsList><TabsTrigger value="tekuci">Tekući obračun</TabsTrigger><TabsTrigger value="istorija">Istorija</TabsTrigger><TabsTrigger value="sve">Svi unosi</TabsTrigger></TabsList>
           <TabsContent value="tekuci" className="mt-4 space-y-3">
             <p className="text-xs text-muted-foreground">Današnji obračun: <strong>{fmtDate(currentObracun)}</strong></p>
-            <ObracunCard date={currentObracun} entries={currentEntries} obracun={obracun} onDeleteEntry={handleDeleteEntry} onUpdateEntry={handleUpdateEntry}/>
+            <ObracunCard date={currentObracun} entries={currentEntries} carry={carryFor(currentObracun)} obracun={obracun} onDeleteEntry={handleDeleteEntry} onUpdateEntry={handleUpdateEntry}/>
           </TabsContent>
           <TabsContent value="istorija" className="mt-4 space-y-3">
             {historyDates.length===0?<Card><CardContent className="py-10 text-center text-muted-foreground">Nema zatvorenih obračuna</CardContent></Card>
-              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} obracun={obracun} onDeleteEntry={handleDeleteEntry} onUpdateEntry={handleUpdateEntry}/>)}
+              :historyDates.map(date=><ObracunCard key={date} date={date} entries={byDate[date]??[]} carry={carryFor(date)} obracun={obracun} onDeleteEntry={handleDeleteEntry} onUpdateEntry={handleUpdateEntry}/>)}
           </TabsContent>
           <TabsContent value="sve" className="mt-4">
             <Card><CardContent className="p-0">

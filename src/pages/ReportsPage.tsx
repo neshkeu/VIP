@@ -7,6 +7,7 @@ import { useAssignments } from "@/hooks/useAssignments";
 import { useDriverRoles } from "@/hooks/useDriverRoles";
 import { fmtD, localISO, todayISO } from "@/lib/date";
 import { ReportTable, fmtMoney, type ReportCol } from "@/components/ReportTable";
+import { TROSAK_KAT, PRIHOD_KAT } from "@/lib/cashCategories";
 import { DriverCombobox } from "@/components/DriverCombobox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // ─── Tipovi sirovih podataka ─────────────────────────────────
-interface CashRow { id: string; type: string; direction: "in" | "out"; driver_id: string | null; amount: number; date: string; received_by: string }
+interface CashRow { id: string; type: string; direction: "in" | "out"; driver_id: string | null; amount: number; date: string; received_by: string; category: string | null; vehicle_id: string | null }
 interface CalEntry { driver_id: string; date: string; status: string | null; sunday_status: string | null; off_status: string | null }
 interface CalAmount { id: string; driver_id: string; date: string; type: string; amount: number }
 interface Debt { id: string; driver_id: string; type: string; amount: number; paid_amount: number; date: string; description: string; status: string }
@@ -72,6 +73,7 @@ const CASH_LABELS: Record<string, string> = {
   neoplanta: "Neoplanta isplata", vaučer: "Vaučer", vaučer_mb: "Vaučer (MB)", pdv_gorivo: "PDV gorivo",
   likvidnost_out: "Podizanje gotovine", depozit: "Depozit vozača", kasa_depozit: "Depozit u kasi",
   vaučer_isplata: "Isplata vaučera (spolja)", bankarska_naknada: "Bankarska naknada", zaokruzivanje: "Zaokruživanje",
+  trosak: "Trošak firme", ostali_prihod: "Ostali prihod",
 };
 const DEBT_LABELS: Record<string, string> = { steta: "Šteta", kazna: "Kazna", pozajmica: "Pozajmica", doprinosi: "Doprinosi", ostalo: "Ostalo" };
 
@@ -127,7 +129,7 @@ export default function ReportsPage() {
     try {
       const period = (q: any) => q.gte("date", from).lte("date", to);
       const [cash, calEntries, calAmounts, debts, penalties, memberships, yandex, cards, neo] = await Promise.all([
-        fetchAllRows<CashRow>("cash_entries", "id,type,direction,driver_id,amount,date,received_by", period),
+        fetchAllRows<CashRow>("cash_entries", "id,type,direction,driver_id,amount,date,received_by,category,vehicle_id", period),
         fetchAllRows<CalEntry>("calendar_entries", "id,driver_id,date,status,sunday_status,off_status"),
         fetchAllRows<CalAmount>("calendar_amounts", "id,driver_id,date,type,amount", q => period(q).eq("type", "renta")),
         fetchAllRows<Debt>("driver_debts", "*"),
@@ -191,22 +193,27 @@ export default function ReportsPage() {
     const out = new Map<string, { rate: number; paidThrough: string | null; start: string | null; days: number; amount: number; ahead: number }>();
     for (const d of rentDrivers) {
       const rate = (d.daily_rate || 0) || (vehicleOf(d)?.daily_rate || 0);
+      const sunRate = d.pays_sunday ? 0 : (d.sunday_rate || 0);
       const cal = calByDriver.get(d.id);
       let paidThrough: string | null = null;
       cal?.forEach(e => { if (e.status === "izmireno" && (!paidThrough || e.date > paidThrough)) paidThrough = e.date; });
       const openA = assignments.filter(a => a.driver_id === d.id && !a.date_to).sort((a, b) => b.date_from.localeCompare(a.date_from))[0];
       const start = paidThrough ? addDays(paidThrough, 1) : openA?.date_from ?? null;
-      let days = 0;
+      let days = 0, amount = 0;
       if (start && start <= today) {
         for (let dt = start, i = 0; dt <= today && i < 800; dt = addDays(dt, 1), i++) {
           const e = cal?.get(dt);
-          if (isSunday(dt) && !d.pays_sunday) { if (e?.sunday_status === "radi") days += 1; continue; }
-          if (e?.off_status === "pola") days += 0.5;
-          else if (!e?.off_status) days += 1;
+          const w = e?.off_status === "pola" ? 0.5 : e?.off_status ? 0 : 1;
+          if (isSunday(dt) && !d.pays_sunday) {
+            if (sunRate > 0) { days += w; amount += w * sunRate; }          // posebna cena nedelje
+            else if (e?.sunday_status === "radi") { days += 1; amount += rate; }
+            continue;
+          }
+          days += w; amount += w * rate;
         }
       }
       const ahead = paidThrough && paidThrough > today ? dayDiff(today, paidThrough) : 0;
-      out.set(d.id, { rate, paidThrough, start, days, amount: Math.round(days * rate), ahead });
+      out.set(d.id, { rate, paidThrough, start, days, amount: Math.round(amount), ahead });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,7 +240,9 @@ export default function ReportsPage() {
   }, [raw]);
 
   // ── Podaci u periodu, sa filterima ──
-  const cash = useMemo(() => (raw?.cash ?? []).filter(e => (!driverF && vehicleF === "all") || driverOk(e.driver_id)), [raw, driverOk, driverF, vehicleF]);
+  const cash = useMemo(() => (raw?.cash ?? []).filter(e =>
+    (!driverF && vehicleF === "all") || driverOk(e.driver_id) || (!driverF && !!e.vehicle_id && e.vehicle_id === vehicleF)),
+  [raw, driverOk, driverF, vehicleF]);
   const calAmounts = useMemo(() => (raw?.calAmounts ?? []).filter(a => driverOk(a.driver_id)), [raw, driverOk]);
   const yandexP = useMemo(() => (raw?.yandex ?? []).filter(r => inRange(r.date, from, to) && driverOk(r.driver_id)), [raw, from, to, driverOk]);
   const cardsP = useMemo(() => (raw?.cards ?? []).filter(r => inRange(r.date, from, to) && driverOk(r.driver_id)), [raw, from, to, driverOk]);
@@ -250,6 +259,8 @@ export default function ReportsPage() {
     const inc = (f: (e: CashRow) => boolean) => sum(cash.filter(e => e.direction === "in" && f(e)), e => e.amount);
     const outc = (f: (e: CashRow) => boolean) => sum(cash.filter(e => e.direction === "out" && f(e)), e => e.amount);
     const prihod = inc(e => PRIHOD.has(e.type));
+    const ostaliPrihod = inc(e => e.type === "ostali_prihod");
+    const troskovi = outc(e => e.type === "trosak");
     const dugUplate = inc(e => e.type === "dugovanje");
     const isplate = outc(e => ISPLATA_VOZACU.has(e.type));
     const ydRegular = yandexP.filter(r => (r.gross_amount || 0) > 0);
@@ -260,7 +271,7 @@ export default function ReportsPage() {
     const unp = [...unpaid.entries()].filter(([id, n]) => driverOk(id) && n > 0.01);
     const newDebts = sum((raw?.debts ?? []).filter(d => inRange(d.date, from, to) && driverOk(d.driver_id)), d => d.amount);
     return {
-      prihod, dugUplate, isplate, yd10, yd3, newDebts,
+      prihod, ostaliPrihod, troskovi, zarada: prihod + ostaliPrihod - troskovi, dugUplate, isplate, yd10, yd3, newDebts,
       renta: inc(e => e.type === "renta"), clan: inc(e => e.type === "clanarina"),
       openDebt: sum(openDebt, x => x[1]), openDebtN: openDebt.length,
       arr: sum(arr, x => x[1].amount), arrN: arr.length,
@@ -268,14 +279,15 @@ export default function ReportsPage() {
     };
   }, [cash, yandexP, openDebtByDriver, arrears, unpaid, raw, from, to, driverOk]);
 
-  type MonthRow = { ym: string; renta: number; clan: number; ostaloPrihod: number; prihod: number; dug: number; isplate: number; noviDug: number; ydBruto: number };
+  type MonthRow = { ym: string; renta: number; clan: number; ostaloPrihod: number; prihod: number; troskovi: number; zarada: number; dug: number; isplate: number; noviDug: number; ydBruto: number };
   const byMonth: MonthRow[] = useMemo(() => months.map(ym => {
     const c = cash.filter(e => e.date.startsWith(ym));
     const inT = (f: (e: CashRow) => boolean) => sum(c.filter(e => e.direction === "in" && f(e)), e => e.amount);
     const renta = inT(e => e.type === "renta"), clan = inT(e => e.type === "clanarina");
-    const prihod = inT(e => PRIHOD.has(e.type));
+    const prihod = inT(e => PRIHOD.has(e.type) || e.type === "ostali_prihod");
+    const troskovi = sum(c.filter(e => e.direction === "out" && e.type === "trosak"), e => e.amount);
     return {
-      ym, renta, clan, ostaloPrihod: prihod - renta - clan, prihod,
+      ym, renta, clan, ostaloPrihod: prihod - renta - clan, prihod, troskovi, zarada: prihod - troskovi,
       dug: inT(e => e.type === "dugovanje"),
       isplate: sum(c.filter(e => e.direction === "out" && ISPLATA_VOZACU.has(e.type)), e => e.amount),
       noviDug: sum((raw?.debts ?? []).filter(d => d.date.startsWith(ym) && driverOk(d.driver_id)), d => d.amount),
@@ -315,7 +327,7 @@ export default function ReportsPage() {
   }, [rentDrivers, calAmounts, cash, arrears, driverOk, driverById]);
 
   // Po komunalnom broju: dani i iznos rente po vozilu na kom je vozač bio tog dana
-  type KomRow = { id: string; kom: string; veh: string; plate: string; status: string; rate: number; ops: string; papN: number; days: number; amt: number; util: number | null; arr: number; penN: number; penAmt: number; reg: string | null; ins: string | null; lic: string | null };
+  type KomRow = { id: string; kom: string; veh: string; plate: string; status: string; rate: number; ops: string; papN: number; days: number; amt: number; util: number | null; arr: number; penN: number; penAmt: number; owner: string; ownerPaid: number; costs: number; neto: number; reg: string | null; ins: string | null; lic: string | null };
   const workDaysInPeriod = useMemo(() => {
     let n = 0; const end = to < today ? to : today;
     for (let dt = from, i = 0; dt <= end && i < 4000; dt = addDays(dt, 1), i++) if (!isSunday(dt)) n++;
@@ -342,17 +354,21 @@ export default function ReportsPage() {
       const papN = vl.filter(l => l.role === "papiroloski").length;
       const p = perVeh.get(v.id) ?? { days: 0, amt: 0 };
       const pen = penaltiesP.filter(x => x.vehicle_id === v.id);
+      const vCosts = (raw?.cash ?? []).filter(e => e.type === "trosak" && e.vehicle_id === v.id);
+      const ownerPaid = sum(vCosts.filter(e => e.category === "vlasnik_kb"), e => e.amount);
+      const costs = sum(vCosts.filter(e => e.category !== "vlasnik_kb"), e => e.amount);
       return {
         id: v.id, kom: v.taxi_license_number || "", veh: vehLabel(v), plate: v.license_plate || "", status: v.status, rate: v.daily_rate || 0,
         ops: ops.map(d => d.full_name).join(", "), papN, days: p.days, amt: p.amt,
         util: workDaysInPeriod > 0 && ops.some(d => d.driver_type === "renta") ? Math.round((p.days / workDaysInPeriod) * 100) : null,
         arr: sum(ops, d => arrears.get(d.id)?.amount ?? 0),
         penN: pen.length, penAmt: sum(pen, x => x.amount),
+        owner: v.owner_name || "", ownerPaid, costs, neto: p.amt - ownerPaid - costs,
         reg: v.registration_expiry, ins: v.insurance_expiry, lic: v.taxi_license_expiry,
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vehicles, links, drivers, calAmounts, assignments, penaltiesP, arrears, workDaysInPeriod, vehicleF, driverF, driverById]);
+  }, [vehicles, links, drivers, calAmounts, assignments, penaltiesP, arrears, workDaysInPeriod, vehicleF, driverF, driverById, raw]);
 
   // ═══ DUGOVANJA ═══
   const [debtType, setDebtType] = useState("all");
@@ -425,6 +441,20 @@ export default function ReportsPage() {
     ...months.map(ym => ({ key: ym, label: monthLabel(ym), value: (r: CashTypeRow) => r[ym] as number, money: true, sum: true })),
     ...(months.length > 1 ? [{ key: "total", label: "Ukupno", value: (r: CashTypeRow) => r.total, money: true, sum: true }] : []),
   ];
+
+  // Troškovi i ostali prihodi po kategoriji i mesecu
+  const catMatrix = (type: "trosak" | "ostali_prihod"): CashTypeRow[] => {
+    const labels = type === "trosak" ? TROSAK_KAT : PRIHOD_KAT;
+    const rows = cash.filter(e => e.type === type);
+    return [...new Set(rows.map(e => e.category || "ostalo"))].map(k => {
+      const rr = rows.filter(e => (e.category || "ostalo") === k);
+      const r: CashTypeRow = { id: k, label: labels[k] ?? k, dir: type, total: sum(rr, e => e.amount) };
+      for (const ym of months) r[ym] = sum(rr.filter(e => e.date.startsWith(ym)), e => e.amount);
+      return r;
+    });
+  };
+  const costCats = useMemo(() => catMatrix("trosak"), [cash, months]);          // eslint-disable-line react-hooks/exhaustive-deps
+  const otherIncCats = useMemo(() => catMatrix("ostali_prihod"), [cash, months]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cashByDay = useMemo(() => {
     const m = new Map<string, { id: string; date: string; inn: number; out: number; prihod: number; drivers: Set<string> }>();
@@ -604,8 +634,10 @@ export default function ReportsPage() {
           {/* ── SAŽETAK ── */}
           <TabsContent value="sazetak" className="mt-4 space-y-4">
             <p className="text-xs text-muted-foreground">{periodTxt}. Kartice „danas" pokazuju trenutno stanje, nezavisno od perioda.</p>
-            <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-              <Kpi title="Prihod firme (kasa)" value={rsd(summary.prihod)} note={`renta ${fmtMoney(summary.renta)} · članarina ${fmtMoney(summary.clan)}`} tone="good" />
+            <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
+              <Kpi title="Prihod firme (kasa)" value={rsd(summary.prihod + summary.ostaliPrihod)} note={`renta ${fmtMoney(summary.renta)} · članarina ${fmtMoney(summary.clan)} · ostalo ${fmtMoney(summary.prihod - summary.renta - summary.clan + summary.ostaliPrihod)}`} tone="good" />
+              <Kpi title="Troškovi firme" value={rsd(summary.troskovi)} note="vlasnici KB, plate, servis, registracija..." tone={summary.troskovi > 0 ? "bad" : undefined} />
+              <Kpi title="Zarada (prihod − troškovi)" value={rsd(summary.zarada)} tone={summary.zarada >= 0 ? "good" : "bad"} />
               <Kpi title="Naplaćeni dugovi" value={rsd(summary.dugUplate)} note={`novi dugovi u periodu: ${fmtMoney(summary.newDebts)}`} />
               <Kpi title="Isplaćeno vozačima" value={rsd(summary.isplate)} note="Yandex, kartice, Neoplanta, PDV, vaučeri" />
               <Kpi title="Yandex odbitak" value={rsd(summary.yd10 + summary.yd3)} note={`10%: ${fmtMoney(summary.yd10)} · 3%: ${fmtMoney(summary.yd3)}`} />
@@ -619,8 +651,10 @@ export default function ReportsPage() {
                 { key: "ym", label: "Mesec", value: r => r.ym, render: r => monthLabel(r.ym) },
                 { key: "renta", label: "Renta", value: r => r.renta, money: true, sum: true },
                 { key: "clan", label: "Članarina", value: r => r.clan, money: true, sum: true },
-                { key: "ost", label: "Ostale naknade", value: r => r.ostaloPrihod, money: true, sum: true },
+                { key: "ost", label: "Ostali prihodi", value: r => r.ostaloPrihod, money: true, sum: true },
                 { key: "prihod", label: "Prihod ukupno", value: r => r.prihod, money: true, sum: true },
+                { key: "tr", label: "Troškovi firme", value: r => r.troskovi, money: true, sum: true },
+                { key: "zar", label: "Zarada", value: r => r.zarada, money: true, sum: true, render: r => <strong className={r.zarada >= 0 ? "text-green-600" : "text-red-600"}>{fmtMoney(r.zarada)}</strong> },
                 { key: "dug", label: "Naplaćeni dugovi", value: r => r.dug, money: true, sum: true },
                 { key: "nd", label: "Novi dugovi", value: r => r.noviDug, money: true, sum: true },
                 { key: "isp", label: "Isplaćeno vozačima", value: r => r.isplate, money: true, sum: true },
@@ -749,6 +783,9 @@ export default function ReportsPage() {
           <TabsContent value="kasa" className="mt-4 space-y-4">
             <ReportTable title="Ulaz u kasu po vrsti" subtitle={periodTxt} fileName={`kasa-ulaz_${stamp}`} rowKey={r => r.id} rows={cashIn} defaultSort="total" cols={matrixCols} />
             <ReportTable title="Izlaz iz kase po vrsti" subtitle={periodTxt} fileName={`kasa-izlaz_${stamp}`} rowKey={r => r.id} rows={cashOut} defaultSort="total" cols={matrixCols} />
+            <ReportTable title="Troškovi firme po vrsti" subtitle={periodTxt} fileName={`troskovi_${stamp}`} rowKey={r => r.id} rows={costCats} defaultSort="total" cols={matrixCols}
+              empty="Nema troškova u periodu (unose se u Kasi: Trošak / prihod)" />
+            {otherIncCats.length > 0 && <ReportTable title="Ostali prihodi po vrsti" subtitle={periodTxt} fileName={`ostali-prihodi_${stamp}`} rowKey={r => r.id} rows={otherIncCats} defaultSort="total" cols={matrixCols} />}
             <ReportTable title="Kasa po danima" subtitle={periodTxt} fileName={`kasa-dani_${stamp}`} rowKey={r => r.id} rows={cashByDay} defaultSort="date"
               cols={[
                 { key: "date", label: "Datum", value: r => r.date, render: r => fmtD(r.date) },
@@ -859,6 +896,10 @@ export default function ReportsPage() {
                 { key: "ops", label: "Operativni", value: r => r.ops, render: r => r.ops || <span className="text-amber-600">nema</span> },
                 { key: "papN", label: "Papirološki", value: r => r.papN, num: true, sum: true },
                 { key: "amt", label: "Renta (period)", value: r => r.amt, money: true, sum: true },
+                { key: "owner", label: "Vlasnik", value: r => r.owner },
+                { key: "ownerPaid", label: "Plaćeno vlasniku", value: r => r.ownerPaid, money: true, sum: true },
+                { key: "costs", label: "Troškovi vozila", value: r => r.costs, money: true, sum: true },
+                { key: "neto", label: "Neto (renta − vlasnik − troškovi)", value: r => r.neto, money: true, sum: true, render: r => <span className={r.neto >= 0 ? "text-green-600" : "text-red-600"}>{fmtMoney(r.neto)}</span> },
                 { key: "arr", label: "Zaostatak", value: r => r.arr, money: true, sum: true },
                 { key: "penN", label: "Kazne", value: r => r.penN, num: true, sum: true },
                 { key: "penAmt", label: "Kazne iznos", value: r => r.penAmt, money: true, sum: true },

@@ -5,10 +5,13 @@ export interface CashEntry {
   id: string; type: string; direction: "in"|"out";
   driver_id: string|null; amount: number; date: string;
   description: string; received_by: string; notes: string; created_at: string;
+  category?: string | null;     // kategorija troška / ostalog prihoda
+  vehicle_id?: string | null;   // komunalni broj (vozilo) na koji se stavka odnosi
 }
 
 export function useCash(month: string) {
   const [entries, setEntries] = useState<CashEntry[]>([]);
+  const [opening, setOpening] = useState(0);   // stanje kase na početku meseca (preneto)
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string|null>(null);
 
@@ -20,12 +23,15 @@ export function useCash(month: string) {
     const from = `${month}-01`;
     const lastDay = new Date(y, m, 0).getDate();
     const to = `${month}-${String(lastDay).padStart(2,"0")}`;
-    const { data, error } = await supabase
-      .from("cash_entries").select("*")
-      .gte("date", from).lte("date", to)
-      .order("date", { ascending: false });
+    const [{ data, error }, { data: bal }] = await Promise.all([
+      supabase.from("cash_entries").select("*")
+        .gte("date", from).lte("date", to)
+        .order("date", { ascending: false }),
+      supabase.rpc("cash_balance_before", { p_date: from }),
+    ]);
     if (error) setError(error.message);
     else setEntries(data ?? []);
+    setOpening(Number(bal) || 0);
     setLoading(false);
   }
 
@@ -53,5 +59,5 @@ export function useCash(month: string) {
   const total_out = entries.filter(e => e.direction === "out").reduce((s,e) => s+e.amount, 0);
   const balance   = total_in - total_out;
 
-  return { entries, loading, error, addEntry, deleteEntry, updateEntry, refetch: fetchEntries, total_in, total_out, balance };
+  return { entries, opening, loading, error, addEntry, deleteEntry, updateEntry, refetch: fetchEntries, total_in, total_out, balance };
 }
