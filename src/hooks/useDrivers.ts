@@ -14,6 +14,7 @@ export interface Driver {
   role: DriverRole;
   driver_type: "renta" | "vlastito_vozilo";
   pays_sunday: boolean;   // radi na svom vozilu → plaća i nedelju
+  sunday_rate?: number;   // posebna cena nedelje (npr. 1000); 0 = nedelja besplatna
   vehicle_id: string | null;
   daily_rate: number;
   weekly_membership: number;

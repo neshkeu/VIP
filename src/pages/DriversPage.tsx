@@ -69,6 +69,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
   const [type, setType]           = useState<"renta" | "vlastito_vozilo">(initial?.driver_type ?? "renta");
   const [paysSunday, setPaysSunday] = useState<boolean>(initial?.pays_sunday ?? (initial?.driver_type === "vlastito_vozilo"));
   const [dailyRate, setDailyRate] = useState(String(initial?.daily_rate ?? ""));
+  const [sundayRate, setSundayRate] = useState(initial?.sunday_rate ? String(initial.sunday_rate) : "");
   const [weekly, setWeekly]       = useState(String(initial?.weekly_membership ?? "2000"));
   const [posFee, setPosFee]       = useState(String(initial?.pos_monthly_fee ?? ""));
   const [komunalni, setKomunalni] = useState(String(initial?.komunalni_monthly ?? ""));
@@ -104,6 +105,7 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
         driver_type: type, pays_sunday: paysSunday,
         vehicle_id: isEdit ? (initial?.vehicle_id ?? null) : null,
         daily_rate: Number(dailyRate) || 0,
+        sunday_rate: paysSunday ? 0 : Number(sundayRate) || 0,
         weekly_membership: Number(weekly) || 0,
         pos_monthly_fee: Number(posFee) || 0,
         komunalni_monthly: Number(komunalni) || 0,
@@ -228,8 +230,9 @@ function DriverForm({ initial, vehicles, onSave, onClose, title }: DriverFormPro
           ) : (
             <AnimatePresence mode="wait">
               {type === "renta" ? (
-                <motion.div key="renta" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-3 gap-3">
+                <motion.div key="renta" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="grid gap-1.5"><Label className="text-xs">Dnevna renta</Label><Input type="number" value={dailyRate} onChange={e => setDailyRate(e.target.value)} /><p className="text-xs text-muted-foreground">Dnevno</p></div>
+                  <div className="grid gap-1.5"><Label className="text-xs">Nedelja</Label><Input type="number" placeholder="besplatna" disabled={paysSunday} value={paysSunday ? "" : sundayRate} onChange={e => setSundayRate(e.target.value)} /><p className="text-xs text-muted-foreground">{paysSunday ? "kao radni dan" : "posebna cena"}</p></div>
                   <div className="grid gap-1.5"><Label className="text-xs">Članarina</Label><Input type="number" value={weekly} onChange={e => setWeekly(e.target.value)} /><p className="text-xs text-muted-foreground">Sedmično</p></div>
                   <div className="grid gap-1.5"><Label className="text-xs">POS naknada</Label><Input type="number" value={posFee} onChange={e => setPosFee(e.target.value)} /><p className="text-xs text-muted-foreground">Mjesečno</p></div>
                 </motion.div>

@@ -59,6 +59,8 @@ function VehicleForm({ initial, onSave, onClose, title, embedded, withDrivers }:
   const [udruzenje, setUdruzenje] = useState(initial?.udruzenje ?? "");
   const [ownerName, setOwnerName] = useState(initial?.owner_name ?? "");
   const [ownerPhone, setOwnerPhone] = useState(initial?.owner_phone ?? "");
+  const [komAmount, setKomAmount] = useState(initial?.komunalni_amount ? String(initial.komunalni_amount) : "");
+  const [komCurrency, setKomCurrency] = useState(initial?.komunalni_currency || "EUR");
   const [legVozila, setLegVozila] = useState<DocStatus>(initial?.leg_vozila_status ?? null);
   const [inspekcijski, setInspekcijski] = useState<DocStatus>(initial?.inspekcijski_status ?? null);
   const [saobracajna, setSaobracajna]   = useState<DocStatus>(initial?.saobracajna_status ?? null);
@@ -103,6 +105,8 @@ function VehicleForm({ initial, onSave, onClose, title, embedded, withDrivers }:
         udruzenje: udruzenje || null,
         owner_name: ownerName || null,
         owner_phone: ownerPhone || null,
+        komunalni_amount: Number(komAmount) || 0,
+        komunalni_currency: komCurrency,
         leg_vozila_status: legVozila,
         inspekcijski_status: inspekcijski,
         saobracajna_status: saobracajna,
@@ -186,6 +190,17 @@ function VehicleForm({ initial, onSave, onClose, title, embedded, withDrivers }:
           <div className="grid gap-1.5"><Label className="text-xs">Vlasnik vozila (VOZAČ AUTOMOBILA)</Label><Input value={ownerName} onChange={e => setOwnerName(e.target.value)} /></div>
           <div className="grid gap-1.5"><Label className="text-xs">Telefon vlasnika</Label><Input value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)} /></div>
           <div className="grid gap-1.5"><Label className="text-xs">Udruženje (gazda)</Label><Input value={udruzenje} onChange={e => setUdruzenje(e.target.value)} /></div>
+          <div className="grid gap-1.5">
+            <Label className="text-xs">Mesečno vlasniku komunalnog broja</Label>
+            <div className="flex gap-2">
+              <Input type="number" placeholder="npr. 500" value={komAmount} onChange={e => setKomAmount(e.target.value)} />
+              <Select value={komCurrency} onValueChange={v => setKomCurrency(v as "EUR" | "RSD")}>
+                <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="EUR">EUR</SelectItem><SelectItem value="RSD">RSD</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">Koliko firma plaća vlasniku mesečno. Isplata se beleži u Kasi: Trošak / prihod → Isplata vlasniku komunalnog broja.</p>
+          </div>
         </TabsContent>
 
         <TabsContent value="expiry" className="space-y-3 pt-3">
