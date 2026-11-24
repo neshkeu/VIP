@@ -65,7 +65,7 @@ const inRange = (d: string | null | undefined, from: string, to: string) => !!d 
 const sum = <T,>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + (Number(f(r)) || 0), 0);
 
 // Kategorije stavki kase
-const PRIHOD = new Set(["renta", "clanarina", "pos_naknada", "bankarska_naknada", "komunalni", "doprinosi"]);
+const PRIHOD = new Set(["renta", "clanarina", "pos_naknada", "bankarska_naknada", "aplikacija", "komunalni", "doprinosi"]);
 const ISPLATA_VOZACU = new Set(["yandex", "kartica", "neoplanta", "pdv_gorivo", "vaučer", "vaučer_mb"]);
 const CASH_LABELS: Record<string, string> = {
   renta: "Renta", clanarina: "Članarina", pos_naknada: "POS naknada", komunalni: "Komunalni", doprinosi: "Doprinosi",
@@ -73,7 +73,7 @@ const CASH_LABELS: Record<string, string> = {
   neoplanta: "Neoplanta isplata", vaučer: "Vaučer", vaučer_mb: "Vaučer (MB)", pdv_gorivo: "PDV gorivo",
   likvidnost_out: "Podizanje gotovine", depozit: "Depozit vozača", kasa_depozit: "Depozit u kasi",
   vaučer_isplata: "Isplata vaučera (spolja)", bankarska_naknada: "Bankarska naknada", zaokruzivanje: "Zaokruživanje",
-  trosak: "Trošak firme", ostali_prihod: "Ostali prihod",
+  trosak: "Trošak firme", ostali_prihod: "Ostali prihod", aplikacija: "Aplikacija",
 };
 const DEBT_LABELS: Record<string, string> = { steta: "Šteta", kazna: "Kazna", pozajmica: "Pozajmica", doprinosi: "Doprinosi", ostalo: "Ostalo" };
 
