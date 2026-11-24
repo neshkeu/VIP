@@ -71,9 +71,9 @@ const CASH_LABELS: Record<string, string> = {
   renta: "Renta", clanarina: "Članarina", pos_naknada: "POS naknada", komunalni: "Komunalni", doprinosi: "Doprinosi",
   dugovanje: "Uplata dugovanja", likvidnost_in: "Likvidnost — ulaz", yandex: "Yandex isplata", kartica: "Kartica isplata",
   neoplanta: "Neoplanta isplata", vaučer: "Vaučer", vaučer_mb: "Vaučer (MB)", pdv_gorivo: "PDV gorivo",
-  likvidnost_out: "Podizanje gotovine", depozit: "Depozit vozača", kasa_depozit: "Depozit u kasi",
+  likvidnost_out: "Iz kase u banku / vlasniku", depozit: "Depozit vozača", kasa_depozit: "Depozit u kasi",
   vaučer_isplata: "Isplata vaučera (spolja)", bankarska_naknada: "Bankarska naknada", zaokruzivanje: "Zaokruživanje",
-  trosak: "Trošak firme", ostali_prihod: "Ostali prihod", aplikacija: "Aplikacija", uskladjivanje: "Usklađivanje (Excel)",
+  trosak: "Trošak firme", ostali_prihod: "Ostali prihod", aplikacija: "Aplikacija", uskladjivanje: "Usklađivanje (Excel)", pozajmica: "Pozajmica vozaču",
 };
 const DEBT_LABELS: Record<string, string> = { steta: "Šteta", kazna: "Kazna", pozajmica: "Pozajmica", doprinosi: "Doprinosi", ostalo: "Ostalo" };
 
