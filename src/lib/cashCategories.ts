@@ -12,6 +12,8 @@ export const TROSAK_KAT: Record<string, string> = {
   taksimetar:   "Taksimetri (baždarenje)",
   gorivo:       "Gorivo (službeno)",
   promocija:    "Promocija",
+  banka:        "Bankarske provizije",
+  usluge:       "Usluge (advokat, knjigovodstvo...)",
   ostalo:       "Ostalo",
 };
 

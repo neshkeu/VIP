@@ -75,9 +75,9 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   komunalni:"Komunalni",doprinosi:"Doprinosi",dugovanje:"Uplata dugovanja",
   likvidnost_in:"Likvidnost — ulaz",yandex:"Yandex isplata",
   kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
-  likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasi",
+  likvidnost_out:"Iz kase u banku / vlasniku",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasi",
   vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",zaokruzivanje:"Zaokruživanje",
-  trosak:"Trošak firme",ostali_prihod:"Ostali prihod",aplikacija:"Aplikacija",uskladjivanje:"Usklađivanje (Excel)",
+  trosak:"Trošak firme",ostali_prihod:"Ostali prihod",aplikacija:"Aplikacija",uskladjivanje:"Usklađivanje (Excel)",pozajmica:"Pozajmica vozaču",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
@@ -85,7 +85,7 @@ const CASH_TYPE_COLORS: Record<string,string> = {
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",neoplanta:"text-emerald-700",
   vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
   vaučer_isplata:"text-red-700",bankarska_naknada:"text-green-700",zaokruzivanje:"text-gray-500",
-  trosak:"text-red-700",ostali_prihod:"text-green-700",aplikacija:"text-green-700",uskladjivanje:"text-gray-500",
+  trosak:"text-red-700",ostali_prihod:"text-green-700",aplikacija:"text-green-700",uskladjivanje:"text-gray-500",pozajmica:"text-blue-700",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
