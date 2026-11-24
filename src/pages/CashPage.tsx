@@ -77,7 +77,7 @@ const CASH_TYPE_LABELS: Record<string,string> = {
   kartica:"Kartica isplata",neoplanta:"Neoplanta isplata",vaučer:"Vaučer",vaučer_mb:"Vaučer (MB)",pdv_gorivo:"PDV gorivo",
   likvidnost_out:"Podizanje gotovine",depozit:"Depozit vozača",kasa_depozit:"Depozit u kasi",
   vaučer_isplata:"Isplata vaučera",bankarska_naknada:"Bankarska naknada",zaokruzivanje:"Zaokruživanje",
-  trosak:"Trošak firme",ostali_prihod:"Ostali prihod",
+  trosak:"Trošak firme",ostali_prihod:"Ostali prihod",aplikacija:"Aplikacija",
 };
 const CASH_TYPE_COLORS: Record<string,string> = {
   renta:"text-green-700",clanarina:"text-green-700",pos_naknada:"text-green-700",
@@ -85,7 +85,7 @@ const CASH_TYPE_COLORS: Record<string,string> = {
   likvidnost_in:"text-purple-700",yandex:"text-orange-700",kartica:"text-orange-700",neoplanta:"text-emerald-700",
   vaučer:"text-red-700",vaučer_mb:"text-red-700",pdv_gorivo:"text-red-700",likvidnost_out:"text-red-700",depozit:"text-blue-700",kasa_depozit:"text-purple-700",
   vaučer_isplata:"text-red-700",bankarska_naknada:"text-green-700",zaokruzivanje:"text-gray-500",
-  trosak:"text-red-700",ostali_prihod:"text-green-700",
+  trosak:"text-red-700",ostali_prihod:"text-green-700",aplikacija:"text-green-700",
 };
 
 // ─── MINI KALENDAR ───────────────────────────────────────────
@@ -293,6 +293,11 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   // POS
   const [posEnabled, setPosEnabled]     = useState(false);
   const [posAmt, setPosAmt]             = useState("");
+  // Aplikacija (naknada za aplikaciju) i CNG (gorivo uzeto na firmu — vozač donese slip i vrati novac)
+  const [appEnabled, setAppEnabled]     = useState(false);
+  const [appAmt, setAppAmt]             = useState("");
+  const [cngEnabled, setCngEnabled]     = useState(false);
+  const [cngAmt, setCngAmt]             = useState("");
 
   // PDV GORIVA
   const [pdvEnabled, setPdvEnabled]     = useState(false);
@@ -380,6 +385,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
 
   // Izračuni prihoda (bez rente i clanarine jer ih automatski popunjavamo)
   const posTotal   = posEnabled ? (Number(posAmt) || 0) : 0;
+  const appTotal   = appEnabled ? (Number(appAmt) || 0) : 0;
+  const cngTotal   = cngEnabled ? (Number(cngAmt) || 0) : 0;
+  const extraTotal = appTotal + cngTotal;
   const pdvMax     = Math.min(Number(pdvAmt) || 0, fuelPdv.remaining);
   const pdvTotal   = pdvEnabled ? pdvMax : 0;
   const openDebts  = debts.filter(d => d.driver_id === driverId && d.status !== "closed");
@@ -468,7 +476,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const bonusSunday: string | null = null;
 
   // SALDO
-  const totalDuguje  = rentaTotal + clanTotal + posTotal + debtTotal;
+  const totalDuguje  = rentaTotal + clanTotal + posTotal + extraTotal + debtTotal;
   const saldo        = totalPrihodi - totalDuguje;
 
   // ─── RASPODELA PO IZVORIMA (slobodna kombinacija) ─────────────
@@ -479,13 +487,15 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   const yandexOdbiciSum   = yandexOdbiciList.reduce((s, r) => s + Math.abs(r.net_amount), 0);
 
   // OBAVEZE — šta vozač duguje (renta + članarina + POS + dug)
-  const obligTotal = rentaTotal + clanTotal + posTotal + debtTotal;
+  const obligTotal = rentaTotal + clanTotal + posTotal + extraTotal + debtTotal;
 
   // Lista pojedinačnih obaveza (za raspodelu po izvoru: "dodaj obavezu")
   const obligItems = [
     ...(rentaEnabled && rentaTotal > 0 ? [{ key: "renta", label: "Renta", amt: rentaTotal }] : []),
     ...(clanEnabled && clanTotal > 0 ? [{ key: "clanarina", label: "Članarina", amt: clanTotal }] : []),
     ...(posEnabled && posTotal > 0 ? [{ key: "pos", label: "POS naknada", amt: posTotal }] : []),
+    ...(appEnabled && appTotal > 0 ? [{ key: "app", label: "Aplikacija", amt: appTotal }] : []),
+    ...(cngEnabled && cngTotal > 0 ? [{ key: "cng", label: "CNG gorivo", amt: cngTotal }] : []),
     ...selectedDebtsList.map(d => {
       const remaining = d.amount - d.paid_amount;
       const custom = Number(debtAmounts[d.id]);
@@ -556,6 +566,8 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     renta: coveredByOblig["renta"] ?? 0,
     clan:  coveredByOblig["clanarina"] ?? 0,
     pos:   coveredByOblig["pos"] ?? 0,
+    app:   coveredByOblig["app"] ?? 0,
+    cng:   coveredByOblig["cng"] ?? 0,
     debts: Object.fromEntries(selectedDebtsList.map(d => [d.id, coveredByOblig[`debt:${d.id}`] ?? 0])) as Record<string, number>,
   };
   const totalCovered = obligItems.reduce((s, o) => s + (coveredByOblig[o.key] ?? 0), 0);
@@ -585,7 +597,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   };
 
   // PREDLOG za rentu — koliko dana pokriva raspoloživi novac (bez rente)
-  const availableForRenta = totalPrihodi - clanTotal - posTotal - debtTotal;
+  const availableForRenta = totalPrihodi - clanTotal - posTotal - extraTotal - debtTotal;
   const maxRentaDays = driver && effRate > 0 ? Math.max(0, Math.floor(availableForRenta / effRate)) : 0;
 
   // Popuni N dana rente. Sidro:
@@ -613,7 +625,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
   };
 
   // PREDLOG za članarinu — koliko sedmica pokriva ostatak novca (posle rente)
-  const availableForClan = totalPrihodi - rentaTotal - posTotal - debtTotal;
+  const availableForClan = totalPrihodi - rentaTotal - posTotal - extraTotal - debtTotal;
   const maxClanWeeks = weeklyAmt > 0 ? Math.max(0, Math.floor(availableForClan / weeklyAmt)) : 0;
 
   // Popuni N sedmica članarine počev od naredne sedmice posle poslednje
@@ -648,6 +660,7 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
     setRentaEnabled(true); setRentaFrom(today); setRentaTo(today);
     setClanEnabled(false); setClanFrom(today); setClanTo(today); setClanAmt("");
     setPosEnabled(false); setPosAmt(""); setPdvEnabled(false); setPdvAmt("");
+    setAppEnabled(false); setAppAmt(""); setCngEnabled(false); setCngAmt("");
     setSelectedDebts(new Set()); setDebtAmounts({});
     setSelectedYandex(new Set()); setYandexAmounts({});
     setSelectedCards(new Set()); setCardAmounts({});
@@ -705,6 +718,14 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       if (posEnabled && coverAlloc.pos > 0)
         await onAdd({ type:"pos_naknada", direction:"in", driver_id:driverId, amount:coverAlloc.pos, date:saveDate,
           description:`POS naknada${coverAlloc.pos >= posTotal - 0.01 ? "" : " — delimično"}`, received_by:currentUser, notes:"" });
+
+      // 3b. Aplikacija i CNG — pokriveni deo
+      if (appEnabled && coverAlloc.app > 0)
+        await onAdd({ type:"aplikacija", direction:"in", driver_id:driverId, amount:coverAlloc.app, date:saveDate,
+          description:`Aplikacija${coverAlloc.app >= appTotal - 0.01 ? "" : " — delimično"}`, received_by:currentUser, notes:"" });
+      if (cngEnabled && coverAlloc.cng > 0)
+        await onAdd({ type:"ostali_prihod", category:"cng", direction:"in", driver_id:driverId, amount:coverAlloc.cng, date:saveDate,
+          description:`CNG gorivo (slip)${coverAlloc.cng >= cngTotal - 0.01 ? "" : " — delimično"}`, received_by:currentUser, notes:"" });
 
       // 4. PDV goriva — izlaz (isplata vozaču)
       if (pdvEnabled && pdvTotal > 0) {
@@ -865,7 +886,9 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
       const manjakNonDebt = roundTo10(
         (rentaEnabled ? rentaTotal - coverAlloc.renta : 0) +
         (clanEnabled  ? clanTotal  - coverAlloc.clan  : 0) +
-        (posEnabled   ? posTotal   - coverAlloc.pos   : 0)
+        (posEnabled   ? posTotal   - coverAlloc.pos   : 0) +
+        (appEnabled   ? appTotal   - coverAlloc.app   : 0) +
+        (cngEnabled   ? cngTotal   - coverAlloc.cng   : 0)
       );
       if (manjakNonDebt > 0.01) {
         await supabase.from("driver_debts").insert({
@@ -1151,6 +1174,16 @@ function ObracunVozacDialog({ onAdd, currentUser, obracunDate }: {
                   </CheckRow>
                 )}
 
+                {/* APLIKACIJA */}
+                <CheckRow label="Aplikacija" sublabel="naknada za aplikaciju" enabled={appEnabled} onToggle={() => setAppEnabled(!appEnabled)} amount={appTotal}>
+                  <Input type="number" placeholder="npr. 240" value={appAmt} onChange={e=>setAppAmt(e.target.value)}/>
+                </CheckRow>
+
+                {/* CNG */}
+                <CheckRow label="CNG gorivo" sublabel="vozač donese slip i vraća novac firmi" enabled={cngEnabled} onToggle={() => setCngEnabled(!cngEnabled)} amount={cngTotal}>
+                  <Input type="number" placeholder="iznos sa slipa" value={cngAmt} onChange={e=>setCngAmt(e.target.value)}/>
+                </CheckRow>
+
                 {/* DUGOVANJA */}
                 {openDebts.length > 0 && (
                   <details open={selectedDebts.size > 0} className="rounded-lg border p-2 bg-red-50/20 border-red-200 space-y-2">
@@ -1434,6 +1467,8 @@ DUGUJE (obaveze): ${fmt(obligTotal)}
 ${rentaEnabled && rentaTotal > 0 ? `  Renta (${workDays} dana): ${fmt(rentaTotal)}` : ""}
 ${clanEnabled && clanTotal > 0 ? `  Članarina (${clanWeeks} sed.): ${fmt(clanTotal)}` : ""}
 ${posEnabled && posTotal > 0 ? `  POS naknada: ${fmt(posTotal)}` : ""}
+${appEnabled && appTotal > 0 ? `  Aplikacija: ${fmt(appTotal)}` : ""}
+${cngEnabled && cngTotal > 0 ? `  CNG gorivo: ${fmt(cngTotal)}` : ""}
 ${debtTotal > 0 ? `  Dugovanja: ${fmt(debtTotal)}` : ""}
 
 UZETO IZ IZVORA: ${fmt(takenTotal)}
@@ -1974,7 +2009,7 @@ function BankarskaNaknadaDialog({ onAdd, currentUser, defaultDate }: {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Bankarska naknada</DialogTitle>
-          <DialogDescription>Vozač uplaćuje za bankarske usluge (POS/aplikacija) — ulaz u kasu</DialogDescription>
+          <DialogDescription>Vozač uplaćuje za bankarske usluge (POS) — ulaz u kasu. Naknada za aplikaciju se unosi u obračunu vozača.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 py-2">
           <div className="grid gap-1.5">
