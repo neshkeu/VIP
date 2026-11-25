@@ -2046,7 +2046,9 @@ function TrosakPrihodDialog({ onAdd, currentUser, defaultDate }: {
 }) {
   const { drivers, vehicles } = useApp();
   const [open, setOpen]         = useState(false);
-  const [kind, setKind]         = useState<"trosak" | "ostali_prihod">("trosak");
+  // trosak = trošak firme, ostali_prihod = ulaz, likvidnost_out = pazar odnet u banku (nije trošak)
+  const [kind, setKind]         = useState<"trosak" | "ostali_prihod" | "likvidnost_out">("trosak");
+  const isPazar = kind === "likvidnost_out";
   const [category, setCategory] = useState("");
   const [vehicleId, setVehicleId] = useState("none");
   const [driverId, setDriverId] = useState("");
@@ -2059,19 +2061,20 @@ function TrosakPrihodDialog({ onAdd, currentUser, defaultDate }: {
   const reset = () => { setCategory(""); setVehicleId("none"); setDriverId(""); setAmount(""); setNote(""); };
 
   const save = async () => {
-    if (!(Number(amount) > 0) || !category || saving) return;
+    if (!(Number(amount) > 0) || (!category && !isPazar) || saving) return;
     setSaving(true);
     try {
       const v = vehicles.find((x: any) => x.id === vehicleId);
       const d = drivers.find((x: any) => x.id === driverId);
       await onAdd({
-        type: kind, direction: kind === "trosak" ? "out" : "in",
-        driver_id: driverId || null, vehicle_id: v?.id ?? null, category,
+        type: kind, direction: kind === "ostali_prihod" ? "in" : "out",
+        driver_id: isPazar ? null : driverId || null, vehicle_id: isPazar ? null : v?.id ?? null, category: isPazar ? null : category,
         amount: Number(amount), date,
-        description: [cats[category], v ? `KB ${v.taxi_license_number}` : "", d ? d.full_name : "", note].filter(Boolean).join(" — "),
+        description: isPazar ? ["Pazar uplaćen u banku", note].filter(Boolean).join(" — ")
+          : [cats[category], v ? `KB ${v.taxi_license_number}` : "", d ? d.full_name : "", note].filter(Boolean).join(" — "),
         received_by: currentUser, notes: "",
       });
-      toast.success(`${kind === "trosak" ? "Trošak" : "Prihod"}: ${fmt(Number(amount))}`);
+      toast.success(`${isPazar ? "Pazar u banku" : kind === "trosak" ? "Trošak" : "Prihod"}: ${fmt(Number(amount))}`);
       setOpen(false); reset();
     } catch (e: any) {
       toast.error("Greška: " + e.message);
@@ -2085,16 +2088,20 @@ function TrosakPrihodDialog({ onAdd, currentUser, defaultDate }: {
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{kind === "trosak" ? "Trošak firme" : "Ostali prihod"}</DialogTitle>
-          <DialogDescription>{kind === "trosak" ? "Novac izlazi iz kase (pranje, registracija, vlasnik KB, plate...)" : "Novac ulazi u kasu (refundacija, nalepnica, interna kazna...)"}</DialogDescription>
+          <DialogTitle>{isPazar ? "Pazar u banku" : kind === "trosak" ? "Trošak firme" : "Ostali prihod"}</DialogTitle>
+          <DialogDescription>{isPazar ? "Keš iz kase odnet i uplaćen u banku — smanjuje stanje kase, nije trošak firme"
+            : kind === "trosak" ? "Novac izlazi iz kase (pranje, registracija, vlasnik KB, plate...)" : "Novac ulazi u kasu (refundacija, nalepnica, interna kazna...)"}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 py-2">
-          <div className="grid grid-cols-2 gap-2">
-            <Button type="button" variant={kind === "trosak" ? "default" : "outline"} onClick={() => { setKind("trosak"); setCategory(""); }}>
-              <ArrowUpRight className="h-4 w-4 mr-1.5"/>Trošak (izlaz)</Button>
-            <Button type="button" variant={kind === "ostali_prihod" ? "default" : "outline"} onClick={() => { setKind("ostali_prihod"); setCategory(""); }}>
-              <ArrowDownLeft className="h-4 w-4 mr-1.5"/>Prihod (ulaz)</Button>
+          <div className="grid grid-cols-3 gap-2">
+            <Button type="button" size="sm" variant={kind === "trosak" ? "default" : "outline"} onClick={() => { setKind("trosak"); setCategory(""); }}>
+              <ArrowUpRight className="h-4 w-4 mr-1"/>Trošak</Button>
+            <Button type="button" size="sm" variant={kind === "ostali_prihod" ? "default" : "outline"} onClick={() => { setKind("ostali_prihod"); setCategory(""); }}>
+              <ArrowDownLeft className="h-4 w-4 mr-1"/>Prihod</Button>
+            <Button type="button" size="sm" variant={isPazar ? "default" : "outline"} onClick={() => { setKind("likvidnost_out"); setCategory(""); }}>
+              <ArrowUpRight className="h-4 w-4 mr-1"/>Pazar u banku</Button>
           </div>
+          {!isPazar && <>
           <div className="grid gap-1.5">
             <Label>Vrsta</Label>
             <Select value={category} onValueChange={setCategory}>
@@ -2118,15 +2125,16 @@ function TrosakPrihodDialog({ onAdd, currentUser, defaultDate }: {
             <DriverCombobox value={driverId} onChange={setDriverId}
               options={drivers.filter((d: any) => d.status === "active").sort((a: any, b: any) => a.full_name.localeCompare(b.full_name)).map((d: any) => ({ value: d.id, label: d.full_name }))}/>
           </div>
+          </>}
           <div className="grid grid-cols-2 gap-2">
             <div className="grid gap-1.5"><Label>Iznos (RSD)</Label><Input type="number" placeholder="0" value={amount} onChange={e=>setAmount(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") save(); }}/></div>
             <div className="grid gap-1.5"><Label>Datum</Label><Input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
           </div>
-          <div className="grid gap-1.5"><Label>Opis</Label><Input placeholder={kind === "trosak" ? "npr. januar 500 €, 3 zateva, šlep..." : "npr. akumulator, guma..."} value={note} onChange={e=>setNote(e.target.value)}/></div>
+          <div className="grid gap-1.5"><Label>Opis</Label><Input placeholder={isPazar ? "npr. pazari 17.-19.11." : kind === "trosak" ? "npr. januar 500 €, 3 zateva, šlep..." : "npr. akumulator, guma..."} value={note} onChange={e=>setNote(e.target.value)}/></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={()=>setOpen(false)}>Otkazi</Button>
-          <Button disabled={!(Number(amount)>0)||!category||saving} onClick={save}>
+          <Button disabled={!(Number(amount)>0)||(!category&&!isPazar)||saving} onClick={save}>
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2"/>}Sačuvaj
           </Button>
         </DialogFooter>
